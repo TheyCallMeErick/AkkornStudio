@@ -13,7 +13,7 @@ public enum DdlSchemaCompareDirection
     RightToLeft,
 }
 
-public sealed class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposable
+public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposable
 {
     private readonly ConnectionManagerViewModel _connectionManager;
     private readonly Dictionary<string, DbMetadata> _metadataCache = new(StringComparer.OrdinalIgnoreCase);
@@ -50,6 +50,7 @@ public sealed class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposa
         RefreshBothCommand = new RelayCommand(() => _ = RefreshBothAsync(), () => !IsBusy);
         CopySqlCommand = new RelayCommand(() => CopySqlRequested?.Invoke(GeneratedSql), () => HasGeneratedSql);
 
+        InitializeWizardState();
         _connectionManager.ProfilesChanged += HandleProfilesChanged;
         RefreshProfiles();
     }
@@ -202,6 +203,10 @@ public sealed class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposa
             RaisePropertyChanged(nameof(IsBusy));
             CompareCommand.NotifyCanExecuteChanged();
             RefreshBothCommand.NotifyCanExecuteChanged();
+            CompareAndContinueCommand?.NotifyCanExecuteChanged();
+            RefreshMetadataCommand?.NotifyCanExecuteChanged();
+            SwapSourceTargetCommand?.NotifyCanExecuteChanged();
+            RaisePropertyChanged(nameof(CanRunComparison));
         }
     }
 
@@ -216,6 +221,10 @@ public sealed class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposa
             RaisePropertyChanged(nameof(IsBusy));
             CompareCommand.NotifyCanExecuteChanged();
             RefreshBothCommand.NotifyCanExecuteChanged();
+            CompareAndContinueCommand?.NotifyCanExecuteChanged();
+            RefreshMetadataCommand?.NotifyCanExecuteChanged();
+            SwapSourceTargetCommand?.NotifyCanExecuteChanged();
+            RaisePropertyChanged(nameof(CanRunComparison));
         }
     }
 
@@ -273,6 +282,8 @@ public sealed class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposa
                 return;
 
             CompareCommand.NotifyCanExecuteChanged();
+            CompareAndContinueCommand?.NotifyCanExecuteChanged();
+            RaisePropertyChanged(nameof(CanRunComparison));
         }
     }
 
@@ -532,6 +543,7 @@ public sealed class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposa
         {
             IsCompatibilityBlocked = true;
             CompatibilityMessage = "Selecione as duas conexoes.";
+            UpdateSelectionStepState();
             return;
         }
 
@@ -539,6 +551,7 @@ public sealed class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposa
         {
             IsCompatibilityBlocked = true;
             CompatibilityMessage = "Comparacao bloqueada: adapters diferentes.";
+            UpdateSelectionStepState();
             return;
         }
 
@@ -546,11 +559,13 @@ public sealed class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposa
         {
             IsCompatibilityBlocked = true;
             CompatibilityMessage = "Selecione as duas tabelas.";
+            UpdateSelectionStepState();
             return;
         }
 
         IsCompatibilityBlocked = false;
         CompatibilityMessage = "Conexoes compativeis para comparacao.";
+        UpdateSelectionStepState();
     }
 
     private async Task CompareAsync()
@@ -591,6 +606,7 @@ public sealed class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposa
 
         int totalDiffs = ColumnDiffs.Count + ConstraintDiffs.Count + RelationshipDiffs.Count + ExternalImpactDiffs.Count;
         Summary = $"Diferencas: {totalDiffs} (colunas {ColumnDiffs.Count}, constraints {ConstraintDiffs.Count}, relacionamentos {RelationshipDiffs.Count}, impacto externo {ExternalImpactDiffs.Count}).";
+        OnComparisonCompleted();
 
         await Task.CompletedTask;
     }

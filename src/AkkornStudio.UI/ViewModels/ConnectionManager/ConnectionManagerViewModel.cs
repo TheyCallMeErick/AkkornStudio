@@ -22,6 +22,12 @@ namespace AkkornStudio.UI.ViewModels;
 
 public sealed class ConnectionManagerViewModel : ViewModelBase
 {
+    public enum ConnectionWizardStep
+    {
+        SelectProvider = 1,
+        ConfigureConnection = 2,
+    }
+
     private const string ConnectionModalLogFile = "connection-modal-debug.log";
     // Latency above this threshold is considered "Degraded" rather than "Online"
     private const double DegradedLatencyThresholdMs = 500.0;
@@ -364,8 +370,59 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     public bool IsEditing
     {
         get => _isEditing;
-        set => Set(ref _isEditing, value);
+        set
+        {
+            if (!Set(ref _isEditing, value))
+                return;
+
+            RaisePropertyChanged(nameof(IsProviderSelectionStepVisible));
+            RaisePropertyChanged(nameof(IsConnectionFormStepVisible));
+            SelectProviderForNewProfileCommand.NotifyCanExecuteChanged();
+            BackToProviderSelectionCommand.NotifyCanExecuteChanged();
+        }
     }
+
+    private bool _isNewProfileFlow;
+    public bool IsNewProfileFlow
+    {
+        get => _isNewProfileFlow;
+        private set
+        {
+            if (!Set(ref _isNewProfileFlow, value))
+                return;
+
+            RaisePropertyChanged(nameof(IsProviderSelectionStepVisible));
+            RaisePropertyChanged(nameof(IsConnectionFormStepVisible));
+            RaisePropertyChanged(nameof(IsProviderSummaryVisible));
+            SelectProviderForNewProfileCommand.NotifyCanExecuteChanged();
+            BackToProviderSelectionCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private ConnectionWizardStep _wizardStep = ConnectionWizardStep.ConfigureConnection;
+    public ConnectionWizardStep WizardStep
+    {
+        get => _wizardStep;
+        private set
+        {
+            if (!Set(ref _wizardStep, value))
+                return;
+
+            RaisePropertyChanged(nameof(IsProviderSelectionStepVisible));
+            RaisePropertyChanged(nameof(IsConnectionFormStepVisible));
+            RaisePropertyChanged(nameof(IsProviderSummaryVisible));
+            SelectProviderForNewProfileCommand.NotifyCanExecuteChanged();
+            BackToProviderSelectionCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    public bool IsProviderSelectionStepVisible =>
+        IsEditing && IsNewProfileFlow && WizardStep == ConnectionWizardStep.SelectProvider;
+
+    public bool IsConnectionFormStepVisible =>
+        IsEditing && (!IsNewProfileFlow || WizardStep == ConnectionWizardStep.ConfigureConnection);
+
+    public bool IsProviderSummaryVisible => IsNewProfileFlow && WizardStep == ConnectionWizardStep.ConfigureConnection;
 
     private string _editId = Guid.NewGuid().ToString();
 
@@ -397,6 +454,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             RaisePropertyChanged(nameof(SupportsIntegratedSecurity));
             RaisePropertyChanged(nameof(ShowCredentials));
             RaisePropertyChanged(nameof(SelectedProviderOption));
+            SyncWizardProviderSelection(value);
         }
     }
 
@@ -405,6 +463,9 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         get => AvailableProviderOptions.First(x => x.Provider == EditProvider);
         set
         {
+            if (value is null)
+                return;
+
             if (value.Provider != EditProvider)
                 EditProvider = value.Provider;
         }
@@ -521,15 +582,16 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
 
     private CancellationTokenSource? _healthMonitorCts;
     private CancellationTokenSource? _connectCts;
+    private CancellationTokenSource? _wizardStepAdvanceCts;
 
     // ── Provider list for ComboBox ────────────────────────────────────────────
 
     public static IReadOnlyList<ProviderOption> AvailableProviderOptions { get; } =
     [
-        new(DatabaseProvider.Postgres, "PostgreSQL", MaterialIconKind.Elephant),
-        new(DatabaseProvider.MySql, "MySQL", MaterialIconKind.Database),
-        new(DatabaseProvider.SqlServer, "SQL Server", MaterialIconKind.MicrosoftWindows),
-           new(DatabaseProvider.SQLite, "SQLite", MaterialIconKind.FileOutline),
+        new(DatabaseProvider.Postgres, "PostgreSQL", MaterialIconKind.Elephant, "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/PostgreSQL.svg"),
+        new(DatabaseProvider.MySql, "MySQL", MaterialIconKind.Database, "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/MySQL.svg"),
+        new(DatabaseProvider.SqlServer, "SQL Server", MaterialIconKind.MicrosoftWindows, "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/Microsoft_SQL_Server.svg"),
+        new(DatabaseProvider.SQLite, "SQLite", MaterialIconKind.FileOutline, "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/Sqlite.svg"),
     ];
 
     // ── Commands ──────────────────────────────────────────────────────────────
@@ -544,6 +606,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     public RelayCommand CloseCommand { get; }
     public RelayCommand OpenNewProfileCommand { get; }
     public RelayCommand ConnectOrOpenManagerCommand { get; }
+    public RelayCommand<ProviderOption> SelectProviderForNewProfileCommand { get; }
+    public RelayCommand BackToProviderSelectionCommand { get; }
     public RelayCommand RefreshHealthCommand { get; }
     public RelayCommand<ConnectionProfile> SwitchConnectionCommand { get; }
     public RelayCommand<string> SwitchDatabaseCommand { get; }
@@ -639,6 +703,22 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         ConnectOrOpenManagerCommand = new RelayCommand(
             ConnectOrOpenManager,
             () => !IsConnecting && !IsReloadingSchema);
+        SelectProviderForNewProfileCommand = new RelayCommand<ProviderOption>(
+            option =>
+            {
+                if (option is null)
+                    return;
+
+                _ = AdvanceWizardFromProviderSelectionAsync(option);
+            },
+            option => option is not null && IsEditing && IsNewProfileFlow);
+        BackToProviderSelectionCommand = new RelayCommand(
+            () =>
+            {
+                SyncWizardProviderSelection(EditProvider);
+                WizardStep = ConnectionWizardStep.SelectProvider;
+            },
+            () => IsEditing && IsNewProfileFlow && WizardStep == ConnectionWizardStep.ConfigureConnection);
         RefreshHealthCommand  = new RelayCommand(StartRefreshHealthSafe, () => _activeProfileId is not null);
         SwitchConnectionCommand = new RelayCommand<ConnectionProfile>(
             profile =>
@@ -708,6 +788,9 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         RaisePropertyChanged(nameof(SelectedProfile));
 
         ApplyFormData(_formMapper.CreateNew());
+        SyncWizardProviderSelection(EditProvider);
+        IsNewProfileFlow = true;
+        WizardStep = ConnectionWizardStep.SelectProvider;
         IsEditing = true;
         TestStatus = "";
         TestConnectionCommand.NotifyCanExecuteChanged();
@@ -716,9 +799,51 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     private void LoadProfileIntoForm(ConnectionProfile p)
     {
         ApplyFormData(_formMapper.FromProfile(p));
+        SyncWizardProviderSelection(EditProvider);
+        IsNewProfileFlow = false;
+        WizardStep = ConnectionWizardStep.ConfigureConnection;
         IsEditing = true;
         TestStatus = "";
         TestConnectionCommand.NotifyCanExecuteChanged();
+    }
+
+    private async Task AdvanceWizardFromProviderSelectionAsync(ProviderOption option)
+    {
+        if (!IsEditing || !IsNewProfileFlow)
+            return;
+
+        if (option.Provider != EditProvider)
+            EditProvider = option.Provider;
+        else
+            SyncWizardProviderSelection(option.Provider);
+
+        _wizardStepAdvanceCts?.Cancel();
+        _wizardStepAdvanceCts?.Dispose();
+        CancellationTokenSource localCts = new();
+        _wizardStepAdvanceCts = localCts;
+
+        try
+        {
+            await Task.Delay(170, localCts.Token);
+            WizardStep = ConnectionWizardStep.ConfigureConnection;
+        }
+        catch (TaskCanceledException)
+        {
+            // Ignore stale step-change attempts from rapid clicks.
+        }
+        finally
+        {
+            if (ReferenceEquals(_wizardStepAdvanceCts, localCts))
+                _wizardStepAdvanceCts = null;
+
+            localCts.Dispose();
+        }
+    }
+
+    private static void SyncWizardProviderSelection(DatabaseProvider provider)
+    {
+        foreach (ProviderOption option in AvailableProviderOptions)
+            option.IsSelectedWizard = option.Provider == provider;
     }
 
     private async Task SaveProfileAsync()
@@ -771,6 +896,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             ActiveProfileId = null;
 
         SelectedProfile = null;
+        IsNewProfileFlow = false;
+        WizardStep = ConnectionWizardStep.ConfigureConnection;
         IsEditing = false;
         TestStatus = string.Empty;
         ProfilesChanged?.Invoke();
@@ -839,6 +966,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             if (SelectedProfile is null)
                 SelectedProfile = Profiles[0];
 
+            IsNewProfileFlow = false;
+            WizardStep = ConnectionWizardStep.ConfigureConnection;
             IsEditing = false;
             TestStatus = string.Empty;
             LogConnectionModal("ConnectOrOpenManager completed with existing profiles");
@@ -1604,8 +1733,22 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             AdvancedOptions: new Dictionary<string, string?>());
     }
 
-    public readonly record struct ProviderOption(
-        DatabaseProvider Provider,
-        string DisplayName,
-        MaterialIconKind IconKind);
+    public sealed class ProviderOption(
+        DatabaseProvider provider,
+        string displayName,
+        MaterialIconKind iconKind,
+        string svgAssetUri) : ViewModelBase
+    {
+        public DatabaseProvider Provider { get; } = provider;
+        public string DisplayName { get; } = displayName;
+        public MaterialIconKind IconKind { get; } = iconKind;
+        public string SvgAssetUri { get; } = svgAssetUri;
+
+        private bool _isSelectedWizard;
+        public bool IsSelectedWizard
+        {
+            get => _isSelectedWizard;
+            set => Set(ref _isSelectedWizard, value);
+        }
+    }
 }

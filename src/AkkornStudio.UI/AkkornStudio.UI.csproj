@@ -26,8 +26,12 @@
 
   <!-- ── Core engine reference ── -->
   <ItemGroup>
-    <ProjectReference Include="..\AkkornStudio\AkkornStudio.csproj" />
-    <ProjectReference Include="..\AkkornStudio.Canvas\AkkornStudio.Canvas.csproj" />
+    <ProjectReference Include="..\AkkornStudio\AkkornStudio.csproj">
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+    </ProjectReference>
+    <ProjectReference Include="..\AkkornStudio.Canvas\AkkornStudio.Canvas.csproj">
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+    </ProjectReference>
   </ItemGroup>
 
   <!-- ── AXAML files handled by Avalonia SDK auto-discovery ── -->

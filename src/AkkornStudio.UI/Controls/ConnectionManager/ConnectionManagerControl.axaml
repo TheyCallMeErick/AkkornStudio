@@ -6,6 +6,7 @@
              xmlns:loc="using:AkkornStudio.UI.Services.Localization"
              xmlns:mi="using:Material.Icons.Avalonia"
              x:Class="AkkornStudio.UI.Controls.ConnectionManagerControl"
+             x:Name="RootConnectionManager"
              x:DataType="vm:ConnectionManagerViewModel">
 
   <UserControl.Styles>
@@ -27,6 +28,17 @@
       <Setter Property="FontSize"   Value="{StaticResource FontSizeCaption}"/>
       <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
       <Setter Property="Margin"     Value="0,0,0,4"/>
+    </Style>
+    <Style Selector="Border.wizard-provider-card">
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+    </Style>
+    <Style Selector="Border.wizard-provider-card.wizard-selected">
+      <Setter Property="BorderBrush" Value="{StaticResource BorderFocusBrush}"/>
+      <Setter Property="BorderThickness" Value="2"/>
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="BoxShadow" Value="0 0 0 1 #204A90E2, 0 8 20 0 #1A4A90E2"/>
     </Style>
   </UserControl.Styles>
 
@@ -152,8 +164,103 @@
                              FontSize="{StaticResource FontSizeBody}" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Center"/>
                 </StackPanel>
 
-                <!-- Edit form -->
+                <!-- Edit wizard -->
                 <StackPanel IsVisible="{Binding IsEditing}" Spacing="0">
+                  <Border Classes="surface-card"
+                          IsVisible="{Binding IsNewProfileFlow}"
+                          Padding="12,10"
+                          Margin="0,0,0,12">
+                    <Grid ColumnDefinitions="*,Auto,*">
+                      <StackPanel Grid.Column="0" HorizontalAlignment="Left">
+                        <TextBlock Text="{Binding [connection.wizard.step.provider], Source={x:Static loc:LocalizationService.Instance}}"
+                                   FontSize="{StaticResource FontSizeCaption}"
+                                   FontWeight="{StaticResource FontWeightTitle}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding [connection.wizard.step.provider.subtitle], Source={x:Static loc:LocalizationService.Instance}}"
+                                   FontSize="{StaticResource FontSizeCaption}"
+                                   Foreground="{StaticResource TextMutedBrush}"/>
+                      </StackPanel>
+                      <TextBlock Grid.Column="1" Text="→" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}"/>
+                      <StackPanel Grid.Column="2" HorizontalAlignment="Right">
+                        <TextBlock Text="{Binding [connection.wizard.step.form], Source={x:Static loc:LocalizationService.Instance}}"
+                                   FontSize="{StaticResource FontSizeCaption}"
+                                   FontWeight="{StaticResource FontWeightTitle}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding [connection.wizard.step.form.subtitle], Source={x:Static loc:LocalizationService.Instance}}"
+                                   FontSize="{StaticResource FontSizeCaption}"
+                                   Foreground="{StaticResource TextMutedBrush}"/>
+                      </StackPanel>
+                    </Grid>
+                  </Border>
+
+                  <StackPanel IsVisible="{Binding IsProviderSelectionStepVisible}" Spacing="12">
+                    <TextBlock Text="{Binding [connection.wizard.title], Source={x:Static loc:LocalizationService.Instance}}"
+                               FontSize="{StaticResource FontSizeTitle}"
+                               FontWeight="{StaticResource FontWeightTitle}"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding [connection.wizard.subtitle], Source={x:Static loc:LocalizationService.Instance}}"
+                               FontSize="{StaticResource FontSizeBody}"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                    <ItemsControl ItemsSource="{x:Static vm:ConnectionManagerViewModel.AvailableProviderOptions}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel Orientation="Horizontal" ItemWidth="150" ItemHeight="130"/>
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Button Margin="0,0,12,12"
+                                  Classes="secondary"
+                                  Command="{ReflectionBinding DataContext.SelectProviderForNewProfileCommand, ElementName=RootConnectionManager}"
+                                  CommandParameter="{Binding .}">
+                            <Border Classes="surface-card wizard-provider-card"
+                                    Classes.wizard-selected="{Binding IsSelectedWizard}"
+                                    Padding="12" MinWidth="138" MinHeight="112">
+                              <StackPanel Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Image Source="{Binding SvgAssetUri}" Width="42" Height="42" Stretch="Uniform"/>
+                                <TextBlock Text="{Binding DisplayName}"
+                                           FontSize="{StaticResource FontSizeBody}"
+                                           FontWeight="{StaticResource FontWeightTitle}"
+                                           HorizontalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                              </StackPanel>
+                            </Border>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+
+                  <StackPanel IsVisible="{Binding IsConnectionFormStepVisible}" Spacing="0">
+                  <Border Classes="surface-card"
+                          IsVisible="{Binding IsProviderSummaryVisible}"
+                          Padding="12,10"
+                          Margin="0,0,0,12">
+                    <Grid ColumnDefinitions="Auto,12,*,Auto">
+                      <Image Grid.Column="0"
+                             Source="{Binding SelectedProviderOption.SvgAssetUri}"
+                             Width="24"
+                             Height="24"
+                             Stretch="Uniform"/>
+                      <StackPanel Grid.Column="2" Spacing="2">
+                        <TextBlock Text="{Binding [connection.wizard.selectedProvider], Source={x:Static loc:LocalizationService.Instance}}"
+                                   FontSize="{StaticResource FontSizeCaption}"
+                                   Foreground="{StaticResource TextMutedBrush}"/>
+                        <TextBlock Text="{Binding SelectedProviderOption.DisplayName}"
+                                   FontSize="{StaticResource FontSizeBody}"
+                                   FontWeight="{StaticResource FontWeightTitle}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                      </StackPanel>
+                      <Button Grid.Column="3"
+                              Classes="secondary compact"
+                              Command="{Binding BackToProviderSelectionCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <mi:MaterialIcon Kind="ArrowLeft" Width="13" Height="13"/>
+                          <TextBlock Text="{Binding [connection.wizard.changeProvider], Source={x:Static loc:LocalizationService.Instance}}"/>
+                        </StackPanel>
+                      </Button>
+                    </Grid>
+                  </Border>
 
               <!-- Connection name -->
               <TextBlock Classes="label" Text="{Binding [connection.name], Source={x:Static loc:LocalizationService.Instance}}"/>
@@ -176,8 +283,10 @@
               </Grid>
 
               <!-- Provider -->
-              <TextBlock Classes="label" Text="{Binding [connection.provider], Source={x:Static loc:LocalizationService.Instance}}"/>
-              <Border Classes="surface-card" Padding="8" Margin="0,0,0,12">
+              <TextBlock Classes="label"
+                         Text="{Binding [connection.provider], Source={x:Static loc:LocalizationService.Instance}}"
+                         IsVisible="{Binding !IsNewProfileFlow}"/>
+              <Border Classes="surface-card" Padding="8" Margin="0,0,0,12" IsVisible="{Binding !IsNewProfileFlow}">
                 <ComboBox Classes="field"
                           ItemsSource="{x:Static vm:ConnectionManagerViewModel.AvailableProviderOptions}"
                           SelectedItem="{Binding SelectedProviderOption}"
@@ -276,14 +385,14 @@
               <TextBlock Classes="label" Text="{Binding [connection.timeout], Source={x:Static loc:LocalizationService.Instance}}"/>
               <TextBox Classes="field" Text="{Binding EditTimeout}" Margin="0,0,0,16"
                        Watermark="{Binding [connection.watermark.timeout], Source={x:Static loc:LocalizationService.Instance}}"/>
-
+                  </StackPanel>
                 </StackPanel>
               </StackPanel>
             </Border>
           </ScrollViewer>
 
           <Border Grid.Row="1"
-                  IsVisible="{Binding IsEditing}"
+                  IsVisible="{Binding IsConnectionFormStepVisible}"
                   BorderBrush="{StaticResource BorderSubtleBrush}"
                   BorderThickness="0,1,0,0"
                   Background="{StaticResource Bg1Brush}"

@@ -97,12 +97,11 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
     private PropertyChangedEventHandler? _explainPlanPropertyChangedHandler;
     private NotifyCollectionChangedEventHandler? _nodesCollectionChangedHandler;
     private NotifyCollectionChangedEventHandler? _connectionsCollectionChangedHandler;
-    private Action? _propertyPanelNamingChangedHandler;
     private Action? _propertyPanelWireStyleChangedHandler;
     private readonly HashSet<string> _pendingTableSourceReplacementConfirmations = [];
     private bool _isReplacingTableSourceNode;
     private string? _primaryFromSourceOverrideNodeId;
-    private ProjectConventionSettings _projectConventionSettings = AppSettingsStore.LoadProjectConventionSettings();
+    private ProjectConventionSettings _projectConventionSettings = AppSettingsStore.LoadProjectConventionSettings() ?? new ProjectConventionSettings();
 
     // â”€â”€ Canvas state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -1061,7 +1060,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
 
     public void ApplyProjectConventionSettings(ProjectConventionSettings settings)
     {
-        ArgumentNullException.ThrowIfNull(settings);
+        settings ??= new ProjectConventionSettings();
         _projectConventionSettings = new ProjectConventionSettings
         {
             NamingConvention = settings.NamingConvention,
@@ -1819,8 +1818,6 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
             LiveSql.PropertyChanged -= _liveSqlPropertyChangedHandler;
 
         DataPreview.ErrorNotified -= OnDataPreviewErrorNotified;
-        if (_propertyPanelNamingChangedHandler is not null)
-            PropertyPanel.NamingSettingsChanged -= _propertyPanelNamingChangedHandler;
         if (_propertyPanelWireStyleChangedHandler is not null)
             PropertyPanel.WireStyleChanged -= _propertyPanelWireStyleChangedHandler;
 
