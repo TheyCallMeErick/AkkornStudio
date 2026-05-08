@@ -81,6 +81,7 @@
           LatencyMs="{Binding ActiveLatencyMs}"
           IsReloading="{Binding IsBusy}"
           DisconnectCommand="{Binding DisconnectCommand}"
+          OpenConnectionManagerCommand="{Binding ConnectOrOpenManagerCommand}"
           SwitchConnectionCommand="{Binding SwitchConnectionCommand}"
           SwitchDatabaseCommand="{Binding SwitchDatabaseCommand}"
           SwitchSchemaCommand="{Binding SwitchSchemaCommand}"

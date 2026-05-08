@@ -92,3 +92,8 @@ A documentação ativa está dividida em dois níveis:
 ---
 
 *Última atualização: 15 de abril de 2026*
+
+## Atualizacoes recentes
+
+- 2026-05-08: fluxo de conexao atualizado para modal com cards, logo SVG por provider, cards full-width e busca no picker.
+- 2026-05-08: busca de schema com atalhos (`@`, `#`, `!`, `schema:`, `fk`, `pk`, `idx`) e cobertura de testes de regressao.

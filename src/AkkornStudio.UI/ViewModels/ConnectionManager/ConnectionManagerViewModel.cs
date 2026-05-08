@@ -1997,14 +1997,31 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         {
             Profile = profile;
             ProviderIconAssetUri = providerIconAssetUri;
+            ProviderIconSvgSource = CreateSvgImageSource(providerIconAssetUri);
         }
 
         public ConnectionProfile Profile { get; }
         public string ProviderIconAssetUri { get; }
+        public SvgImage? ProviderIconSvgSource { get; }
         public string ConnectionName => string.IsNullOrWhiteSpace(Profile.Name) ? "-" : Profile.Name;
         public string DatabaseName => string.IsNullOrWhiteSpace(Profile.Database) ? "-" : Profile.Database;
         public string ProviderName => Profile.Provider.ToString();
         public string SearchText =>
             $"{ConnectionName} {DatabaseName} {ProviderName} {Profile.Host} {Profile.Username}".Trim();
+
+        private static SvgImage? CreateSvgImageSource(string assetUri)
+        {
+            try
+            {
+                return new SvgImage
+                {
+                    Source = SvgSource.Load(assetUri, baseUri: null),
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
     }
 }

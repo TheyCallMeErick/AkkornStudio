@@ -19,7 +19,7 @@ public sealed class ConnectionManagerControlTemplateRegressionTests
     {
         string xaml = ReadTemplate();
 
-        Assert.Contains("Source=\"{Binding ProviderIconAssetUri}\"", xaml);
+        Assert.Contains("Source=\"{Binding ProviderIconSvgSource}\"", xaml);
         Assert.DoesNotContain("WrapPanel Orientation=\"Horizontal\" ItemWidth=\"260\"", xaml);
         Assert.Contains("<VirtualizingStackPanel/>", xaml);
     }

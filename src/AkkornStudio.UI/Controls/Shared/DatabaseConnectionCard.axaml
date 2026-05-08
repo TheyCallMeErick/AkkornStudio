@@ -1,7 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mi="using:Material.Icons.Avalonia"
-             xmlns:connmodels="using:AkkornStudio.UI.Services.ConnectionManager.Models"
              x:Class="AkkornStudio.UI.Controls.Shared.DatabaseConnectionCard"
              x:CompileBindings="False"
              x:Name="Root">
@@ -16,23 +15,22 @@
 
       <!-- Row 1: icon + status + latency + disconnect -->
       <Grid ColumnDefinitions="Auto,*,Auto">
-        <!-- DB icon -->
         <Border Grid.Column="0"
-                Width="36" Height="36"
+                Width="36"
+                Height="36"
                 Background="{StaticResource Bg0Brush}"
                 BorderBrush="{StaticResource BorderSubtleBrush}"
                 BorderThickness="1"
                 CornerRadius="{StaticResource RadiusSM}"
                 VerticalAlignment="Center">
-            <mi:MaterialIcon Kind="Database"
-                 Width="16"
-                 Height="16"
-                 Foreground="{StaticResource AccentPrimaryHoverBrush}"
-                 HorizontalAlignment="Center"
-                 VerticalAlignment="Center"/>
+          <mi:MaterialIcon Kind="Database"
+                           Width="16"
+                           Height="16"
+                           Foreground="{StaticResource AccentPrimaryHoverBrush}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
         </Border>
 
-        <!-- Status + latency -->
         <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center" Spacing="2">
           <StackPanel Orientation="Horizontal" Spacing="5"
                       IsVisible="{Binding IsConnected, ElementName=Root}">
@@ -46,7 +44,7 @@
           <StackPanel Orientation="Horizontal" Spacing="5"
                       IsVisible="{Binding IsReloading, ElementName=Root}">
             <Ellipse Width="6" Height="6" Fill="{StaticResource StatusWarningBrush}"/>
-            <TextBlock Text="Carregando schema…"
+            <TextBlock Text="Carregando schema..."
                        Foreground="{StaticResource StatusWarningBrush}"
                        FontSize="{StaticResource FontSizeCaption}"
                        FontWeight="{StaticResource FontWeightHeading}"
@@ -54,9 +52,8 @@
           </StackPanel>
           <TextBlock FontSize="{StaticResource FontSizeCaption}"
                      Foreground="{StaticResource TextSecondaryBrush}"
-                     IsVisible="{Binding LatencyMs, ElementName=Root,
-                                 Converter={x:Static ObjectConverters.IsNotNull}}">
-            <Run Text="Latência: "/>
+                     IsVisible="{Binding LatencyMs, ElementName=Root, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Run Text="Latencia: "/>
             <Run Text="{Binding LatencyMs, ElementName=Root}"/>
             <Run Text=" ms"/>
           </TextBlock>
@@ -75,7 +72,6 @@
                      MaxLines="1"/>
         </StackPanel>
 
-        <!-- Disconnect button -->
         <Button x:Name="DisconnectButton"
                 Grid.Column="2"
                 Classes="secondary"
@@ -87,68 +83,154 @@
                 Content="Desconectar"/>
       </Grid>
 
-      <!-- Divider -->
       <Border Height="1" Background="{StaticResource BorderSubtleBrush}"/>
 
-      <!-- Row 2: connection combo -->
+      <!-- Row 2: connection selector trigger -->
       <StackPanel Spacing="3">
-        <TextBlock Text="Conexão"
+        <TextBlock Text="Conexao"
                    FontSize="{StaticResource FontSizeCaption}"
                    Foreground="{StaticResource TextSecondaryBrush}"/>
-        <ComboBox x:Name="ConnectionComboBox"
-                  ItemsSource="{Binding AvailableConnections, ElementName=Root}"
-                  SelectedItem="{Binding SelectedConnection, ElementName=Root}"
-                  SelectionChanged="OnConnectionSelectionChanged"
-                  HorizontalAlignment="Stretch"
-                  Background="{StaticResource Bg1Brush}"
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <Border Background="{StaticResource Bg1Brush}"
                   BorderBrush="{StaticResource BorderBrush}"
+                  BorderThickness="1"
                   CornerRadius="{StaticResource RadiusSM}"
-                  FontSize="{StaticResource FontSizeLabel}"
-                  IsEnabled="{Binding IsReloading, ElementName=Root,
-                              Converter={x:Static BoolConverters.Not}}">
-          <ComboBox.ItemTemplate>
-            <DataTemplate x:DataType="connmodels:ConnectionProfile">
-              <TextBlock Text="{Binding Name}"/>
-            </DataTemplate>
-          </ComboBox.ItemTemplate>
-        </ComboBox>
+                  Padding="10,7">
+            <TextBlock Text="{Binding ConnectionName, ElementName=Root}"
+                       FontSize="{StaticResource FontSizeLabel}"
+                       Foreground="{StaticResource TextPrimaryBrush}"
+                       TextTrimming="CharacterEllipsis"
+                       MaxLines="1"/>
+          </Border>
+          <Button Grid.Column="1"
+                  Classes="secondary compact"
+                  Command="{Binding OpenConnectionManagerCommand, ElementName=Root}"
+                  IsEnabled="{Binding IsReloading, ElementName=Root, Converter={x:Static BoolConverters.Not}}"
+                  ToolTip.Tip="Abrir conexoes">
+            <mi:MaterialIcon Kind="Connection" Width="16" Height="16"/>
+          </Button>
+        </Grid>
       </StackPanel>
 
-      <!-- Row 3: database/catalog combo -->
+      <!-- Row 3: database picker -->
       <StackPanel Spacing="3"
                   IsVisible="{Binding IsDatabaseSelectionVisible, ElementName=Root}">
         <TextBlock Text="Database/Catalog"
                    FontSize="{StaticResource FontSizeCaption}"
                    Foreground="{StaticResource TextSecondaryBrush}"/>
-        <ComboBox x:Name="DatabaseComboBox"
-                  ItemsSource="{Binding AvailableDatabases, ElementName=Root}"
-                  SelectedItem="{Binding SelectedDatabase, ElementName=Root}"
-                  SelectionChanged="OnDatabaseSelectionChanged"
-                  HorizontalAlignment="Stretch"
-                  Background="{StaticResource Bg1Brush}"
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <Border Background="{StaticResource Bg1Brush}"
                   BorderBrush="{StaticResource BorderBrush}"
+                  BorderThickness="1"
                   CornerRadius="{StaticResource RadiusSM}"
-                  FontSize="{StaticResource FontSizeLabel}"
-                  IsEnabled="{Binding IsReloading, ElementName=Root,
-                              Converter={x:Static BoolConverters.Not}}"/>
+                  Padding="10,7">
+            <TextBlock Text="{Binding SelectedDatabase, ElementName=Root}"
+                       FontSize="{StaticResource FontSizeLabel}"
+                       Foreground="{StaticResource TextPrimaryBrush}"
+                       TextTrimming="CharacterEllipsis"
+                       MaxLines="1"/>
+          </Border>
+          <Button Grid.Column="1"
+                  Classes="secondary compact"
+                  IsEnabled="{Binding IsReloading, ElementName=Root, Converter={x:Static BoolConverters.Not}}"
+                  ToolTip.Tip="Selecionar banco">
+            <mi:MaterialIcon Kind="ChevronDown" Width="16" Height="16"/>
+            <Button.Flyout>
+              <Flyout Placement="BottomEdgeAlignedRight">
+                <Border Background="{StaticResource Bg1Brush}"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource RadiusSM}"
+                        Padding="6"
+                        MinWidth="260">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="Bancos disponiveis"
+                               FontSize="{StaticResource FontSizeCaption}"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                    <ItemsControl ItemsSource="{Binding AvailableDatabases, ElementName=Root}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Button Classes="secondary compact"
+                                  HorizontalAlignment="Stretch"
+                                  HorizontalContentAlignment="Left"
+                                  Click="OnDatabaseOptionClick">
+                            <Grid ColumnDefinitions="Auto,*">
+                              <mi:MaterialIcon Kind="Database" Width="14" Height="14" VerticalAlignment="Center"/>
+                              <TextBlock Grid.Column="1"
+                                         Margin="8,0,0,0"
+                                         Text="{Binding .}"
+                                         TextTrimming="CharacterEllipsis"/>
+                            </Grid>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+        </Grid>
       </StackPanel>
 
-      <!-- Row 4: schema combo -->
+      <!-- Row 4: schema picker -->
       <StackPanel Spacing="3">
         <TextBlock Text="Schema"
                    FontSize="{StaticResource FontSizeCaption}"
                    Foreground="{StaticResource TextSecondaryBrush}"/>
-        <ComboBox x:Name="SchemaComboBox"
-                  ItemsSource="{Binding AvailableSchemas, ElementName=Root}"
-                  SelectedItem="{Binding SelectedSchema, ElementName=Root}"
-                  SelectionChanged="OnSchemaSelectionChanged"
-                  HorizontalAlignment="Stretch"
-                  Background="{StaticResource Bg1Brush}"
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <Border Background="{StaticResource Bg1Brush}"
                   BorderBrush="{StaticResource BorderBrush}"
+                  BorderThickness="1"
                   CornerRadius="{StaticResource RadiusSM}"
-                  FontSize="{StaticResource FontSizeLabel}"
-                  IsEnabled="{Binding IsReloading, ElementName=Root,
-                              Converter={x:Static BoolConverters.Not}}"/>
+                  Padding="10,7">
+            <TextBlock Text="{Binding SelectedSchema, ElementName=Root}"
+                       FontSize="{StaticResource FontSizeLabel}"
+                       Foreground="{StaticResource TextPrimaryBrush}"
+                       TextTrimming="CharacterEllipsis"
+                       MaxLines="1"/>
+          </Border>
+          <Button Grid.Column="1"
+                  Classes="secondary compact"
+                  IsEnabled="{Binding IsReloading, ElementName=Root, Converter={x:Static BoolConverters.Not}}"
+                  ToolTip.Tip="Selecionar schema">
+            <mi:MaterialIcon Kind="ChevronDown" Width="16" Height="16"/>
+            <Button.Flyout>
+              <Flyout Placement="BottomEdgeAlignedRight">
+                <Border Background="{StaticResource Bg1Brush}"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource RadiusSM}"
+                        Padding="6"
+                        MinWidth="220">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="Schemas disponiveis"
+                               FontSize="{StaticResource FontSizeCaption}"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                    <ItemsControl ItemsSource="{Binding AvailableSchemas, ElementName=Root}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Button Classes="secondary compact"
+                                  HorizontalAlignment="Stretch"
+                                  HorizontalContentAlignment="Left"
+                                  Click="OnSchemaOptionClick">
+                            <Grid ColumnDefinitions="Auto,*">
+                              <mi:MaterialIcon Kind="TableColumn" Width="14" Height="14" VerticalAlignment="Center"/>
+                              <TextBlock Grid.Column="1"
+                                         Margin="8,0,0,0"
+                                         Text="{Binding .}"
+                                         TextTrimming="CharacterEllipsis"/>
+                            </Grid>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+        </Grid>
       </StackPanel>
 
       <!-- Row 5: metadata summary + progress bar -->
@@ -170,12 +252,12 @@
                      Text="{Binding MetadataDetails, ElementName=Root}"
                      TextWrapping="Wrap"
                      IsVisible="{Binding MetadataDetails, ElementName=Root, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-          <TextBlock Text="Versão indisponível"
+          <TextBlock Text="Versao indisponivel"
                      FontFamily="{StaticResource MonoFont}"
                      FontSize="{StaticResource FontSizeCaption}"
                      Foreground="{StaticResource TextMutedBrush}"
                      IsVisible="{Binding MetadataDetails, ElementName=Root, Converter={x:Static StringConverters.IsNullOrEmpty}}"/>
-          <TextBlock Text="Metadados indisponíveis"
+          <TextBlock Text="Metadados indisponiveis"
                      FontFamily="{StaticResource MonoFont}"
                      FontSize="{StaticResource FontSizeCaption}"
                      Foreground="{StaticResource TextMutedBrush}"

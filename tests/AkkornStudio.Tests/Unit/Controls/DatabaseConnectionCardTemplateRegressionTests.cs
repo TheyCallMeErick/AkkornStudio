@@ -6,16 +6,17 @@ namespace AkkornStudio.Tests.Unit.Controls;
 public class DatabaseConnectionCardTemplateRegressionTests
 {
     [Fact]
-    public void CardTemplate_ExposesConnectionAndDatabaseComboBoxes()
+    public void CardTemplate_ExposesConnectionAndDataPickersWithoutCombos()
     {
         string xaml = ReadCardXaml();
 
-        Assert.Contains("x:Name=\"ConnectionComboBox\"", xaml);
-        Assert.Contains("x:Name=\"DatabaseComboBox\"", xaml);
-        Assert.Contains("x:Name=\"SchemaComboBox\"", xaml);
-        Assert.Contains("SelectionChanged=\"OnConnectionSelectionChanged\"", xaml);
-        Assert.Contains("SelectionChanged=\"OnDatabaseSelectionChanged\"", xaml);
-        Assert.Contains("SelectionChanged=\"OnSchemaSelectionChanged\"", xaml);
+        Assert.DoesNotContain("x:Name=\"ConnectionComboBox\"", xaml);
+        Assert.DoesNotContain("x:Name=\"DatabaseComboBox\"", xaml);
+        Assert.DoesNotContain("x:Name=\"SchemaComboBox\"", xaml);
+        Assert.Contains("Command=\"{Binding OpenConnectionManagerCommand, ElementName=Root}\"", xaml);
+        Assert.Contains("<Flyout Placement=\"BottomEdgeAlignedRight\">", xaml);
+        Assert.Contains("Click=\"OnDatabaseOptionClick\"", xaml);
+        Assert.Contains("Click=\"OnSchemaOptionClick\"", xaml);
     }
 
     [Fact]
@@ -59,7 +60,7 @@ public class DatabaseConnectionCardTemplateRegressionTests
         string xaml = ReadCardXaml();
 
         Assert.Contains("Text=\"{Binding ConnectionName, ElementName=Root}\"", xaml);
-        Assert.Contains("Versão indisponível", xaml);
+        Assert.Contains("Versao indisponivel", xaml);
     }
 
     private static string ReadCardXaml()

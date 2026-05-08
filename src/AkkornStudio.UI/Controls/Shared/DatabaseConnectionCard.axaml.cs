@@ -59,6 +59,9 @@ public partial class DatabaseConnectionCard : UserControl
     public static readonly StyledProperty<ICommand?> SwitchDatabaseCommandProperty =
         AvaloniaProperty.Register<DatabaseConnectionCard, ICommand?>(nameof(SwitchDatabaseCommand));
 
+    public static readonly StyledProperty<ICommand?> OpenConnectionManagerCommandProperty =
+        AvaloniaProperty.Register<DatabaseConnectionCard, ICommand?>(nameof(OpenConnectionManagerCommand));
+
     public static readonly StyledProperty<bool> IsDatabaseSelectionVisibleProperty =
         AvaloniaProperty.Register<DatabaseConnectionCard, bool>(nameof(IsDatabaseSelectionVisible));
 
@@ -164,6 +167,12 @@ public partial class DatabaseConnectionCard : UserControl
         set => SetValue(SwitchDatabaseCommandProperty, value);
     }
 
+    public ICommand? OpenConnectionManagerCommand
+    {
+        get => GetValue(OpenConnectionManagerCommandProperty);
+        set => SetValue(OpenConnectionManagerCommandProperty, value);
+    }
+
     public bool IsDatabaseSelectionVisible
     {
         get => GetValue(IsDatabaseSelectionVisibleProperty);
@@ -175,39 +184,27 @@ public partial class DatabaseConnectionCard : UserControl
         InitializeComponent();
     }
 
-    private void OnConnectionSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    private void OnDatabaseOptionClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (!ConnectionComboBox.IsDropDownOpen)
+        if (sender is not Button { DataContext: string selectedDatabase })
             return;
 
-        if (SelectedConnection is null)
+        if (string.IsNullOrWhiteSpace(selectedDatabase))
             return;
 
-        if (SwitchConnectionCommand?.CanExecute(SelectedConnection) == true)
-            SwitchConnectionCommand.Execute(SelectedConnection);
+        if (SwitchDatabaseCommand?.CanExecute(selectedDatabase) == true)
+            SwitchDatabaseCommand.Execute(selectedDatabase);
     }
 
-    private void OnDatabaseSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    private void OnSchemaOptionClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (!DatabaseComboBox.IsDropDownOpen)
+        if (sender is not Button { DataContext: string selectedSchema })
             return;
 
-        if (string.IsNullOrWhiteSpace(SelectedDatabase))
+        if (string.IsNullOrWhiteSpace(selectedSchema))
             return;
 
-        if (SwitchDatabaseCommand?.CanExecute(SelectedDatabase) == true)
-            SwitchDatabaseCommand.Execute(SelectedDatabase);
-    }
-
-    private void OnSchemaSelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (!SchemaComboBox.IsDropDownOpen)
-            return;
-
-        if (string.IsNullOrWhiteSpace(SelectedSchema))
-            return;
-
-        if (SwitchSchemaCommand?.CanExecute(SelectedSchema) == true)
-            SwitchSchemaCommand.Execute(SelectedSchema);
+        if (SwitchSchemaCommand?.CanExecute(selectedSchema) == true)
+            SwitchSchemaCommand.Execute(selectedSchema);
     }
 }
