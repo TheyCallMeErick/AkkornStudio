@@ -114,6 +114,28 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     }
 
     public ObservableCollection<ConnectionProfileCardItem> ConnectionCards { get; } = [];
+    public ObservableCollection<ConnectionProfileCardItem> FilteredConnectionCards { get; } = [];
+
+    private string _connectionPickerSearchQuery = string.Empty;
+    public string ConnectionPickerSearchQuery
+    {
+        get => _connectionPickerSearchQuery;
+        set
+        {
+            string normalized = value?.Trim() ?? string.Empty;
+            if (!Set(ref _connectionPickerSearchQuery, normalized))
+                return;
+
+            RefreshFilteredConnectionCards();
+            RaisePropertyChanged(nameof(HasConnectionPickerSearchQuery));
+            RaisePropertyChanged(nameof(ShowConnectionPickerNoResultsState));
+        }
+    }
+
+    public bool HasConnectionPickerSearchQuery => !string.IsNullOrWhiteSpace(ConnectionPickerSearchQuery);
+    public bool HasVisibleConnectionCards => FilteredConnectionCards.Count > 0;
+    public bool ShowConnectionPickerNoProfilesState => !HasProfiles;
+    public bool ShowConnectionPickerNoResultsState => HasProfiles && !HasVisibleConnectionCards;
 
     // ── Active connection & health ────────────────────────────────────────────
 
@@ -1726,10 +1748,13 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             SelectedProfile = Profiles[0];
         }
 
+        ConnectionPickerSearchQuery = string.Empty;
         RaisePropertyChanged(nameof(SidebarSelectedConnection));
         RaisePropertyChanged(nameof(SidebarConnectionName));
         RaisePropertyChanged(nameof(SidebarConnectionSubtitle));
         RaisePropertyChanged(nameof(HasProfiles));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoProfilesState));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoResultsState));
         RebuildConnectionCards();
         ProfilesChanged?.Invoke();
     }
@@ -1771,6 +1796,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         RaisePropertyChanged(nameof(SidebarConnectionName));
         RaisePropertyChanged(nameof(SidebarConnectionSubtitle));
         RaisePropertyChanged(nameof(HasProfiles));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoProfilesState));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoResultsState));
         RebuildConnectionCards();
         BackToConnectionPickerCommand.NotifyCanExecuteChanged();
     }
@@ -1780,13 +1807,45 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         RebuildConnectionCards();
         BackToConnectionPickerCommand.NotifyCanExecuteChanged();
         RaisePropertyChanged(nameof(HasProfiles));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoProfilesState));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoResultsState));
     }
 
     private void RebuildConnectionCards()
     {
         ConnectionCards.Clear();
         foreach (ConnectionProfile profile in Profiles)
-            ConnectionCards.Add(new ConnectionProfileCardItem(profile, ResolveProviderIconPath(profile.Provider)));
+        {
+            string iconAssetUri = ResolveProviderIconPath(profile.Provider);
+            ConnectionCards.Add(new ConnectionProfileCardItem(profile, iconAssetUri));
+        }
+
+        RefreshFilteredConnectionCards();
+        RaisePropertyChanged(nameof(HasVisibleConnectionCards));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoResultsState));
+    }
+
+    private void RefreshFilteredConnectionCards()
+    {
+        FilteredConnectionCards.Clear();
+        foreach (ConnectionProfileCardItem card in ApplyConnectionCardFilter(ConnectionCards))
+            FilteredConnectionCards.Add(card);
+    }
+
+    private IEnumerable<ConnectionProfileCardItem> ApplyConnectionCardFilter(IEnumerable<ConnectionProfileCardItem> cards)
+    {
+        if (string.IsNullOrWhiteSpace(ConnectionPickerSearchQuery))
+            return cards;
+
+        string[] tokens = ConnectionPickerSearchQuery
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (tokens.Length == 0)
+            return cards;
+
+        return cards.Where(card =>
+            tokens.All(token =>
+                card.SearchText.Contains(token, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static string ResolveProviderIconPath(DatabaseProvider provider)
@@ -1934,16 +1993,18 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
 
     public sealed class ConnectionProfileCardItem
     {
-        public ConnectionProfileCardItem(ConnectionProfile profile, string providerIconPath)
+        public ConnectionProfileCardItem(ConnectionProfile profile, string providerIconAssetUri)
         {
             Profile = profile;
-            ProviderIconPath = providerIconPath;
+            ProviderIconAssetUri = providerIconAssetUri;
         }
 
         public ConnectionProfile Profile { get; }
-        public string ProviderIconPath { get; }
+        public string ProviderIconAssetUri { get; }
         public string ConnectionName => string.IsNullOrWhiteSpace(Profile.Name) ? "-" : Profile.Name;
         public string DatabaseName => string.IsNullOrWhiteSpace(Profile.Database) ? "-" : Profile.Database;
         public string ProviderName => Profile.Provider.ToString();
+        public string SearchText =>
+            $"{ConnectionName} {DatabaseName} {ProviderName} {Profile.Host} {Profile.Username}".Trim();
     }
 }

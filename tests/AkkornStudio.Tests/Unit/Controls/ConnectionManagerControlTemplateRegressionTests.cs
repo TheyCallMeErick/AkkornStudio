@@ -6,21 +6,22 @@ namespace AkkornStudio.Tests.Unit.Controls;
 public sealed class ConnectionManagerControlTemplateRegressionTests
 {
     [Fact]
-    public void ConnectionManagerTemplate_HidesLegacyProviderFieldFromForm()
+    public void ConnectionManagerTemplate_UsesFilteredConnectionCardsAndSearchInput()
     {
         string xaml = ReadTemplate();
 
-        Assert.DoesNotContain("Text=\"{Binding [connection.provider]", xaml);
-        Assert.DoesNotContain("SelectedItem=\"{Binding SelectedProviderOption}\"", xaml);
+        Assert.Contains("ItemsSource=\"{Binding FilteredConnectionCards}\"", xaml);
+        Assert.Contains("Text=\"{Binding ConnectionPickerSearchQuery}\"", xaml);
     }
 
     [Fact]
-    public void ConnectionManagerTemplate_ShowsConnectOnlyForSavedSelectedProfile()
+    public void ConnectionManagerTemplate_RendersProviderSvgImageAndFullWidthList()
     {
         string xaml = ReadTemplate();
 
-        Assert.Contains("IsVisible=\"{Binding CanShowConnectAction}\"", xaml);
-        Assert.Contains("IsVisible=\"{Binding CanShowDisconnectAction}\"", xaml);
+        Assert.Contains("Source=\"{Binding ProviderIconAssetUri}\"", xaml);
+        Assert.DoesNotContain("WrapPanel Orientation=\"Horizontal\" ItemWidth=\"260\"", xaml);
+        Assert.Contains("<VirtualizingStackPanel/>", xaml);
     }
 
     private static string ReadTemplate()

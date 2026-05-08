@@ -274,6 +274,74 @@ public class ConnectionManagerUxStateTests
         Assert.Contains(LocalizationService.Instance["connection.status.failedPrefix"], vm.TestStatus, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void ConnectionPickerSearchQuery_FiltersCardsByDatabaseAndConnectionName()
+    {
+        var vm = new ConnectionManagerViewModel();
+        vm.Profiles.Clear();
+
+        var finance = new ConnectionProfile
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = "Finance",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "erp_finance",
+            Username = "u",
+            Password = "p",
+        };
+        var crm = new ConnectionProfile
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = "CRM",
+            Provider = DatabaseProvider.SqlServer,
+            Host = "localhost",
+            Port = 1433,
+            Database = "crm_main",
+            Username = "u",
+            Password = "p",
+        };
+
+        vm.Profiles.Add(finance);
+        vm.Profiles.Add(crm);
+
+        vm.ConnectionPickerSearchQuery = "finance";
+
+        Assert.Single(vm.FilteredConnectionCards);
+        Assert.Equal("Finance", vm.FilteredConnectionCards[0].ConnectionName);
+
+        vm.ConnectionPickerSearchQuery = "crm_main";
+
+        Assert.Single(vm.FilteredConnectionCards);
+        Assert.Equal("CRM", vm.FilteredConnectionCards[0].ConnectionName);
+    }
+
+    [Fact]
+    public void ConnectionCards_ExposeSvgProviderIconForKnownDatabase()
+    {
+        var vm = new ConnectionManagerViewModel();
+        vm.Profiles.Clear();
+
+        vm.Profiles.Add(new ConnectionProfile
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = "SQL",
+            Provider = DatabaseProvider.SqlServer,
+            Host = "localhost",
+            Port = 1433,
+            Database = "db",
+            Username = "u",
+            Password = "p",
+        });
+
+        Assert.Single(vm.ConnectionCards);
+        ConnectionManagerViewModel.ConnectionProfileCardItem card = vm.ConnectionCards[0];
+        Assert.Equal(
+            "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/Microsoft_SQL_Server.svg",
+            card.ProviderIconAssetUri);
+    }
+
     private sealed class RecordingModalManager(bool hasSubscriber = true) : IGlobalModalManager
     {
         public event Action<GlobalModalRequest>? ModalRequested;

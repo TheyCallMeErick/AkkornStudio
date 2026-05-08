@@ -15,8 +15,7 @@
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="CornerRadius" Value="{StaticResource RadiusMD}"/>
       <Setter Property="Padding" Value="12"/>
-      <Setter Property="MinWidth" Value="240"/>
-      <Setter Property="MinHeight" Value="120"/>
+      <Setter Property="MinHeight" Value="116"/>
     </Style>
 
     <Style Selector="Border.connection-picker-card:pointerover">
@@ -69,7 +68,7 @@
       </Border>
 
       <Grid Grid.Row="1">
-        <Grid IsVisible="{Binding IsConnectionPickerMode}" RowDefinitions="Auto,*" Margin="16">
+        <Grid IsVisible="{Binding IsConnectionPickerMode}" RowDefinitions="Auto,Auto,*" Margin="16">
           <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
             <StackPanel Spacing="2">
               <TextBlock Text="Conexoes" FontSize="{StaticResource FontSizeTitle}" FontWeight="{StaticResource FontWeightTitle}"/>
@@ -83,24 +82,45 @@
             </Button>
           </Grid>
 
-          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+          <Border Grid.Row="1" Classes="surface-card" Padding="10" Margin="0,0,0,10">
+            <DockPanel>
+              <mi:MaterialIcon DockPanel.Dock="Left"
+                               Kind="Magnify"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Width="15"
+                               Height="15"
+                               VerticalAlignment="Center"
+                               Margin="0,0,7,0"/>
+              <TextBox Classes="field"
+                       Text="{Binding ConnectionPickerSearchQuery}"
+                       Watermark="Buscar conexao, banco ou provedor..."
+                       Background="Transparent"
+                       BorderBrush="Transparent"
+                       BorderThickness="0"
+                       Foreground="{StaticResource TextPrimaryBrush}"
+                       Padding="0"
+                       FontSize="{StaticResource FontSizeCaption}"/>
+            </DockPanel>
+          </Border>
+
+          <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="10">
-              <ItemsControl ItemsSource="{Binding ConnectionCards}">
+              <ItemsControl ItemsSource="{Binding FilteredConnectionCards}" HorizontalAlignment="Stretch">
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate>
-                    <WrapPanel Orientation="Horizontal" ItemWidth="260"/>
+                    <VirtualizingStackPanel/>
                   </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <Border Classes="connection-picker-card" Margin="0,0,10,10">
-                      <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto" RowSpacing="8">
-                        <Image Grid.Row="0" Grid.Column="0" Source="{Binding ProviderIconPath}" Width="30" Height="30" Stretch="Uniform"/>
+                    <Border Classes="connection-picker-card" Margin="0,0,0,10" HorizontalAlignment="Stretch">
+                      <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto" RowSpacing="8" ColumnSpacing="10">
+                        <Image Grid.Row="0" Grid.Column="0" Source="{Binding ProviderIconAssetUri}" Width="30" Height="30" Stretch="Uniform"/>
                         <StackPanel Grid.Row="0" Grid.Column="1" Margin="10,0,0,0" Spacing="2">
                           <TextBlock Text="{Binding ConnectionName}" FontWeight="{StaticResource FontWeightStrong}" TextTrimming="CharacterEllipsis"/>
                           <TextBlock Text="{Binding ProviderName}" Foreground="{StaticResource TextMutedBrush}" FontSize="{StaticResource FontSizeCaption}"/>
                         </StackPanel>
-                        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Text="{Binding DatabaseName}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Text="{Binding DatabaseName}" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
 
                         <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="6">
                           <Button Classes="primary compact"
@@ -134,7 +154,7 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
 
-              <Border Classes="surface-card" Padding="14" IsVisible="{Binding HasProfiles, Converter={x:Static BoolConverters.Not}}">
+              <Border Classes="surface-card" Padding="14" IsVisible="{Binding ShowConnectionPickerNoProfilesState}">
                 <StackPanel Spacing="8" HorizontalAlignment="Center">
                   <TextBlock Text="Nenhuma conexao cadastrada." Foreground="{StaticResource TextSecondaryBrush}"/>
                   <Button Classes="primary compact" Command="{Binding OpenCreateConnectionFormCommand}">
@@ -144,6 +164,12 @@
                     </StackPanel>
                   </Button>
                 </StackPanel>
+              </Border>
+
+              <Border Classes="surface-card" Padding="14" IsVisible="{Binding ShowConnectionPickerNoResultsState}">
+                <TextBlock Text="Nenhuma conexao encontrada para a busca atual."
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           HorizontalAlignment="Center"/>
               </Border>
             </StackPanel>
           </ScrollViewer>

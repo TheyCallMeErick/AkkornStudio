@@ -3,7 +3,6 @@ using System.Windows.Input;
 using Avalonia;
 using AkkornStudio.Metadata;
 using AkkornStudio.Nodes;
-using AkkornStudio.UI.Services.Search;
 using AkkornStudio.UI.Services.Theming;
 
 namespace AkkornStudio.UI.ViewModels;
@@ -17,9 +16,14 @@ public sealed class SchemaViewModel : ViewModelBase
     private sealed record SchemaCatalogEntry(
         SchemaObjectViewModel Item,
         bool IsView,
+        string SchemaName,
+        string TableName,
+        IReadOnlyList<string> ColumnNames,
+        bool HasPrimaryKeyColumn,
+        bool HasForeignKeyColumn,
+        bool HasIndexedColumn,
         string SearchText);
 
-    private static readonly TextSearchService TextSearch = new();
     private string _filterQuery = string.Empty;
     private string? _selectedSchema;
     private bool _isLoading;
@@ -256,6 +260,12 @@ public sealed class SchemaViewModel : ViewModelBase
                 catalog.Add(new SchemaCatalogEntry(
                     item,
                     table.Kind != TableKind.Table,
+                    schema.Name,
+                    table.Name,
+                    table.Columns.Select(column => column.Name).ToArray(),
+                    table.Columns.Any(column => column.IsPrimaryKey),
+                    table.Columns.Any(column => column.IsForeignKey),
+                    table.Columns.Any(column => column.IsIndexed),
                     searchText));
             }
         }
@@ -283,8 +293,8 @@ public sealed class SchemaViewModel : ViewModelBase
         IEnumerable<SchemaCatalogEntry> filteredEntries = _catalogEntries;
         if (!string.IsNullOrWhiteSpace(FilterQuery))
         {
-            filteredEntries = filteredEntries.Where(entry =>
-                TextSearch.MatchesContainsAllTokens(FilterQuery, entry.SearchText));
+            SchemaFilterInstruction instruction = SchemaFilterInstruction.Parse(FilterQuery);
+            filteredEntries = filteredEntries.Where(entry => instruction.Matches(entry));
         }
 
         foreach (SchemaCatalogEntry entry in filteredEntries)
@@ -307,6 +317,197 @@ public sealed class SchemaViewModel : ViewModelBase
         RaisePropertyChanged(nameof(ShowLoadingState));
         RaisePropertyChanged(nameof(ShowFilterEmptyState));
         RaisePropertyChanged(nameof(ShowNoTablesState));
+    }
+
+    private sealed class SchemaFilterInstruction
+    {
+        private readonly List<string> _generalTerms = [];
+        private readonly List<string> _schemaTerms = [];
+        private readonly List<string> _tableTerms = [];
+        private readonly List<string> _columnTerms = [];
+
+        private bool _tablesOnly;
+        private bool _viewsOnly;
+        private bool _columnsOnly;
+        private bool _requirePrimaryKey;
+        private bool _requireForeignKey;
+        private bool _requireIndex;
+
+        public static SchemaFilterInstruction Parse(string rawQuery)
+        {
+            var instruction = new SchemaFilterInstruction();
+            string[] tokens = rawQuery
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            foreach (string token in tokens)
+                instruction.ApplyToken(token);
+
+            return instruction;
+        }
+
+        public bool Matches(SchemaCatalogEntry entry)
+        {
+            if (_tablesOnly && entry.IsView)
+                return false;
+
+            if (_viewsOnly && !entry.IsView)
+                return false;
+
+            if (_requirePrimaryKey && !entry.HasPrimaryKeyColumn)
+                return false;
+
+            if (_requireForeignKey && !entry.HasForeignKeyColumn)
+                return false;
+
+            if (_requireIndex && !entry.HasIndexedColumn)
+                return false;
+
+            if (!ContainsAllTerms(entry.SchemaName, _schemaTerms))
+                return false;
+
+            if (!ContainsAllTerms(entry.TableName, _tableTerms))
+                return false;
+
+            if (!ColumnsContainAllTerms(entry.ColumnNames, _columnTerms))
+                return false;
+
+            return _columnsOnly
+                ? ColumnsContainAllTerms(entry.ColumnNames, _generalTerms)
+                : ContainsAllTerms(entry.SearchText, _generalTerms);
+        }
+
+        private void ApplyToken(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                return;
+
+            if (TryApplyKeyValueToken(token))
+                return;
+
+            if (token.StartsWith('@'))
+            {
+                _tablesOnly = true;
+                AddTrimmedValue(_tableTerms, token[1..]);
+                return;
+            }
+
+            if (token.StartsWith('#'))
+            {
+                _viewsOnly = true;
+                AddTrimmedValue(_tableTerms, token[1..]);
+                return;
+            }
+
+            if (token.StartsWith('!'))
+            {
+                _columnsOnly = true;
+                AddTrimmedValue(_columnTerms, token[1..]);
+                return;
+            }
+
+            _generalTerms.Add(token);
+        }
+
+        private bool TryApplyKeyValueToken(string token)
+        {
+            int separatorIndex = token.IndexOf(':');
+            if (separatorIndex <= 0)
+            {
+                if (token.Equals("pk", StringComparison.OrdinalIgnoreCase))
+                {
+                    _requirePrimaryKey = true;
+                    return true;
+                }
+
+                if (token.Equals("fk", StringComparison.OrdinalIgnoreCase))
+                {
+                    _requireForeignKey = true;
+                    return true;
+                }
+
+                if (token.Equals("idx", StringComparison.OrdinalIgnoreCase)
+                    || token.Equals("index", StringComparison.OrdinalIgnoreCase))
+                {
+                    _requireIndex = true;
+                    return true;
+                }
+
+                return false;
+            }
+
+            string prefix = token[..separatorIndex];
+            string value = token[(separatorIndex + 1)..];
+
+            switch (prefix.ToLowerInvariant())
+            {
+                case "schema":
+                case "s":
+                    AddTrimmedValue(_schemaTerms, value);
+                    return true;
+                case "table":
+                case "t":
+                    _tablesOnly = true;
+                    AddTrimmedValue(_tableTerms, value);
+                    return true;
+                case "view":
+                case "v":
+                    _viewsOnly = true;
+                    AddTrimmedValue(_tableTerms, value);
+                    return true;
+                case "col":
+                case "column":
+                case "c":
+                    _columnsOnly = true;
+                    AddTrimmedValue(_columnTerms, value);
+                    return true;
+                case "pk":
+                    _requirePrimaryKey = true;
+                    AddTrimmedValue(_columnTerms, value);
+                    return true;
+                case "fk":
+                    _requireForeignKey = true;
+                    AddTrimmedValue(_columnTerms, value);
+                    return true;
+                case "idx":
+                case "index":
+                    _requireIndex = true;
+                    AddTrimmedValue(_columnTerms, value);
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool ContainsAllTerms(string source, IReadOnlyList<string> terms)
+        {
+            if (terms.Count == 0)
+                return true;
+
+            return terms.All(term =>
+                source.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool ColumnsContainAllTerms(IEnumerable<string> columns, IReadOnlyList<string> terms)
+        {
+            if (terms.Count == 0)
+                return true;
+
+            string[] normalizedColumns = columns
+                .Where(column => !string.IsNullOrWhiteSpace(column))
+                .ToArray();
+
+            return terms.All(term =>
+                normalizedColumns.Any(column =>
+                    column.Contains(term, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private static void AddTrimmedValue(List<string> target, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+
+            target.Add(value.Trim());
+        }
     }
 
     public static PinDataType MapSqlTypeToPinDataType(string? rawType)

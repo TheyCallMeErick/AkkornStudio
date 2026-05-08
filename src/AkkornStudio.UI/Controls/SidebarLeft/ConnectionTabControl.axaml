@@ -147,14 +147,15 @@
                                Margin="0,0,7,0"/>
               <TextBox Classes="sidebar-input"
                        Text="{Binding SchemaFilterQuery}"
-                       Watermark="{Binding [schema.search], Source={x:Static loc:LocalizationService.Instance}}"
+                       Watermark="Buscar schema (@tabela #view !coluna schema:dbo fk: idx: pk:)"
                        Background="Transparent"
                        BorderBrush="Transparent"
                        BorderThickness="1"
                        Foreground="{StaticResource TextPrimaryBrush}"
                        Padding="0"
                        FontSize="{StaticResource FontSizeCaption}"
-                       FontFamily="{StaticResource MonoFont}"/>
+                       FontFamily="{StaticResource MonoFont}"
+                       ToolTip.Tip="@nome tabela | #nome view | !coluna | schema:dbo | fk | pk | idx"/>
             </DockPanel>
           </Border>
 
