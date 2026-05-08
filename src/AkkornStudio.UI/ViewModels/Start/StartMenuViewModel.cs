@@ -23,6 +23,7 @@ public sealed class StartMenuViewModel : ViewModelBase
         CreateNewDiagramCommand = new RelayCommand(() => CreateNewDiagramRequested?.Invoke());
         OpenConnectionsCommand = new RelayCommand(() => OpenConnectionsRequested?.Invoke());
         OpenFromDiskCommand = new RelayCommand(() => OpenFromDiskRequested?.Invoke());
+        OpenSchemaCompareCommand = new RelayCommand(() => OpenSchemaCompareRequested?.Invoke());
         OpenSavedConnectionCommand = new RelayCommand<StartSavedConnectionItem>(item =>
         {
             if (item is null)
@@ -108,6 +109,8 @@ public sealed class StartMenuViewModel : ViewModelBase
 
     public RelayCommand OpenFromDiskCommand { get; }
 
+    public RelayCommand OpenSchemaCompareCommand { get; }
+
     public RelayCommand<StartSavedConnectionItem> OpenSavedConnectionCommand { get; }
 
     public RelayCommand<StartRecentProjectItem> OpenRecentProjectCommand { get; }
@@ -123,6 +126,8 @@ public sealed class StartMenuViewModel : ViewModelBase
     public event Action? OpenConnectionsRequested;
 
     public event Action? OpenFromDiskRequested;
+
+    public event Action? OpenSchemaCompareRequested;
 
     public event Action<StartSavedConnectionItem>? OpenSavedConnectionRequested;
 

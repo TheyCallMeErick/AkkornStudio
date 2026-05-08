@@ -8,6 +8,7 @@ public sealed class WorkspaceDocumentPageContractRegistry : IWorkspaceDocumentPa
         ShowsQueryCanvasPage: true,
         ShowsDdlCanvasPage: false,
         ShowsSqlEditorPage: false,
+        ShowsSchemaComparePage: false,
         ShowsDiagramSidebar: true,
         ShowsSqlEditorSidebar: false,
         ShowsQueryTabs: false,
@@ -17,6 +18,7 @@ public sealed class WorkspaceDocumentPageContractRegistry : IWorkspaceDocumentPa
         ShowsQueryCanvasPage: false,
         ShowsDdlCanvasPage: true,
         ShowsSqlEditorPage: false,
+        ShowsSchemaComparePage: false,
         ShowsDiagramSidebar: true,
         ShowsSqlEditorSidebar: false,
         ShowsQueryTabs: false,
@@ -26,8 +28,19 @@ public sealed class WorkspaceDocumentPageContractRegistry : IWorkspaceDocumentPa
         ShowsQueryCanvasPage: false,
         ShowsDdlCanvasPage: false,
         ShowsSqlEditorPage: true,
+        ShowsSchemaComparePage: false,
         ShowsDiagramSidebar: false,
         ShowsSqlEditorSidebar: true,
+        ShowsQueryTabs: false,
+        CanCollapseSidebars: false);
+
+    private static readonly WorkspaceDocumentPageContract SchemaCompareContract = new(
+        ShowsQueryCanvasPage: false,
+        ShowsDdlCanvasPage: false,
+        ShowsSqlEditorPage: false,
+        ShowsSchemaComparePage: true,
+        ShowsDiagramSidebar: false,
+        ShowsSqlEditorSidebar: false,
         ShowsQueryTabs: false,
         CanCollapseSidebars: false);
 
@@ -35,6 +48,7 @@ public sealed class WorkspaceDocumentPageContractRegistry : IWorkspaceDocumentPa
         ShowsQueryCanvasPage: false,
         ShowsDdlCanvasPage: false,
         ShowsSqlEditorPage: false,
+        ShowsSchemaComparePage: false,
         ShowsDiagramSidebar: false,
         ShowsSqlEditorSidebar: false,
         ShowsQueryTabs: false,
@@ -47,6 +61,7 @@ public sealed class WorkspaceDocumentPageContractRegistry : IWorkspaceDocumentPa
             WorkspaceDocumentType.QueryCanvas => QueryContract,
             WorkspaceDocumentType.DdlCanvas => DdlContract,
             WorkspaceDocumentType.SqlEditor => SqlEditorContract,
+            WorkspaceDocumentType.DdlSchemaCompare => SchemaCompareContract,
             WorkspaceDocumentType.ErDiagram => ErDiagramContract,
             _ => QueryContract,
         };

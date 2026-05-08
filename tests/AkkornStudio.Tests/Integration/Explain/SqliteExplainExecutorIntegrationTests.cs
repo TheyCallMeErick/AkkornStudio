@@ -7,6 +7,30 @@ namespace AkkornStudio.Tests.Integration.Explain;
 
 public class SqliteExplainExecutorIntegrationTests
 {
+    private static void DeleteFileWithRetry(string path, int attempts = 5, int delayMs = 50)
+    {
+        for (int attempt = 1; attempt <= attempts; attempt++)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+                return;
+            }
+            catch (IOException)
+            {
+                if (attempt < attempts)
+                    Thread.Sleep(delayMs);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                if (attempt < attempts)
+                    Thread.Sleep(delayMs);
+            }
+        }
+        // Best-effort cleanup only.
+    }
+
     [Fact]
     [Trait("Category", "Integration")]
     public async Task SqliteExplainExecutor_ReturnsRealPlan_ForLocalDatabase()
@@ -52,8 +76,7 @@ WHERE NOT EXISTS (SELECT 1 FROM explain_orders);";
         }
         finally
         {
-            if (File.Exists(dbPath))
-                File.Delete(dbPath);
+            DeleteFileWithRetry(dbPath);
         }
     }
 }

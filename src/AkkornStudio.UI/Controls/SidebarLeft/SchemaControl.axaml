@@ -184,7 +184,7 @@
                             </Border>
                           </ToolTip.Tip>
                           <DockPanel LastChildFill="True">
-                            <Button DockPanel.Dock="Right" Command="{Binding AddNodeCommand}" IsVisible="{Binding AddNodeCommand, Converter={x:Static ObjectConverters.IsNotNull}}" Classes="success compact" Margin="8,0,0,0" Opacity="0.9">
+                            <Button DockPanel.Dock="Right" Command="{Binding AddNodeCommand}" IsVisible="{Binding AddNodeCommand, Converter={x:Static ObjectConverters.IsNotNull}}" Classes="success" Margin="8,0,0,0" Opacity="0.9">
                               <mi:MaterialIcon Kind="Plus" Width="14" Height="14"/>
                             </Button>
                             <ToggleButton DockPanel.Dock="Right" IsChecked="{Binding IsExpanded}" IsVisible="{Binding IsExpandable}" Background="Transparent" Foreground="{StaticResource TextSecondaryBrush}" Padding="4,2" FontSize="{StaticResource FontSizeCaption}" CornerRadius="{StaticResource RadiusSM}" BorderThickness="0">

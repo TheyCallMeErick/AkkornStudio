@@ -156,6 +156,47 @@ public class ConnectionManagerUxStateTests
     }
 
     [Fact]
+    public void NewProfileFlow_RequiresSavedProfileBeforeConnect()
+    {
+        var vm = new ConnectionManagerViewModel();
+
+        vm.OpenNewProfileCommand.Execute(null);
+
+        Assert.False(vm.ConnectCommand.CanExecute(null));
+        Assert.False(vm.CanShowConnectAction);
+        Assert.False(vm.CanShowDisconnectAction);
+    }
+
+    [Fact]
+    public void SavedProfileFlow_ShowsConnectOrDisconnectBasedOnActiveSelection()
+    {
+        var vm = new ConnectionManagerViewModel();
+        var profile = new ConnectionProfile
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = "Saved",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db",
+            Username = "u",
+            Password = "p",
+        };
+
+        vm.Profiles.Add(profile);
+        vm.SelectedProfile = profile;
+
+        Assert.True(vm.ConnectCommand.CanExecute(null));
+        Assert.True(vm.CanShowConnectAction);
+        Assert.False(vm.CanShowDisconnectAction);
+
+        vm.ActiveProfileId = profile.Id;
+
+        Assert.False(vm.CanShowConnectAction);
+        Assert.True(vm.CanShowDisconnectAction);
+    }
+
+    [Fact]
     public async Task LoadDatabaseTablesAsync_WithoutSearchMenu_ReportsFailureAndKeepsDialogVisible()
     {
         var vm = new ConnectionManagerViewModel

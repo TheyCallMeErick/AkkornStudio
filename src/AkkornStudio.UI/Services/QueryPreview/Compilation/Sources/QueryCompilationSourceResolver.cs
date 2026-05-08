@@ -100,7 +100,7 @@ internal sealed class QueryCompilationSourceResolver(
             : tableNode.Title.Trim();
 
         string? alias = ResolveExplicitTableAlias(tableNode);
-        return string.IsNullOrWhiteSpace(alias) ? source : $"{source} {alias}";
+        return string.IsNullOrWhiteSpace(alias) ? source : $"{source} AS {alias}";
     }
 
     private static string? ResolveExplicitTableAlias(NodeViewModel tableNode)

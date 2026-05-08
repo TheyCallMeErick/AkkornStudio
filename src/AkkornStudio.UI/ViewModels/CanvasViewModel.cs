@@ -1070,6 +1070,13 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
             DefaultWireCurveMode = settings.DefaultWireCurveMode,
         };
 
+        // Keep the property panel in sync with project-level settings so
+        // validation and auto-fix entry points read the same convention state.
+        PropertyPanel.SelectedNamingConvention = _projectConventionSettings.NamingConvention;
+        PropertyPanel.EnforceAliasNaming = _projectConventionSettings.EnforceAliasNaming;
+        PropertyPanel.WarnOnReservedKeywords = _projectConventionSettings.WarnOnReservedKeywords;
+        PropertyPanel.MaxAliasLength = _projectConventionSettings.MaxAliasLength.ToString();
+
         if (Enum.TryParse(_projectConventionSettings.DefaultWireCurveMode, ignoreCase: true, out CanvasWireCurveMode defaultWireCurveMode))
         {
             WireCurveMode = defaultWireCurveMode;

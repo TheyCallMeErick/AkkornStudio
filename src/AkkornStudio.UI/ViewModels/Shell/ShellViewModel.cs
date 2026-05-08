@@ -44,6 +44,7 @@ public sealed class ShellViewModel : ViewModelBase
         Ddl,
         SqlEditor,
         ErDiagram,
+        DdlSchemaCompare,
     }
 
     public enum ESettingsSection
@@ -94,6 +95,7 @@ public sealed class ShellViewModel : ViewModelBase
     private Guid? _queryDocumentId;
     private Guid? _ddlDocumentId;
     private Guid? _erDiagramDocumentId;
+    private Guid? _ddlSchemaCompareDocumentId;
     private Guid? _connectionModalOwnerDocumentId;
     private Guid? _lastSyncedWorkspaceDocumentId;
     private ProjectConventionSettings _projectConventionSettings = AppSettingsStore.LoadProjectConventionSettings();
@@ -216,6 +218,8 @@ public sealed class ShellViewModel : ViewModelBase
 
     public bool IsErDiagramDocumentPageActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.ErDiagram;
 
+    public bool IsDdlSchemaCompareDocumentPageActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.DdlSchemaCompare;
+
     public LeftSidebarViewModel LeftSidebar { get; }
 
     public RightSidebarViewModel RightSidebar { get; }
@@ -259,6 +263,7 @@ public sealed class ShellViewModel : ViewModelBase
         WorkspaceDocumentType.DdlCanvas => AppMode.Ddl,
         WorkspaceDocumentType.SqlEditor => AppMode.SqlEditor,
         WorkspaceDocumentType.ErDiagram => AppMode.ErDiagram,
+        WorkspaceDocumentType.DdlSchemaCompare => AppMode.DdlSchemaCompare,
         _ => AppMode.Query,
     };
 
@@ -269,6 +274,8 @@ public sealed class ShellViewModel : ViewModelBase
     public bool IsSqlEditorModeActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.SqlEditor;
 
     public bool IsErDiagramModeActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.ErDiagram;
+
+    public bool IsDdlSchemaCompareModeActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.DdlSchemaCompare;
 
     public bool IsDiagramModeActive => IsDiagramDocumentPageActive;
 
@@ -362,6 +369,11 @@ public sealed class ShellViewModel : ViewModelBase
     public ErCanvasViewModel? ActiveErDiagramDocument =>
         ActiveWorkspaceDocumentType == WorkspaceDocumentType.ErDiagram
             ? ActiveWorkspaceDocument?.DocumentViewModel as ErCanvasViewModel
+            : null;
+
+    public DdlSchemaCompareWorkspaceViewModel? ActiveDdlSchemaCompareDocument =>
+        ActiveWorkspaceDocumentType == WorkspaceDocumentType.DdlSchemaCompare
+            ? ActiveWorkspaceDocument?.DocumentViewModel as DdlSchemaCompareWorkspaceViewModel
             : null;
 
     public CanvasViewModel? DdlCanvas
@@ -548,6 +560,7 @@ public sealed class ShellViewModel : ViewModelBase
             WorkspaceDocumentType.DdlCanvas => OpenNewDdlDocument(),
             WorkspaceDocumentType.SqlEditor => OpenNewSqlEditorDocument(),
             WorkspaceDocumentType.ErDiagram => OpenNewErDiagramDocument(),
+            WorkspaceDocumentType.DdlSchemaCompare => OpenNewDdlSchemaCompareDocument(),
             _ => OpenNewQueryDocument(),
         };
     }
@@ -624,6 +637,7 @@ public sealed class ShellViewModel : ViewModelBase
                 WorkspaceDocumentType.DdlCanvas => BuildCanvasDocument(savedDocument, isDdl: true),
                 WorkspaceDocumentType.SqlEditor => BuildSqlEditorDocument(),
                 WorkspaceDocumentType.ErDiagram => BuildErDiagramDocument(),
+                WorkspaceDocumentType.DdlSchemaCompare => BuildDdlSchemaCompareDocument(),
                 _ => BuildCanvasDocument(savedDocument, isDdl: false),
             };
 
@@ -657,6 +671,9 @@ public sealed class ShellViewModel : ViewModelBase
             ?.Descriptor.DocumentId;
         _erDiagramDocumentId = _workspaceRouter.OpenDocuments
             .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.ErDiagram)
+            ?.Descriptor.DocumentId;
+        _ddlSchemaCompareDocumentId = _workspaceRouter.OpenDocuments
+            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.DdlSchemaCompare)
             ?.Descriptor.DocumentId;
 
         Canvas = _workspaceRouter.OpenDocuments
@@ -984,6 +1001,7 @@ public sealed class ShellViewModel : ViewModelBase
             WorkspaceDocumentType.QueryCanvas => ActiveQueryCanvasDocument?.ConnectionManager
                 ?? ResolveKnownQueryCanvas()?.ConnectionManager,
             WorkspaceDocumentType.SqlEditor => ResolveSqlEditorConnectionManager(),
+            WorkspaceDocumentType.DdlSchemaCompare => ResolveSqlEditorConnectionManager(),
             _ => ActiveCanvas?.ConnectionManager ?? ResolveSharedConnectionManager(),
         };
 
@@ -1071,6 +1089,7 @@ public sealed class ShellViewModel : ViewModelBase
             WorkspaceDocumentType.DdlCanvas => _ddlDocumentId.HasValue && _workspaceRouter.TryActivate(_ddlDocumentId.Value),
             WorkspaceDocumentType.SqlEditor => TryActivateLastDocumentByType(WorkspaceDocumentType.SqlEditor),
             WorkspaceDocumentType.ErDiagram => TryActivateLastDocumentByType(WorkspaceDocumentType.ErDiagram),
+            WorkspaceDocumentType.DdlSchemaCompare => TryActivateLastDocumentByType(WorkspaceDocumentType.DdlSchemaCompare),
             _ => false,
         };
 
@@ -1119,6 +1138,7 @@ public sealed class ShellViewModel : ViewModelBase
                 break;
             case WorkspaceDocumentType.SqlEditor:
             case WorkspaceDocumentType.ErDiagram:
+            case WorkspaceDocumentType.DdlSchemaCompare:
                 HideDiagramOnlyOverlays();
                 break;
         }
@@ -1148,14 +1168,17 @@ public sealed class ShellViewModel : ViewModelBase
         RaisePropertyChanged(nameof(ActiveDdlCanvasDocument));
         RaisePropertyChanged(nameof(ActiveSqlEditorDocument));
         RaisePropertyChanged(nameof(ActiveErDiagramDocument));
+        RaisePropertyChanged(nameof(ActiveDdlSchemaCompareDocument));
         RaisePropertyChanged(nameof(IsQueryDocumentPageActive));
         RaisePropertyChanged(nameof(IsDdlDocumentPageActive));
         RaisePropertyChanged(nameof(IsSqlEditorDocumentPageActive));
         RaisePropertyChanged(nameof(IsErDiagramDocumentPageActive));
+        RaisePropertyChanged(nameof(IsDdlSchemaCompareDocumentPageActive));
         RaisePropertyChanged(nameof(IsQueryModeActive));
         RaisePropertyChanged(nameof(IsDdlModeActive));
         RaisePropertyChanged(nameof(IsSqlEditorModeActive));
         RaisePropertyChanged(nameof(IsErDiagramModeActive));
+        RaisePropertyChanged(nameof(IsDdlSchemaCompareModeActive));
         RaisePropertyChanged(nameof(IsDiagramDocumentPageActive));
         RaisePropertyChanged(nameof(IsDiagramModeActive));
         RaisePropertyChanged(nameof(IsDiagramOverlayLayerVisible));
@@ -1313,6 +1336,21 @@ public sealed class ShellViewModel : ViewModelBase
         return documentId;
     }
 
+    private Guid OpenNewDdlSchemaCompareDocument()
+    {
+        int nextOrdinal = _workspaceRouter.OpenDocuments.Count(document =>
+            document.Descriptor.DocumentType == WorkspaceDocumentType.DdlSchemaCompare) + 1;
+        string title = nextOrdinal == 1 ? "Table Compare" : $"Table Compare {nextOrdinal}";
+        DdlSchemaCompareWorkspaceViewModel compareDocument = BuildDdlSchemaCompareDocument();
+        Guid documentId = Guid.NewGuid();
+        RegisterOrUpdateDocument(documentId, WorkspaceDocumentType.DdlSchemaCompare, title, compareDocument, activate: true);
+        _ddlSchemaCompareDocumentId ??= documentId;
+        SyncStateFromActiveDocument();
+        RaiseActiveDocumentPropertiesChanged();
+        SyncExtractedPanels();
+        return documentId;
+    }
+
     private void RegisterOrUpdateDocument(
         Guid documentId,
         WorkspaceDocumentType documentType,
@@ -1335,6 +1373,11 @@ public sealed class ShellViewModel : ViewModelBase
             PageState: null), activate);
 
         RaiseActiveDocumentPropertiesChanged();
+    }
+
+    private DdlSchemaCompareWorkspaceViewModel BuildDdlSchemaCompareDocument()
+    {
+        return new DdlSchemaCompareWorkspaceViewModel(_sqlEditorConnectionManager);
     }
 
     private void LogShellConnectionOverlay(string message)

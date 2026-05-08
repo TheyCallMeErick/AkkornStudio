@@ -347,7 +347,7 @@
                      VerticalAlignment="Center"/>
           <Button Grid.Column="1"
                   Name="ExplainBtn"
-                  Classes="sql-cta explain compact"
+                  Classes="sql-cta explain"
                   Margin="0,0,8,0"
                   ToolTip.Tip="{Binding [tooltip.openExplainPlan], Source={x:Static loc:LocalizationService.Instance}}"
                   IsEnabled="{Binding HasSql}"
@@ -360,7 +360,7 @@
           </Button>
           <Button Grid.Column="2"
                   Name="BenchmarkBtn"
-                  Classes="sql-cta benchmark compact"
+                  Classes="sql-cta benchmark"
                   ToolTip.Tip="{Binding [tooltip.openBenchmark], Source={x:Static loc:LocalizationService.Instance}}"
                   IsEnabled="{Binding HasSql}"
                   AutomationProperties.Name="{Binding [tooltip.openBenchmark], Source={x:Static loc:LocalizationService.Instance}}">

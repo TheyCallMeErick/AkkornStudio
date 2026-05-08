@@ -274,6 +274,7 @@ public partial class MainWindow : Window
         CurrentShell.StartMenu.CreateNewDiagramRequested += OnStartCreateNewDiagramRequested;
         CurrentShell.StartMenu.OpenConnectionsRequested += OnStartOpenConnectionsRequested;
         CurrentShell.StartMenu.OpenFromDiskRequested += OnStartOpenFromDiskRequested;
+        CurrentShell.StartMenu.OpenSchemaCompareRequested += OnStartOpenSchemaCompareRequested;
         CurrentShell.StartMenu.OpenSavedConnectionRequested += OnStartOpenSavedConnectionRequested;
         CurrentShell.StartMenu.OpenRecentProjectRequested += OnStartOpenRecentProjectRequested;
         CurrentShell.StartMenu.OpenTemplateRequested += OnStartOpenTemplateRequested;
@@ -301,6 +302,14 @@ public partial class MainWindow : Window
     private void OnStartOpenConnectionsRequested()
     {
         _globalModalManager.RequestConnectionManager(beginNewProfile: true, keepStartVisible: true);
+    }
+
+    private void OnStartOpenSchemaCompareRequested()
+    {
+        EnterCanvasMode();
+        CurrentShell.OpenNewDocument(WorkspaceDocumentType.DdlSchemaCompare);
+        CurrentShell.ActivateDocument(WorkspaceDocumentType.DdlSchemaCompare);
+        SyncModeToggleState();
     }
 
 
@@ -360,6 +369,8 @@ public partial class MainWindow : Window
             WorkspaceDocumentType.DdlCanvas => GetDdlCanvasForInteraction().ConnectionManager,
             WorkspaceDocumentType.QueryCanvas => GetQueryCanvasForInteraction().ConnectionManager,
             WorkspaceDocumentType.SqlEditor => ResolveDiagramCanvasForConnectionSidebar().ConnectionManager,
+            WorkspaceDocumentType.DdlSchemaCompare => CurrentShell.ActiveConnectionManager
+                ?? ResolveDiagramCanvasForConnectionSidebar().ConnectionManager,
             _ => ResolveDiagramCanvasForConnectionSidebar().ConnectionManager,
         };
     }
@@ -373,6 +384,7 @@ public partial class MainWindow : Window
         {
             WorkspaceDocumentType.DdlCanvas => GetDdlCanvasForInteraction(),
             WorkspaceDocumentType.QueryCanvas => GetQueryCanvasForInteraction(),
+            WorkspaceDocumentType.DdlSchemaCompare => CurrentShell.DdlCanvas ?? CurrentShell.Canvas ?? GetQueryCanvasForInteraction(),
             _ => CurrentShell.DdlCanvas ?? CurrentShell.Canvas ?? GetQueryCanvasForInteraction(),
         };
     }
@@ -820,6 +832,7 @@ public partial class MainWindow : Window
             WorkspaceDocumentType.DdlCanvas => GetDdlCanvasForInteraction().ActiveConnectionConfig,
             WorkspaceDocumentType.QueryCanvas => GetQueryCanvasForInteraction().ActiveConnectionConfig,
             WorkspaceDocumentType.SqlEditor => ResolveDiagramCanvasForConnectionSidebar().ActiveConnectionConfig,
+            WorkspaceDocumentType.DdlSchemaCompare => null,
             _ => GetQueryCanvasForInteraction().ActiveConnectionConfig
                 ?? CurrentShell.DdlCanvas?.ActiveConnectionConfig,
         };
@@ -832,6 +845,7 @@ public partial class MainWindow : Window
             WorkspaceDocumentType.DdlCanvas => GetDdlCanvasForInteraction().DatabaseMetadata,
             WorkspaceDocumentType.QueryCanvas => GetQueryCanvasForInteraction().DatabaseMetadata,
             WorkspaceDocumentType.SqlEditor => ResolveDiagramCanvasForConnectionSidebar().DatabaseMetadata,
+            WorkspaceDocumentType.DdlSchemaCompare => null,
             _ => GetQueryCanvasForInteraction().DatabaseMetadata
                 ?? CurrentShell.DdlCanvas?.DatabaseMetadata,
         };

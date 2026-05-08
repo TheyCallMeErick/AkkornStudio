@@ -15,13 +15,12 @@
       <Setter Property="CornerRadius" Value="{StaticResource RadiusMD}"/>
     </Style>
 
-    <Style Selector="Border.step-pill">
+    <Style Selector="Border.step-card">
       <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
       <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
-      <Setter Property="Padding" Value="10,6"/>
-      <Setter Property="Margin" Value="0,0,8,0"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusMD}"/>
+      <Setter Property="Padding" Value="10"/>
     </Style>
 
     <Style Selector="TextBlock.step-state">
@@ -41,7 +40,7 @@
     <Border Grid.Row="0"
             Classes="wizard-shell"
             Padding="12">
-      <StackPanel Spacing="10">
+      <StackPanel Spacing="12">
         <Grid ColumnDefinitions="Auto,*">
           <mi:MaterialIcon Kind="TableSync"
                            Width="18"
@@ -53,38 +52,41 @@
                       Spacing="2">
             <TextBlock Text="{Binding [ddl.compare.wizard.title], Source={x:Static loc:LocalizationService.Instance}}"
                        Classes="section-title"/>
-            <TextBlock Text="{Binding DirectionImpactText}"
-                       Foreground="{StaticResource TextSecondaryBrush}"
-                       TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding [ddl.compare.direction.defaultImpact], Source={x:Static loc:LocalizationService.Instance}}"
+                       Foreground="{StaticResource TextSecondaryBrush}"/>
           </StackPanel>
         </Grid>
 
-        <StackPanel Orientation="Horizontal">
-          <Border Classes="step-pill">
-            <StackPanel Spacing="2">
+        <Grid ColumnDefinitions="*,*,*,*">
+          <Border Grid.Column="0" Classes="step-card">
+            <StackPanel Spacing="3">
               <TextBlock Text="{Binding [ddl.compare.step.selection], Source={x:Static loc:LocalizationService.Instance}}" FontWeight="{StaticResource FontWeightStrong}"/>
+              <TextBlock Text="{Binding SelectionStepDescription}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{StaticResource FontSizeCaption}"/>
               <TextBlock Classes="step-state" Text="{Binding SelectionStepState}"/>
             </StackPanel>
           </Border>
-          <Border Classes="step-pill">
-            <StackPanel Spacing="2">
+          <Border Grid.Column="1" Classes="step-card">
+            <StackPanel Spacing="3">
               <TextBlock Text="{Binding [ddl.compare.step.review], Source={x:Static loc:LocalizationService.Instance}}" FontWeight="{StaticResource FontWeightStrong}"/>
+              <TextBlock Text="{Binding ReviewStepDescription}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{StaticResource FontSizeCaption}"/>
               <TextBlock Classes="step-state" Text="{Binding ReviewStepState}"/>
             </StackPanel>
           </Border>
-          <Border Classes="step-pill">
-            <StackPanel Spacing="2">
+          <Border Grid.Column="2" Classes="step-card">
+            <StackPanel Spacing="3">
               <TextBlock Text="{Binding [ddl.compare.step.sqlOptions], Source={x:Static loc:LocalizationService.Instance}}" FontWeight="{StaticResource FontWeightStrong}"/>
+              <TextBlock Text="{Binding SqlOptionsStepDescription}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{StaticResource FontSizeCaption}"/>
               <TextBlock Classes="step-state" Text="{Binding SqlOptionsStepState}"/>
             </StackPanel>
           </Border>
-          <Border Classes="step-pill">
-            <StackPanel Spacing="2">
+          <Border Grid.Column="3" Classes="step-card">
+            <StackPanel Spacing="3">
               <TextBlock Text="{Binding [ddl.compare.step.preview], Source={x:Static loc:LocalizationService.Instance}}" FontWeight="{StaticResource FontWeightStrong}"/>
+              <TextBlock Text="{Binding SqlPreviewStepDescription}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{StaticResource FontSizeCaption}"/>
               <TextBlock Classes="step-state" Text="{Binding SqlPreviewStepState}"/>
             </StackPanel>
           </Border>
-        </StackPanel>
+        </Grid>
       </StackPanel>
     </Border>
 
@@ -98,13 +100,33 @@
                     Padding="12">
         <StackPanel Spacing="10">
 
+          <Border Classes="surface-card" Padding="10">
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding [ddl.compare.direction.summary.title], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-title"/>
+              <Grid ColumnDefinitions="*,Auto,*">
+                <StackPanel Grid.Column="0" Spacing="2">
+                  <TextBlock Text="{Binding [ddl.compare.direction.sourceRef], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/>
+                  <TextBlock Text="{Binding SourceEndpointLabel}" TextWrapping="Wrap"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                  <mi:MaterialIcon Kind="ArrowRightBold" Width="16" Height="16" Foreground="{StaticResource AccentPrimaryBrush}" HorizontalAlignment="Center"/>
+                  <TextBlock Text="{Binding DirectionArrowSummary}" Classes="step-state"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="2">
+                  <TextBlock Text="{Binding [ddl.compare.direction.targetAltered], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/>
+                  <TextBlock Text="{Binding TargetEndpointLabel}" TextWrapping="Wrap"/>
+                </StackPanel>
+              </Grid>
+              <TextBlock Text="{Binding DirectionImpactText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
           <StackPanel IsVisible="{Binding IsSelectionStep}" Spacing="10">
             <Border Classes="callout-subtle" Padding="8" IsVisible="{Binding IsTargetProductionLike}">
               <TextBlock Text="{Binding TargetProductionWarning}" Foreground="{StaticResource StatusWarningBrush}" TextWrapping="Wrap"/>
             </Border>
 
-            <Grid ColumnDefinitions="*,*">
-              <Border Grid.Column="0" Classes="surface-card" Padding="10" Margin="0,0,6,0">
+            <Grid ColumnDefinitions="*,Auto,*">
+              <Border Grid.Column="0" Classes="surface-card" Padding="10">
                 <StackPanel Spacing="8">
                   <TextBlock Text="{Binding [ddl.compare.selection.source], Source={x:Static loc:LocalizationService.Instance}}" FontWeight="{StaticResource FontWeightTitle}"/>
                   <TextBlock Classes="section-label" Text="{Binding [ddl.compare.field.connection], Source={x:Static loc:LocalizationService.Instance}}"/>
@@ -125,7 +147,21 @@
                 </StackPanel>
               </Border>
 
-              <Border Grid.Column="1" Classes="surface-card" Padding="10" Margin="6,0,0,0">
+              <StackPanel Grid.Column="1"
+                          VerticalAlignment="Center"
+                          HorizontalAlignment="Center"
+                          Spacing="4">
+                <mi:MaterialIcon Kind="SwapHorizontal"
+                                 Width="18"
+                                 Height="18"
+                                 Foreground="{StaticResource AccentPrimaryBrush}"
+                                 HorizontalAlignment="Center"/>
+                <Button Classes="secondary compact"
+                        Content="{Binding [ddl.compare.footer.selection.swap], Source={x:Static loc:LocalizationService.Instance}}"
+                        Command="{Binding SwapSourceTargetCommand}"/>
+              </StackPanel>
+
+              <Border Grid.Column="2" Classes="surface-card" Padding="10">
                 <StackPanel Spacing="8">
                   <TextBlock Text="{Binding [ddl.compare.selection.target], Source={x:Static loc:LocalizationService.Instance}}" FontWeight="{StaticResource FontWeightTitle}"/>
                   <TextBlock Classes="section-label" Text="{Binding [ddl.compare.field.connection], Source={x:Static loc:LocalizationService.Instance}}"/>
@@ -156,30 +192,48 @@
             <TextBlock Text="{Binding ReviewMessage}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
 
             <Grid ColumnDefinitions="*,*,*,*,*,*">
-              <Border Grid.Column="0" Classes="surface-card" Padding="8" Margin="0,0,6,0"><StackPanel><TextBlock Text="{Binding [ddl.compare.review.summary.total], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding TotalDifferenceCount}"/></StackPanel></Border>
-              <Border Grid.Column="1" Classes="surface-card" Padding="8" Margin="0,0,6,0"><StackPanel><TextBlock Text="{Binding [ddl.compare.review.summary.high], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding HighRiskCount}" Foreground="{StaticResource StatusErrorBrush}"/></StackPanel></Border>
-              <Border Grid.Column="2" Classes="surface-card" Padding="8" Margin="0,0,6,0"><StackPanel><TextBlock Text="{Binding [ddl.compare.review.summary.medium], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding MediumRiskCount}" Foreground="{StaticResource StatusWarningBrush}"/></StackPanel></Border>
-              <Border Grid.Column="3" Classes="surface-card" Padding="8" Margin="0,0,6,0"><StackPanel><TextBlock Text="{Binding [ddl.compare.review.summary.low], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding LowRiskCount}"/></StackPanel></Border>
-              <Border Grid.Column="4" Classes="surface-card" Padding="8" Margin="0,0,6,0"><StackPanel><TextBlock Text="{Binding [ddl.compare.review.summary.info], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding InformativeCount}"/></StackPanel></Border>
-              <Border Grid.Column="5" Classes="surface-card" Padding="8"><StackPanel><TextBlock Text="{Binding [ddl.compare.review.summary.destructive], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding DestructiveCount}" Foreground="{StaticResource StatusErrorBrush}"/></StackPanel></Border>
+              <Border Grid.Column="0" Classes="surface-card" Padding="8"><StackPanel Spacing="2"><TextBlock Text="{Binding [ddl.compare.review.summary.total], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding TotalDifferenceCount}"/><TextBlock Text="{Binding [ddl.compare.review.summary.total.help], Source={x:Static loc:LocalizationService.Instance}}" Classes="step-state"/></StackPanel></Border>
+              <Border Grid.Column="1" Classes="surface-card" Padding="8"><StackPanel Spacing="2"><TextBlock Text="{Binding [ddl.compare.review.summary.included], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding IncludedCount}" Foreground="{StaticResource AccentPrimaryBrush}"/><TextBlock Text="{Binding [ddl.compare.review.summary.included.help], Source={x:Static loc:LocalizationService.Instance}}" Classes="step-state"/></StackPanel></Border>
+              <Border Grid.Column="2" Classes="surface-card" Padding="8"><StackPanel Spacing="2"><TextBlock Text="{Binding [ddl.compare.review.summary.high], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding HighRiskCount}" Foreground="{StaticResource StatusErrorBrush}"/><TextBlock Text="{Binding [ddl.compare.review.summary.high.help], Source={x:Static loc:LocalizationService.Instance}}" Classes="step-state"/></StackPanel></Border>
+              <Border Grid.Column="3" Classes="surface-card" Padding="8"><StackPanel Spacing="2"><TextBlock Text="{Binding [ddl.compare.review.summary.destructive], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding DestructiveCount}" Foreground="{StaticResource StatusWarningBrush}"/><TextBlock Text="{Binding [ddl.compare.review.summary.destructive.help], Source={x:Static loc:LocalizationService.Instance}}" Classes="step-state"/></StackPanel></Border>
+              <Border Grid.Column="4" Classes="surface-card" Padding="8"><StackPanel Spacing="2"><TextBlock Text="{Binding [ddl.compare.review.summary.ignored], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding IgnoredCount}"/><TextBlock Text="{Binding [ddl.compare.review.summary.ignored.help], Source={x:Static loc:LocalizationService.Instance}}" Classes="step-state"/></StackPanel></Border>
+              <Border Grid.Column="5" Classes="surface-card" Padding="8"><StackPanel Spacing="2"><TextBlock Text="{Binding [ddl.compare.review.summary.reviewed], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/><TextBlock Text="{Binding ReviewedCount}"/><TextBlock Text="{Binding [ddl.compare.review.summary.reviewed.help], Source={x:Static loc:LocalizationService.Instance}}" Classes="step-state"/></StackPanel></Border>
             </Grid>
 
-            <Grid ColumnDefinitions="2*,Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto">
-              <TextBox Grid.Column="0" Grid.Row="0" Classes="field" Watermark="{Binding [ddl.compare.review.search], Source={x:Static loc:LocalizationService.Instance}}" Text="{Binding DifferenceSearchText}"/>
-              <ComboBox Grid.Column="1" Grid.Row="0" Width="180" ItemsSource="{Binding CategoryFilterOptions}" SelectedItem="{Binding SelectedCategoryFilter}"/>
-              <ComboBox Grid.Column="2" Grid.Row="0" Width="140" ItemsSource="{Binding SeverityFilterOptions}" SelectedItem="{Binding SelectedSeverityFilter}"/>
-              <ComboBox Grid.Column="3" Grid.Row="0" Width="160" ItemsSource="{Binding ActionFilterOptions}" SelectedItem="{Binding SelectedActionFilter}"/>
-              <ComboBox Grid.Column="4" Grid.Row="0" Width="120" ItemsSource="{Binding StatusFilterOptions}" SelectedItem="{Binding SelectedStatusFilter}"/>
+            <Border Classes="surface-card" Padding="10">
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="2.4*,1*,1*,1.2*,1*">
+                  <StackPanel Grid.Column="0" Spacing="2">
+                    <TextBlock Text="{Binding [ddl.compare.review.search], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/>
+                    <TextBox Classes="field" Text="{Binding DifferenceSearchText}"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="{Binding [ddl.compare.review.filter.category], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/>
+                    <ComboBox ItemsSource="{Binding CategoryFilterOptions}" SelectedItem="{Binding SelectedCategoryFilter}"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Spacing="2">
+                    <TextBlock Text="{Binding [ddl.compare.review.filter.severity], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/>
+                    <ComboBox ItemsSource="{Binding SeverityFilterOptions}" SelectedItem="{Binding SelectedSeverityFilter}"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="3" Spacing="2">
+                    <TextBlock Text="{Binding [ddl.compare.review.filter.action], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/>
+                    <ComboBox ItemsSource="{Binding ActionFilterOptions}" SelectedItem="{Binding SelectedActionFilter}"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="4" Spacing="2">
+                    <TextBlock Text="{Binding [ddl.compare.review.filter.status], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/>
+                    <ComboBox ItemsSource="{Binding StatusFilterOptions}" SelectedItem="{Binding SelectedStatusFilter}"/>
+                  </StackPanel>
+                </Grid>
 
-              <StackPanel Grid.Column="0" Grid.Row="1" Grid.ColumnSpan="5" Orientation="Horizontal" Spacing="6">
-                <Button Classes="secondary compact" Command="{Binding SelectSafeDifferencesCommand}" Content="{Binding [ddl.compare.review.action.selectSafe], Source={x:Static loc:LocalizationService.Instance}}"/>
-                <Button Classes="secondary compact" Command="{Binding SelectAllDifferencesCommand}" Content="{Binding [ddl.compare.review.action.selectAll], Source={x:Static loc:LocalizationService.Instance}}"/>
-                <Button Classes="secondary compact" Command="{Binding ClearDifferenceSelectionCommand}" Content="{Binding [ddl.compare.review.action.clear], Source={x:Static loc:LocalizationService.Instance}}"/>
-                <Button Classes="secondary compact" Command="{Binding IgnoreDestructiveDifferencesCommand}" Content="{Binding [ddl.compare.review.action.ignoreDestructive], Source={x:Static loc:LocalizationService.Instance}}"/>
-                <Button Classes="secondary compact" Command="{Binding ReviewHighRiskCommand}" Content="{Binding [ddl.compare.review.action.reviewHighRisk], Source={x:Static loc:LocalizationService.Instance}}"/>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Button Classes="secondary compact" Command="{Binding SelectSafeDifferencesCommand}" Content="{Binding [ddl.compare.review.action.selectSafe], Source={x:Static loc:LocalizationService.Instance}}"/>
+                  <Button Classes="secondary compact" Command="{Binding ClearDifferenceSelectionCommand}" Content="{Binding [ddl.compare.review.action.clear], Source={x:Static loc:LocalizationService.Instance}}"/>
+                  <Button Classes="secondary compact" Command="{Binding IgnoreDestructiveDifferencesCommand}" Content="{Binding [ddl.compare.review.action.ignoreDestructive], Source={x:Static loc:LocalizationService.Instance}}"/>
+                  <Button Classes="secondary compact" Command="{Binding ReviewHighRiskCommand}" Content="{Binding [ddl.compare.review.action.reviewHighRisk], Source={x:Static loc:LocalizationService.Instance}}"/>
+                  <Button Classes="ghost compact" Command="{Binding SelectAllDifferencesCommand}" Content="{Binding [ddl.compare.review.action.selectAll], Source={x:Static loc:LocalizationService.Instance}}"/>
+                </StackPanel>
               </StackPanel>
-            </Grid>
-
+            </Border>
             <Grid ColumnDefinitions="2.2*,1*">
               <Border Grid.Column="0" Classes="surface-card" Padding="8">
                 <Grid RowDefinitions="*,Auto">
@@ -188,14 +242,12 @@
                             SelectedItem="{Binding SelectedDifference, Mode=TwoWay}"
                             IsReadOnly="False"
                             AutoGenerateColumns="False"
-                            MinHeight="280">
+                            MinHeight="320">
                     <DataGrid.Columns>
                       <DataGridCheckBoxColumn Header="{Binding [ddl.compare.review.grid.include], Source={x:Static loc:LocalizationService.Instance}}" Binding="{Binding IsIncluded}" Width="70"/>
-                      <DataGridTextColumn Header="{Binding [ddl.compare.review.grid.category], Source={x:Static loc:LocalizationService.Instance}}" Binding="{Binding Category}" Width="180"/>
-                      <DataGridTextColumn Header="{Binding [ddl.compare.review.grid.item], Source={x:Static loc:LocalizationService.Instance}}" Binding="{Binding Item}" Width="150"/>
-                      <DataGridTextColumn Header="{Binding [ddl.compare.review.grid.source], Source={x:Static loc:LocalizationService.Instance}}" Binding="{Binding SourceValue}" Width="*"/>
-                      <DataGridTextColumn Header="{Binding [ddl.compare.review.grid.target], Source={x:Static loc:LocalizationService.Instance}}" Binding="{Binding TargetValue}" Width="*"/>
                       <DataGridTextColumn Header="{Binding [ddl.compare.review.grid.severity], Source={x:Static loc:LocalizationService.Instance}}" Binding="{Binding SeverityLabel}" Width="95"/>
+                      <DataGridTextColumn Header="{Binding [ddl.compare.review.grid.category], Source={x:Static loc:LocalizationService.Instance}}" Binding="{Binding Category}" Width="170"/>
+                      <DataGridTextColumn Header="{Binding [ddl.compare.review.grid.item], Source={x:Static loc:LocalizationService.Instance}}" Binding="{Binding Item}" Width="180"/>
                       <DataGridTextColumn Header="{Binding [ddl.compare.review.grid.action], Source={x:Static loc:LocalizationService.Instance}}" Binding="{Binding SuggestedAction}" Width="160"/>
                       <DataGridTextColumn Header="{Binding [ddl.compare.review.grid.status], Source={x:Static loc:LocalizationService.Instance}}" Binding="{Binding StatusLabel}" Width="100"/>
                     </DataGrid.Columns>
@@ -210,23 +262,35 @@
               </Border>
 
               <Border Grid.Column="1" Classes="surface-card" Padding="10">
-                <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding HasSelectedDifference}">
-                  <StackPanel Grid.Row="0" Spacing="4">
+                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" IsVisible="{Binding HasSelectedDifference}">
+                  <StackPanel Grid.Row="0" Spacing="2">
                     <TextBlock Text="{Binding SelectedDifference.Item}" Classes="section-title"/>
                     <TextBlock Text="{Binding SelectedDifference.Category}" Foreground="{StaticResource TextMutedBrush}"/>
-                    <TextBlock Text="{Binding SelectedDifference.RiskSummary}" Foreground="{StaticResource StatusWarningBrush}" TextWrapping="Wrap"/>
                   </StackPanel>
-
-                  <TextBox Grid.Row="1"
+                  <StackPanel Grid.Row="1" Margin="0,6,0,0" Spacing="2">
+                    <TextBlock Text="{Binding [ddl.compare.review.grid.severity], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/>
+                    <TextBlock Text="{Binding SelectedDifference.SeverityLabel}" Foreground="{StaticResource StatusWarningBrush}"/>
+                    <TextBlock Text="{Binding SelectedDifference.RiskSummary}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                  </StackPanel>
+                  <Grid Grid.Row="2" Margin="0,8,0,0" ColumnDefinitions="*,*">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                      <TextBlock Text="{Binding [ddl.compare.review.grid.source], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/>
+                      <TextBlock Text="{Binding SelectedDifference.SourceValue}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="2">
+                      <TextBlock Text="{Binding [ddl.compare.review.grid.target], Source={x:Static loc:LocalizationService.Instance}}" Classes="section-label"/>
+                      <TextBlock Text="{Binding SelectedDifference.TargetValue}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </Grid>
+                  <TextBox Grid.Row="3"
                            Margin="0,8,0,8"
                            Text="{Binding SelectedDifference.SuggestedSql}"
                            IsReadOnly="True"
                            AcceptsReturn="True"
                            TextWrapping="Wrap"
                            FontFamily="{StaticResource MonoFont}"
-                           MinHeight="220"/>
-
-                  <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                           MinHeight="200"/>
+                  <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
                     <Button Classes="secondary compact" Command="{Binding IncludeSelectedDifferenceCommand}" Content="{Binding [ddl.compare.review.detail.include], Source={x:Static loc:LocalizationService.Instance}}"/>
                     <Button Classes="secondary compact" Command="{Binding IgnoreSelectedDifferenceCommand}" Content="{Binding [ddl.compare.review.detail.ignore], Source={x:Static loc:LocalizationService.Instance}}"/>
                     <Button Classes="secondary compact" Command="{Binding MarkSelectedDifferenceReviewedCommand}" Content="{Binding [ddl.compare.review.detail.reviewed], Source={x:Static loc:LocalizationService.Instance}}"/>
@@ -250,9 +314,9 @@
                   <ComboBoxItem Content="{Binding [ddl.compare.options.mode.informative], Source={x:Static loc:LocalizationService.Instance}}"/>
                   <ComboBoxItem Content="{Binding [ddl.compare.options.mode.assisted], Source={x:Static loc:LocalizationService.Instance}}"/>
                 </ComboBox>
+                <TextBlock Text="{Binding [ddl.compare.options.mode.help], Source={x:Static loc:LocalizationService.Instance}}" Classes="step-state"/>
               </StackPanel>
             </Border>
-
             <Grid ColumnDefinitions="*,*">
               <Border Grid.Column="0" Classes="surface-card" Padding="10">
                 <StackPanel Spacing="6">
@@ -291,37 +355,49 @@
             </Border>
 
             <Border Classes="surface-card" Padding="8">
-              <TextBox Text="{Binding GeneratedSql}"
-                       IsReadOnly="True"
-                       AcceptsReturn="True"
-                       TextWrapping="NoWrap"
-                       FontFamily="{StaticResource MonoFont}"
-                       MinHeight="360"
-                       ScrollViewer.VerticalScrollBarVisibility="Auto"
-                       ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*">
+                  <Button Grid.Column="0" Classes="secondary compact" Content="{Binding [ddl.compare.footer.preview.copySql], Source={x:Static loc:LocalizationService.Instance}}" Click="CopySqlButton_OnClick"/>
+                  <Button Grid.Column="1" Classes="secondary compact" Content="{Binding [ddl.compare.footer.preview.exportSql], Source={x:Static loc:LocalizationService.Instance}}" Click="ExportSqlButton_OnClick"/>
+                  <Button Grid.Column="2" Classes="secondary compact" Content="{Binding [ddl.compare.preview.toolbar.selectAll], Source={x:Static loc:LocalizationService.Instance}}" Click="SelectAllSqlButton_OnClick"/>
+                  <CheckBox Grid.Column="3" Content="{Binding [ddl.compare.preview.toolbar.wrap], Source={x:Static loc:LocalizationService.Instance}}" IsChecked="{Binding SqlPreviewWrapLines}"/>
+                  <CheckBox Grid.Column="4" HorizontalAlignment="Right" Content="{Binding [ddl.compare.preview.toolbar.showComments], Source={x:Static loc:LocalizationService.Instance}}" IsChecked="{Binding SqlPreviewShowComments}"/>
+                </Grid>
+
+                <TextBox x:Name="SqlPreviewTextBox"
+                         Text="{Binding DisplaySqlPreview}"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="{Binding SqlPreviewWrapMode}"
+                         FontFamily="{StaticResource MonoFont}"
+                         MinHeight="380"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+              </StackPanel>
             </Border>
           </StackPanel>
-
         </StackPanel>
       </ScrollViewer>
     </Border>
-
     <Border Grid.Row="2"
             Classes="wizard-shell"
             Padding="10">
       <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+        <TextBlock Grid.Column="0"
+                   VerticalAlignment="Center"
+                   Text="{Binding FooterContextText}"
+                   Foreground="{StaticResource TextSecondaryBrush}"
+                   TextWrapping="Wrap"/>
+
         <Button Grid.Column="1"
                 Classes="secondary compact"
                 IsVisible="{Binding IsSelectionStep}"
-                Content="{Binding [ddl.compare.footer.selection.swap], Source={x:Static loc:LocalizationService.Instance}}"
-                Command="{Binding SwapSourceTargetCommand}"/>
-
+                Content="{Binding [common.cancel], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding CancelWizardCommand}"/>
         <Button Grid.Column="2"
                 Classes="secondary compact"
                 IsVisible="{Binding IsSelectionStep}"
                 Content="{Binding [ddl.compare.footer.selection.refresh], Source={x:Static loc:LocalizationService.Instance}}"
                 Command="{Binding RefreshMetadataCommand}"/>
-
         <Button Grid.Column="3"
                 Classes="primary compact"
                 IsVisible="{Binding IsSelectionStep}"
@@ -360,16 +436,10 @@
                 IsVisible="{Binding IsSqlPreviewStep}"
                 Content="{Binding [common.back], Source={x:Static loc:LocalizationService.Instance}}"
                 Command="{Binding BackStepCommand}"/>
-        <Button Grid.Column="2"
-                Classes="secondary compact"
+        <Button Grid.Column="4"
+                Classes="primary compact"
                 IsVisible="{Binding IsSqlPreviewStep}"
-                Content="{Binding [ddl.compare.footer.preview.copySql], Source={x:Static loc:LocalizationService.Instance}}"
-                Click="CopySqlButton_OnClick"/>
-        <Button Grid.Column="3"
-                Classes="secondary compact"
-                IsVisible="{Binding IsSqlPreviewStep}"
-                Content="{Binding [ddl.compare.footer.preview.exportSql], Source={x:Static loc:LocalizationService.Instance}}"
-                Click="ExportSqlButton_OnClick"/>
+                Content="{Binding [common.close], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding ClosePreviewCommand}"/>
       </Grid>
     </Border>
   </Grid>

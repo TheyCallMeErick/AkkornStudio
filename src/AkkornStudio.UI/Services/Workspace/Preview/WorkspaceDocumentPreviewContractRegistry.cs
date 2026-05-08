@@ -29,6 +29,7 @@ public sealed class WorkspaceDocumentPreviewContractRegistry : IWorkspaceDocumen
             WorkspaceDocumentType.QueryCanvas => QueryContract,
             WorkspaceDocumentType.DdlCanvas => DdlContract,
             WorkspaceDocumentType.SqlEditor => UnavailableContract,
+            WorkspaceDocumentType.DdlSchemaCompare => UnavailableContract,
             WorkspaceDocumentType.ErDiagram => UnavailableContract,
             _ => UnavailableContract,
         };

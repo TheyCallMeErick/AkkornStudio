@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Text;
+using Avalonia.Media;
 using AkkornStudio.UI.Services.Localization;
 
 namespace AkkornStudio.UI.ViewModels;
@@ -140,10 +141,14 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
     private string _sqlPreviewSummary = "Configure and compare to generate SQL.";
     private bool _isTargetProductionLike;
     private string _directionImpactText = "Generate SQL to make TARGET match SOURCE.";
+    private bool _sqlPreviewWrapLines;
+    private bool _sqlPreviewShowComments = true;
+    private string _displaySqlPreview = string.Empty;
 
     public RelayCommand SwapSourceTargetCommand { get; private set; } = null!;
     public RelayCommand RefreshMetadataCommand { get; private set; } = null!;
     public RelayCommand CompareAndContinueCommand { get; private set; } = null!;
+    public RelayCommand CancelWizardCommand { get; private set; } = null!;
     public RelayCommand BackStepCommand { get; private set; } = null!;
     public RelayCommand AdvanceReviewStepCommand { get; private set; } = null!;
     public RelayCommand GeneratePreviewStepCommand { get; private set; } = null!;
@@ -156,6 +161,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
     public RelayCommand IgnoreSelectedDifferenceCommand { get; private set; } = null!;
     public RelayCommand MarkSelectedDifferenceReviewedCommand { get; private set; } = null!;
     public RelayCommand CopySelectedSqlCommand { get; private set; } = null!;
+    public RelayCommand ClosePreviewCommand { get; private set; } = null!;
 
     public ObservableCollection<DdlSchemaCompareDifferenceItemViewModel> Differences { get; } = [];
     public ObservableCollection<DdlSchemaCompareDifferenceItemViewModel> FilteredDifferences { get; } = [];
@@ -180,9 +186,11 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             RaisePropertyChanged(nameof(ReviewStepState));
             RaisePropertyChanged(nameof(SqlOptionsStepState));
             RaisePropertyChanged(nameof(SqlPreviewStepState));
+            RaisePropertyChanged(nameof(FooterContextText));
             BackStepCommand.NotifyCanExecuteChanged();
             AdvanceReviewStepCommand.NotifyCanExecuteChanged();
             GeneratePreviewStepCommand.NotifyCanExecuteChanged();
+            ClosePreviewCommand?.NotifyCanExecuteChanged();
         }
     }
 
@@ -195,6 +203,10 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
     public string ReviewStepState => ResolveStepState(DdlSchemaCompareWizardStep.Review);
     public string SqlOptionsStepState => ResolveStepState(DdlSchemaCompareWizardStep.SqlOptions);
     public string SqlPreviewStepState => ResolveStepState(DdlSchemaCompareWizardStep.SqlPreview);
+    public string SelectionStepDescription => L("ddl.compare.step.selectionDesc", "Source and target");
+    public string ReviewStepDescription => L("ddl.compare.step.reviewDesc", "Found differences");
+    public string SqlOptionsStepDescription => L("ddl.compare.step.sqlOptionsDesc", "Script safety");
+    public string SqlPreviewStepDescription => L("ddl.compare.step.previewDesc", "Final script");
 
     public DdlSchemaCompareDifferenceItemViewModel? SelectedDifference
     {
@@ -519,6 +531,36 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         private set => Set(ref _sqlPreviewSummary, value);
     }
 
+    public bool SqlPreviewWrapLines
+    {
+        get => _sqlPreviewWrapLines;
+        set
+        {
+            if (!Set(ref _sqlPreviewWrapLines, value))
+                return;
+            RaisePropertyChanged(nameof(SqlPreviewWrapMode));
+        }
+    }
+
+    public bool SqlPreviewShowComments
+    {
+        get => _sqlPreviewShowComments;
+        set
+        {
+            if (!Set(ref _sqlPreviewShowComments, value))
+                return;
+            UpdateDisplaySqlPreview();
+        }
+    }
+
+    public string DisplaySqlPreview
+    {
+        get => _displaySqlPreview;
+        private set => Set(ref _displaySqlPreview, value);
+    }
+
+    public TextWrapping SqlPreviewWrapMode => SqlPreviewWrapLines ? TextWrapping.Wrap : TextWrapping.NoWrap;
+
     public bool IsTargetProductionLike
     {
         get => _isTargetProductionLike;
@@ -539,6 +581,13 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         get => _directionImpactText;
         private set => Set(ref _directionImpactText, value);
     }
+
+    public string SourceEndpointLabel => ResolveSourceLabel();
+    public string TargetEndpointLabel => ResolveTargetLabel();
+    public string DirectionArrowSummary =>
+        SelectedDirection == DdlSchemaCompareDirection.LeftToRight
+            ? $"{LeftSelectedProfile?.Name ?? "-"} -> {RightSelectedProfile?.Name ?? "-"}"
+            : $"{RightSelectedProfile?.Name ?? "-"} -> {LeftSelectedProfile?.Name ?? "-"}";
 
     public string GenerationConfigSummary =>
         string.Format(
@@ -562,6 +611,28 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
 
     public bool CanAdvanceFromReview => HasIncludedDifferences || _advanceWithoutSelectionRequested;
 
+    public string FooterContextText => WizardStep switch
+    {
+        DdlSchemaCompareWizardStep.Selection => string.Format(
+            L("ddl.compare.footer.context.selection", "Comparison setup • {0}"),
+            IsCompatibilityBlocked ? L("ddl.compare.footer.context.pendingMetadata", "metadata pending") : L("ddl.compare.footer.context.readyToCompare", "ready to compare")),
+        DdlSchemaCompareWizardStep.Review => string.Format(
+            L("ddl.compare.footer.context.review", "{0} selected of {1} • {2} high risk • {3} destructive"),
+            IncludedCount,
+            TotalDifferenceCount,
+            HighRiskCount,
+            DestructiveCount),
+        DdlSchemaCompareWizardStep.SqlOptions => string.Format(
+            L("ddl.compare.footer.context.options", "Mode {0} • {1} included • transaction {2}"),
+            ResolveModeLabel(SqlGenerationMode),
+            IncludedCount,
+            IncludeTransaction ? L("common.enabled", "enabled") : L("common.disabled", "disabled")),
+        DdlSchemaCompareWizardStep.SqlPreview => string.Format(
+            L("ddl.compare.footer.context.preview", "SQL generated • {0} executable destructive"),
+            ExecutableDestructiveCount),
+        _ => string.Empty,
+    };
+
     private void InitializeWizardState()
     {
         ReviewMessage = L("ddl.compare.review.startHint", "Run a comparison to review differences.");
@@ -575,6 +646,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         SwapSourceTargetCommand = new RelayCommand(SwapSourceAndTarget, () => !IsBusy);
         RefreshMetadataCommand = new RelayCommand(() => _ = RefreshBothAsync(), () => !IsBusy);
         CompareAndContinueCommand = new RelayCommand(() => _ = CompareAsync(), () => CanRunComparison);
+        CancelWizardCommand = new RelayCommand(CancelWizard, () => !IsBusy);
         BackStepCommand = new RelayCommand(BackStep, () => WizardStep != DdlSchemaCompareWizardStep.Selection);
         AdvanceReviewStepCommand = new RelayCommand(AdvanceFromReviewStep, () => WizardStep == DdlSchemaCompareWizardStep.Review);
         GeneratePreviewStepCommand = new RelayCommand(AdvanceFromOptionsStep, () => WizardStep == DdlSchemaCompareWizardStep.SqlOptions);
@@ -593,6 +665,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
                     CopySqlRequested?.Invoke(SelectedDifference.SuggestedSql);
             },
             () => SelectedDifference is not null);
+        ClosePreviewCommand = new RelayCommand(ClosePreview, () => WizardStep == DdlSchemaCompareWizardStep.SqlPreview);
 
         CategoryFilterOptions.Clear();
         SeverityFilterOptions.Clear();
@@ -621,6 +694,17 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             ? DdlSchemaCompareDirection.RightToLeft
             : DdlSchemaCompareDirection.LeftToRight;
         UpdateSelectionStepState();
+    }
+
+    private void CancelWizard()
+    {
+        _advanceWithoutSelectionRequested = false;
+        WizardStep = DdlSchemaCompareWizardStep.Selection;
+    }
+
+    private void ClosePreview()
+    {
+        WizardStep = DdlSchemaCompareWizardStep.Selection;
     }
 
     private void BackStep()
@@ -740,6 +824,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         RaisePropertyChanged(nameof(HasExecutableDestructive));
         RaisePropertyChanged(nameof(EmptyStateText));
         RaisePropertyChanged(nameof(GenerationConfigSummary));
+        RaisePropertyChanged(nameof(FooterContextText));
 
         SelectSafeDifferencesCommand.NotifyCanExecuteChanged();
         SelectAllDifferencesCommand.NotifyCanExecuteChanged();
@@ -869,6 +954,10 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         string defaultCategory,
         bool destructive)
     {
+        string executableSql = ResolveExecutableSqlForDiff(row, defaultCategory);
+        if (!string.IsNullOrWhiteSpace(executableSql))
+            return executableSql;
+
         string target = ResolveTargetLabel();
         string source = ResolveSourceLabel();
         string category = string.IsNullOrWhiteSpace(row.Category) ? defaultCategory : row.Category;
@@ -899,6 +988,38 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         }
 
         return baseComment + $"-- {L("ddl.compare.sql.recommendedAdjustment", "Adjustment recommended by comparison")}.\n";
+    }
+
+    private string ResolveExecutableSqlForDiff(DdlSchemaCompareDiffRowViewModel row, string defaultCategory)
+    {
+        string normalizedCategory = string.IsNullOrWhiteSpace(row.Category) ? defaultCategory : row.Category;
+
+        IEnumerable<DdlSchemaCompareSqlOperation> matches = _comparisonSqlOperations
+            .Where(operation =>
+                string.Equals(operation.Item, row.Item, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(operation.Action, row.Action, StringComparison.OrdinalIgnoreCase));
+
+        if (!matches.Any())
+        {
+            matches = _comparisonSqlOperations.Where(operation =>
+                string.Equals(operation.Category, normalizedCategory, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(operation.Action, row.Action, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!matches.Any() && (string.Equals(row.Action, "Sincronizar UNIQUE", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(row.Action, "Recriar PK", StringComparison.OrdinalIgnoreCase)))
+        {
+            matches = _comparisonSqlOperations.Where(operation =>
+                string.Equals(operation.Action, row.Action, StringComparison.OrdinalIgnoreCase));
+        }
+
+        string[] statements = matches
+            .Select(static operation => operation.Sql.Trim())
+            .Where(static sql => sql.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return statements.Length == 0 ? string.Empty : string.Join(Environment.NewLine, statements);
     }
 
     private string BuildRiskSummary(string action, DdlSchemaCompareDiffSeverity severity, bool destructive)
@@ -999,6 +1120,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         }
         else
         {
+            var emittedBlocks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (DdlSchemaCompareDifferenceItemViewModel diff in selected)
             {
                 bool shouldSkipByContent =
@@ -1016,6 +1138,10 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
                 string sql = diff.SuggestedSql.TrimEnd();
                 if (string.IsNullOrWhiteSpace(sql))
                     continue;
+                if (!emittedBlocks.Add(sql))
+                    continue;
+
+                AppendDiffCommentBlock(builder, diff);
 
                 if (SqlGenerationMode == DdlSchemaCompareSqlGenerationMode.Informative)
                 {
@@ -1061,7 +1187,31 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
 
         GeneratedSql = builder.ToString().Trim();
         SqlPreviewSummary = BuildSqlPreviewSummary();
+        UpdateDisplaySqlPreview();
         RaisePropertyChanged(nameof(HasGeneratedSql));
+    }
+
+    private void UpdateDisplaySqlPreview()
+    {
+        if (string.IsNullOrWhiteSpace(GeneratedSql))
+        {
+            DisplaySqlPreview = string.Empty;
+            return;
+        }
+
+        if (SqlPreviewShowComments)
+        {
+            DisplaySqlPreview = GeneratedSql;
+            return;
+        }
+
+        string filtered = string.Join(
+            Environment.NewLine,
+            GeneratedSql
+                .Split('\n')
+                .Where(static line => !line.TrimStart().StartsWith("--", StringComparison.Ordinal))
+                .Select(static line => line.TrimEnd('\r')));
+        DisplaySqlPreview = filtered.Trim();
     }
 
     private string BuildSqlPreviewSummary()
@@ -1124,6 +1274,10 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         RefreshMetadataCommand?.NotifyCanExecuteChanged();
         SwapSourceTargetCommand?.NotifyCanExecuteChanged();
         RaisePropertyChanged(nameof(CanRunComparison));
+        RaisePropertyChanged(nameof(SourceEndpointLabel));
+        RaisePropertyChanged(nameof(TargetEndpointLabel));
+        RaisePropertyChanged(nameof(DirectionArrowSummary));
+        RaisePropertyChanged(nameof(FooterContextText));
     }
 
     internal void OnComparisonCompleted()
@@ -1140,6 +1294,43 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
 
         RebuildGeneratedSqlFromWizard();
         WizardStep = DdlSchemaCompareWizardStep.Review;
+        RaisePropertyChanged(nameof(FooterContextText));
+    }
+
+    internal void BuildWizardDifferencesFromRowsForTesting()
+    {
+        BuildWizardDifferencesFromRows();
+    }
+
+    internal void RebuildGeneratedSqlFromWizardForTesting()
+    {
+        RebuildGeneratedSqlFromWizard();
+    }
+
+    private void OnGeneratedSqlChanged()
+    {
+        UpdateDisplaySqlPreview();
+    }
+
+    private static void AppendDiffCommentBlock(StringBuilder builder, DdlSchemaCompareDifferenceItemViewModel diff)
+    {
+        builder.AppendLine($"-- [{NormalizeSqlCommentValue(diff.Category)}] {NormalizeSqlCommentValue(diff.Item)}");
+        builder.AppendLine($"-- Severidade: {NormalizeSqlCommentValue(diff.SeverityLabel)}");
+        builder.AppendLine($"-- Acao: {NormalizeSqlCommentValue(diff.SuggestedAction)}");
+        builder.AppendLine($"-- Origem: {NormalizeSqlCommentValue(diff.SourceValue)}");
+        builder.AppendLine($"-- Destino: {NormalizeSqlCommentValue(diff.TargetValue)}");
+        builder.AppendLine($"-- Risco: {NormalizeSqlCommentValue(diff.RiskSummary)}");
+    }
+
+    private static string NormalizeSqlCommentValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "-";
+
+        return value
+            .Replace("\r", " ", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal)
+            .Trim();
     }
 
     private string ResolveStepState(DdlSchemaCompareWizardStep step)
@@ -1148,7 +1339,21 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             return L("ddl.compare.step.current", "Current");
         if ((int)WizardStep > (int)step)
             return L("ddl.compare.step.completed", "Completed");
+        if (step != DdlSchemaCompareWizardStep.Selection && !HasCompared)
+            return L("ddl.compare.step.blocked", "Blocked");
         return L("ddl.compare.step.pending", "Pending");
+    }
+
+    private string ResolveModeLabel(DdlSchemaCompareSqlGenerationMode mode)
+    {
+        return mode switch
+        {
+            DdlSchemaCompareSqlGenerationMode.Safe => L("ddl.compare.options.mode.safe", "Safe script"),
+            DdlSchemaCompareSqlGenerationMode.Complete => L("ddl.compare.options.mode.complete", "Complete script"),
+            DdlSchemaCompareSqlGenerationMode.Informative => L("ddl.compare.options.mode.informative", "Informative-only script"),
+            DdlSchemaCompareSqlGenerationMode.AssistedManual => L("ddl.compare.options.mode.assisted", "Assisted manual script"),
+            _ => mode.ToString(),
+        };
     }
 
     private static string L(string key, string fallback)

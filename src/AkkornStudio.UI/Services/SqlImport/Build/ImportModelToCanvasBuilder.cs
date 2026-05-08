@@ -118,6 +118,7 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
             {
                 context.CancellationToken.ThrowIfCancellationRequested();
                 string table = SqlImportIdentifierNormalizer.NormalizeQualifiedIdentifier(context.Input.FromParts[i].Table);
+                table = NormalizeImportedSourceTable(table, context.Input.FromParts[i].Alias);
                 Point pos = calculator.TablePosition(i);
 
                 (string resolvedFullName, IReadOnlyList<(string Name, PinDataType Type)> resolvedColumns) =
@@ -504,6 +505,39 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
         tableNode.Parameters["table"] = shortName;
         tableNode.Parameters["source_table"] = fullName;
         tableNode.Parameters["from_table"] = fullName;
+    }
+
+    private static string NormalizeImportedSourceTable(string normalizedTable, string? alias)
+    {
+        string value = normalizedTable.Trim();
+        if (value.Length == 0)
+            return value;
+
+        if (value.Contains(' ', StringComparison.Ordinal)
+            && !value.Contains('"', StringComparison.Ordinal)
+            && !value.Contains('[', StringComparison.Ordinal)
+            && !value.Contains('`', StringComparison.Ordinal))
+        {
+            string[] segments = value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (segments.Length > 1)
+                value = segments[0];
+        }
+
+        if (!string.IsNullOrWhiteSpace(alias))
+        {
+            string aliasToken = alias.Trim();
+            if (value.EndsWith(" " + aliasToken, StringComparison.OrdinalIgnoreCase))
+                value = value[..(value.Length - aliasToken.Length)].TrimEnd();
+        }
+
+        Match embeddedAlias = Regex.Match(
+            value,
+            @"^(?<table>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\s+(?<alias>[A-Za-z_][A-Za-z0-9_]*)$",
+            RegexOptions.CultureInvariant);
+        if (embeddedAlias.Success)
+            return embeddedAlias.Groups["table"].Value;
+
+        return value;
     }
 
     private static (string FullName, IReadOnlyList<(string Name, PinDataType Type)> Columns) ResolveTableReference(

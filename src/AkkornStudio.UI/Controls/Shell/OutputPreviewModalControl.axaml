@@ -80,11 +80,6 @@
                IsVisible="{Binding HasStructureDiagnostics}"
                Command="{Binding ShowStructureDiagnosticsTabCommand}"
                Content="{Binding StructureDiagnosticsTabLabel}"/>
-             <Button Classes="panel-tab"
-               Classes.active="{Binding ShowSchemaCompareContent}"
-               IsVisible="{Binding HasSchemaCompare}"
-               Command="{Binding ShowSchemaCompareTabCommand}"
-               Content="{Binding SchemaCompareTabLabel}"/>
           </StackPanel>
         </Border>
 
@@ -148,11 +143,6 @@
             <Border IsVisible="{Binding ShowStructureDiagnosticsContent}"
               Background="{StaticResource Bg0Brush}">
               <shell:DdlSchemaAnalysisWorkspaceControl DataContext="{Binding DdlTool}" />
-            </Border>
-
-            <Border IsVisible="{Binding ShowSchemaCompareContent}"
-              Background="{StaticResource Bg0Brush}">
-              <shell:DdlSchemaCompareWorkspaceControl DataContext="{Binding DdlSchemaCompareTool}" />
             </Border>
 
           <Border IsVisible="{Binding ShowUnavailablePrimaryContent}"

@@ -2,6 +2,7 @@
 using AkkornStudio.UI.Services.Explain;
 using Avalonia;
 using AkkornStudio.Nodes;
+using AkkornStudio.UI.Services.Settings;
 using AkkornStudio.UI.ViewModels;
 
 namespace AkkornStudio.Tests.Unit.ViewModels.Canvas;
@@ -22,8 +23,14 @@ public class CanvasAliasConventionIntegrationTests
         };
         vm.Nodes.Add(node);
 
-        vm.PropertyPanel.SelectedNamingConvention = "camelCase";
-        vm.PropertyPanel.EnforceAliasNaming = true;
+        vm.ApplyProjectConventionSettings(new ProjectConventionSettings
+        {
+            NamingConvention = "camelCase",
+            EnforceAliasNaming = true,
+            WarnOnReservedKeywords = true,
+            MaxAliasLength = 64,
+            DefaultWireCurveMode = "Bezier",
+        });
         vm.AutoFixNaming();
 
         Assert.Equal("orderTotal", node.Alias);
@@ -42,8 +49,14 @@ public class CanvasAliasConventionIntegrationTests
         };
         vm.Nodes.Add(node);
 
-        vm.PropertyPanel.SelectedNamingConvention = "camelCase";
-        vm.PropertyPanel.EnforceAliasNaming = true;
+        vm.ApplyProjectConventionSettings(new ProjectConventionSettings
+        {
+            NamingConvention = "camelCase",
+            EnforceAliasNaming = true,
+            WarnOnReservedKeywords = true,
+            MaxAliasLength = 64,
+            DefaultWireCurveMode = "Bezier",
+        });
 
         var issues = GraphValidator.Validate(
             vm,
@@ -66,14 +79,28 @@ public class CanvasAliasConventionIntegrationTests
         };
         vm.Nodes.Add(node);
 
-        vm.PropertyPanel.SelectedNamingConvention = "snake_case";
+        vm.ApplyProjectConventionSettings(new ProjectConventionSettings
+        {
+            NamingConvention = "snake_case",
+            EnforceAliasNaming = true,
+            WarnOnReservedKeywords = true,
+            MaxAliasLength = 64,
+            DefaultWireCurveMode = "Bezier",
+        });
         var snakeIssues = GraphValidator.Validate(
             vm,
             vm.PropertyPanel.BuildNamingConventionPolicy(),
             vm.AliasConventions);
         Assert.DoesNotContain(snakeIssues, i => i.Code.StartsWith("NAMING_", StringComparison.Ordinal));
 
-        vm.PropertyPanel.SelectedNamingConvention = "camelCase";
+        vm.ApplyProjectConventionSettings(new ProjectConventionSettings
+        {
+            NamingConvention = "camelCase",
+            EnforceAliasNaming = true,
+            WarnOnReservedKeywords = true,
+            MaxAliasLength = 64,
+            DefaultWireCurveMode = "Bezier",
+        });
         var camelIssues = GraphValidator.Validate(
             vm,
             vm.PropertyPanel.BuildNamingConventionPolicy(),

@@ -41,7 +41,8 @@ public sealed class UserQueryTemplateCatalogTests
         target.LoadTemplate(template);
 
         NodeViewModel restored = Assert.Single(target.Nodes);
-        Assert.Equal("public.customers", restored.Title);
+        Assert.Equal("customers", restored.Title);
+        Assert.Equal("public.customers", restored.Subtitle);
         Assert.False(target.IsDirty);
     }
 

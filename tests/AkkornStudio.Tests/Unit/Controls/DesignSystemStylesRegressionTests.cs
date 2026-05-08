@@ -179,7 +179,7 @@ public class DesignSystemStylesRegressionTests
         Assert.Contains("Classes=\"icon-ghost\"", nodesList);
 
         Assert.Contains("surface-card", schema);
-        Assert.Contains("Classes=\"success compact\"", schema);
+        Assert.Contains("Classes=\"success\"", schema);
 
         Assert.Contains("Classes=\"badge\"", nodeControl);
         Assert.Contains("Classes=\"badge info\"", nodeControl);

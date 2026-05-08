@@ -282,27 +282,6 @@
                 </Button>
               </Grid>
 
-              <!-- Provider -->
-              <TextBlock Classes="label"
-                         Text="{Binding [connection.provider], Source={x:Static loc:LocalizationService.Instance}}"
-                         IsVisible="{Binding !IsNewProfileFlow}"/>
-              <Border Classes="surface-card" Padding="8" Margin="0,0,0,12" IsVisible="{Binding !IsNewProfileFlow}">
-                <ComboBox Classes="field"
-                          ItemsSource="{x:Static vm:ConnectionManagerViewModel.AvailableProviderOptions}"
-                          SelectedItem="{Binding SelectedProviderOption}"
-                          HorizontalAlignment="Stretch"
-                          MaxDropDownHeight="220">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate>
-                      <StackPanel Orientation="Horizontal" Spacing="8">
-                        <mi:MaterialIcon Kind="{Binding IconKind}" Width="14" Height="14" Foreground="{StaticResource AccentPrimaryHoverBrush}"/>
-                        <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
-                      </StackPanel>
-                    </DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-              </Border>
-
               <!-- SQL Server integrated security -->
               <CheckBox IsVisible="{Binding SupportsIntegratedSecurity}"
                         IsChecked="{Binding EditUseIntegratedSecurity}"
@@ -441,7 +420,7 @@
 
                 <Button Grid.Column="6" Classes="primary"
                         Command="{Binding ConnectCommand}"
-                        IsVisible="{Binding !IsSelectedProfileActive}"
+                        IsVisible="{Binding CanShowConnectAction}"
                         ToolTip.Tip="{Binding [tooltip.activateConnection], Source={x:Static loc:LocalizationService.Instance}}"
                         AutomationProperties.Name="{Binding [connection.connect], Source={x:Static loc:LocalizationService.Instance}}">
                   <StackPanel Orientation="Horizontal" Spacing="6">
@@ -452,7 +431,7 @@
 
                 <Button Grid.Column="6" Classes="danger"
                         Command="{Binding DisconnectCommand}"
-                        IsVisible="{Binding IsSelectedProfileActive}"
+                        IsVisible="{Binding CanShowDisconnectAction}"
                         ToolTip.Tip="{Binding [connection.disconnect], Source={x:Static loc:LocalizationService.Instance}}"
                         AutomationProperties.Name="{Binding [connection.disconnect], Source={x:Static loc:LocalizationService.Instance}}">
                   <StackPanel Orientation="Horizontal" Spacing="6">

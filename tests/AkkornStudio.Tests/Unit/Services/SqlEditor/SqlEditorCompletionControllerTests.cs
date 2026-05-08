@@ -45,7 +45,7 @@ public sealed class SqlEditorCompletionControllerTests
     {
         var sut = new SqlEditorCompletionController();
         var stages = new List<SqlCompletionPipelineStage>();
-        var progress = new Progress<SqlCompletionStageSnapshot>(snapshot => stages.Add(snapshot.Stage));
+        var progress = new RecordingProgress(snapshot => stages.Add(snapshot.Stage));
 
         SqlCompletionStageSnapshot snapshot = await sut.RequestCompletionAsync(
             fullText: "SEL",
@@ -61,5 +61,12 @@ public sealed class SqlEditorCompletionControllerTests
         Assert.Contains(SqlCompletionPipelineStage.Tier0, stages);
         Assert.Contains(SqlCompletionPipelineStage.Tier3, stages);
         Assert.Contains(SqlCompletionPipelineStage.Final, stages);
+    }
+
+    private sealed class RecordingProgress(Action<SqlCompletionStageSnapshot> onReport) : IProgress<SqlCompletionStageSnapshot>
+    {
+        private readonly Action<SqlCompletionStageSnapshot> _onReport = onReport;
+
+        public void Report(SqlCompletionStageSnapshot value) => _onReport(value);
     }
 }

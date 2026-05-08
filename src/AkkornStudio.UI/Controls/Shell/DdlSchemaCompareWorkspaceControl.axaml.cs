@@ -58,4 +58,12 @@ public partial class DdlSchemaCompareWorkspaceControl : UserControl
         if (!string.IsNullOrWhiteSpace(path))
             await File.WriteAllTextAsync(path, vm.GeneratedSql);
     }
+
+    private void SelectAllSqlButton_OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        SqlPreviewTextBox?.SelectAll();
+        SqlPreviewTextBox?.Focus();
+    }
 }

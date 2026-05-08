@@ -6,4 +6,5 @@ public enum WorkspaceDocumentType
     DdlCanvas,
     SqlEditor,
     ErDiagram,
+    DdlSchemaCompare,
 }

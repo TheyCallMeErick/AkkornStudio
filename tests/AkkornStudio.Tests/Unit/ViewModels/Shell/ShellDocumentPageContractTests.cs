@@ -56,4 +56,22 @@ public class ShellDocumentPageContractTests
         Assert.Equal(WorkspaceDocumentPreviewKind.Unavailable, shell.ActivePreviewContract.Kind);
         Assert.False(shell.ActiveDiagnosticsContract.HasLocalDiagnostics);
     }
+
+    [Fact]
+    public void ActivePageContract_SchemaCompareDocument_ExposesDedicatedComparePage()
+    {
+        var shell = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
+        shell.EnterCanvas();
+        shell.OpenNewDocument(WorkspaceDocumentType.DdlSchemaCompare);
+        shell.ActivateDocument(WorkspaceDocumentType.DdlSchemaCompare);
+
+        Assert.True(shell.IsDdlSchemaCompareDocumentPageActive);
+        Assert.False(shell.IsDiagramDocumentPageActive);
+        Assert.True(shell.ActivePageContract.ShowsSchemaComparePage);
+        Assert.False(shell.ActivePageContract.ShowsDiagramSidebar);
+        Assert.False(shell.ActivePageContract.ShowsSqlEditorSidebar);
+        Assert.False(shell.ActivePageContract.CanCollapseSidebars);
+        Assert.Equal(WorkspaceDocumentPreviewKind.Unavailable, shell.ActivePreviewContract.Kind);
+        Assert.False(shell.ActiveDiagnosticsContract.HasLocalDiagnostics);
+    }
 }

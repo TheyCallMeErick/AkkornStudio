@@ -391,7 +391,7 @@ internal static partial class QueryParameterHintResolver
             "arithmetic" => "Parametro aplicado sobre expressao aritmetica derivada.",
             "date-transform" => "Parametro aplicado sobre expressao derivada de data/hora.",
             "string-transform" => "Parametro aplicado sobre transformacao textual.",
-            "conditional" => "Parametro aplicado sobre expressao condicional.",
+            "conditional" => "Parametro aplicado sobre expressao condicional com fallback.",
             "json" => "Parametro aplicado sobre expressao JSON derivada.",
             _ when structuralContext.SourceCount > 1 => "Parametro aplicado sobre expressao com multiplas origens estruturais.",
             _ => null,

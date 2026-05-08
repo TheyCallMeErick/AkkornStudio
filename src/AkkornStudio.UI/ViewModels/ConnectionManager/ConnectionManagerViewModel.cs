@@ -92,6 +92,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             DeleteProfileCommand.NotifyCanExecuteChanged();
             ConnectCommand.NotifyCanExecuteChanged();
             RaisePropertyChanged(nameof(IsSelectedProfileActive));
+            RaisePropertyChanged(nameof(CanShowConnectAction));
+            RaisePropertyChanged(nameof(CanShowDisconnectAction));
             RaisePropertyChanged(nameof(SidebarSelectedConnection));
             RaisePropertyChanged(nameof(SidebarConnectionName));
             RaisePropertyChanged(nameof(SidebarConnectionSubtitle));
@@ -120,6 +122,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             RestartHealthMonitor();
             DisconnectCommand.NotifyCanExecuteChanged();
             ConnectCommand.NotifyCanExecuteChanged();
+            RaisePropertyChanged(nameof(CanShowConnectAction));
+            RaisePropertyChanged(nameof(CanShowDisconnectAction));
             RefreshHealthCommand.NotifyCanExecuteChanged();
             ReloadMetadataCommand.NotifyCanExecuteChanged();
             SwitchSchemaCommand.NotifyCanExecuteChanged();
@@ -546,6 +550,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         SelectedProfile is not null
         && !string.IsNullOrWhiteSpace(ActiveProfileId)
         && string.Equals(SelectedProfile.Id, ActiveProfileId, StringComparison.OrdinalIgnoreCase);
+    public bool CanShowConnectAction => SelectedProfile is not null && !IsSelectedProfileActive;
+    public bool CanShowDisconnectAction => SelectedProfile is not null && IsSelectedProfileActive;
 
     // ── Test connection state ─────────────────────────────────────────────────
 
@@ -687,7 +693,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         DeleteProfileCommand  = new RelayCommand(StartDeleteProfileSafe, () => SelectedProfile is not null);
         TestConnectionCommand = new RelayCommand(StartTestConnectionSafe, () => !IsTesting && IsEditing);
         ImportFromUrlCommand  = new RelayCommand(StartImportFromUrlSafe, () => !string.IsNullOrWhiteSpace(EditConnectionUrl));
-        ConnectCommand        = new RelayCommand(StartConnectSafe, () => IsEditing ? IsFormValid : SelectedProfile is not null);
+        ConnectCommand        = new RelayCommand(StartConnectSafe, () => SelectedProfile is not null);
         DisconnectCommand     = new RelayCommand(StartDisconnectSafe, () => _activeProfileId is not null);
         CloseCommand          = new RelayCommand(() =>
         {
@@ -905,21 +911,13 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
 
     private async Task ConnectAsync()
     {
-        ConnectionProfile candidate;
-        if (!IsEditing && SelectedProfile is not null)
+        ConnectionProfile? candidate = SelectedProfile;
+        if (candidate is null)
         {
-            candidate = SelectedProfile;
-        }
-        else
-        {
-            if (!TryValidateForm(requireName: false, out string? validationError))
-            {
-                ApplyTestStatus(_statusPresenter.Failed(validationError));
-                NotifyConnectionFailed(validationError);
-                return;
-            }
-
-            candidate = _formMapper.ToProfile(CaptureFormData());
+            string message = L("connection.validation.saveBeforeConnect", "Save the connection before connecting.");
+            ApplyTestStatus(_statusPresenter.Failed(message));
+            NotifyConnectionFailed(message);
+            return;
         }
 
         OperationResultDto<ActiveConnectionSessionDto> connectSessionResult = await _connectionSessionService.ConnectAsync(

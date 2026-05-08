@@ -202,7 +202,6 @@ internal sealed class QueryExecutionParameterContextExtractor
             NodeType.Round or NodeType.Abs or NodeType.Ceil or NodeType.Floor
                 or NodeType.DatePart or NodeType.DateFormat => "value",
             NodeType.DateAdd => "date",
-            NodeType.NullFill or NodeType.EmptyFill or NodeType.ValueMap => "value",
             NodeType.JsonExtract or NodeType.JsonValue or NodeType.JsonArrayLength => "json",
             NodeType.TableSource or NodeType.CteSource when pinName.Equals("result", StringComparison.OrdinalIgnoreCase) => null,
             _ => null,

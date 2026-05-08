@@ -15,9 +15,17 @@ public enum DdlSchemaCompareDirection
 
 public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposable
 {
+    internal readonly record struct DdlSchemaCompareSqlOperation(
+        string Category,
+        string Item,
+        string Action,
+        string Sql,
+        bool IsDestructive);
+
     private readonly ConnectionManagerViewModel _connectionManager;
     private readonly Dictionary<string, DbMetadata> _metadataCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string[]> _databaseCache = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<DdlSchemaCompareSqlOperation> _comparisonSqlOperations = [];
     private CancellationTokenSource? _leftLoadCts;
     private CancellationTokenSource? _rightLoadCts;
 
@@ -303,6 +311,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
 
             RaisePropertyChanged(nameof(HasGeneratedSql));
             CopySqlCommand.NotifyCanExecuteChanged();
+            OnGeneratedSqlChanged();
         }
     }
 
@@ -580,6 +589,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         ExternalImpactDiffs.Clear();
         CompareWarnings.Clear();
         GeneratedSql = string.Empty;
+        _comparisonSqlOperations = [];
 
         TableMetadata? leftTable = ResolveSelectedTable(EndpointSide.Left);
         TableMetadata? rightTable = ResolveSelectedTable(EndpointSide.Right);
@@ -601,8 +611,17 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
                 : (rightTable, leftTable, leftTable.Schema, leftTable.Name);
 
         DatabaseProvider provider = LeftSelectedProfile!.Provider;
-        IReadOnlyList<string> sqlStatements = BuildSynchronizationSql(source, target, provider, targetSchema, targetTableName, CompareWarnings);
-        GeneratedSql = string.Join("\n", sqlStatements.Where(static statement => !string.IsNullOrWhiteSpace(statement)));
+        IReadOnlyList<DdlSchemaCompareSqlOperation> sqlOperations = BuildSynchronizationOperations(
+            source,
+            target,
+            provider,
+            targetSchema,
+            targetTableName,
+            CompareWarnings);
+        _comparisonSqlOperations = sqlOperations;
+        GeneratedSql = string.Join("\n", sqlOperations
+            .Select(static operation => operation.Sql)
+            .Where(static statement => !string.IsNullOrWhiteSpace(statement)));
 
         int totalDiffs = ColumnDiffs.Count + ConstraintDiffs.Count + RelationshipDiffs.Count + ExternalImpactDiffs.Count;
         Summary = $"Diferencas: {totalDiffs} (colunas {ColumnDiffs.Count}, constraints {ConstraintDiffs.Count}, relacionamentos {RelationshipDiffs.Count}, impacto externo {ExternalImpactDiffs.Count}).";
@@ -611,7 +630,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         await Task.CompletedTask;
     }
 
-    private static IReadOnlyList<string> BuildSynchronizationSql(
+    private static IReadOnlyList<DdlSchemaCompareSqlOperation> BuildSynchronizationOperations(
         TableMetadata source,
         TableMetadata target,
         DatabaseProvider provider,
@@ -622,7 +641,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         IProviderRegistry registry = ProviderRegistry.CreateDefault();
         var dialect = registry.GetDialect(provider);
 
-        var statements = new List<string>();
+        var operations = new List<DdlSchemaCompareSqlOperation>();
 
         Dictionary<string, ColumnMetadata> sourceColumns = source.Columns.ToDictionary(column => column.Name, StringComparer.OrdinalIgnoreCase);
         Dictionary<string, ColumnMetadata> targetColumns = target.Columns.ToDictionary(column => column.Name, StringComparer.OrdinalIgnoreCase);
@@ -637,7 +656,12 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
                     sourceColumn.IsNullable,
                     sourceColumn.DefaultValue,
                     sourceColumn.Comment);
-                statements.Add(dialect.EmitAlterTableAddColumn(targetSchema, targetTableName, fragment));
+                operations.Add(new DdlSchemaCompareSqlOperation(
+                    "Coluna ausente",
+                    sourceColumn.Name,
+                    "Adicionar no destino",
+                    dialect.EmitAlterTableAddColumn(targetSchema, targetTableName, fragment),
+                    IsDestructive: false));
                 continue;
             }
 
@@ -648,12 +672,17 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
             bool nullabilityDiff = sourceColumn.IsNullable != targetColumn.IsNullable;
             if (typeDiff || nullabilityDiff)
             {
-                statements.Add(dialect.EmitAlterTableAlterColumnType(
-                    targetSchema,
-                    targetTableName,
+                operations.Add(new DdlSchemaCompareSqlOperation(
+                    "Tipo",
                     targetColumn.Name,
-                    ResolveColumnType(sourceColumn),
-                    sourceColumn.IsNullable));
+                    "ALTER COLUMN",
+                    dialect.EmitAlterTableAlterColumnType(
+                        targetSchema,
+                        targetTableName,
+                        targetColumn.Name,
+                        ResolveColumnType(sourceColumn),
+                        sourceColumn.IsNullable),
+                    IsDestructive: true));
             }
 
             if (!string.Equals(NormalizeDefault(sourceColumn.DefaultValue), NormalizeDefault(targetColumn.DefaultValue), StringComparison.OrdinalIgnoreCase))
@@ -672,17 +701,22 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
             if (sourceColumns.ContainsKey(columnName))
                 continue;
 
-            statements.Add(dialect.EmitAlterTableDropColumn(targetSchema, targetTableName, targetColumn.Name, ifExists: true));
+            operations.Add(new DdlSchemaCompareSqlOperation(
+                "Coluna extra",
+                targetColumn.Name,
+                "Remover do destino",
+                dialect.EmitAlterTableDropColumn(targetSchema, targetTableName, targetColumn.Name, ifExists: true),
+                IsDestructive: true));
         }
 
-        statements.AddRange(BuildPrimaryKeySql(source, target, provider, targetSchema, targetTableName, dialect, warnings));
-        statements.AddRange(BuildUniqueSql(source, target, provider, targetSchema, targetTableName, dialect, warnings));
-        statements.AddRange(BuildForeignKeySql(source, target, provider, targetSchema, targetTableName, dialect));
+        operations.AddRange(BuildPrimaryKeyOperations(source, target, provider, targetSchema, targetTableName, dialect, warnings));
+        operations.AddRange(BuildUniqueOperations(source, target, provider, targetSchema, targetTableName, dialect, warnings));
+        operations.AddRange(BuildForeignKeyOperations(source, target, provider, targetSchema, targetTableName, dialect));
 
-        return statements;
+        return operations;
     }
 
-    private static IReadOnlyList<string> BuildPrimaryKeySql(
+    private static IReadOnlyList<DdlSchemaCompareSqlOperation> BuildPrimaryKeyOperations(
         TableMetadata source,
         TableMetadata target,
         DatabaseProvider provider,
@@ -691,20 +725,27 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         Providers.Dialects.ISqlDialect dialect,
         ICollection<string> warnings)
     {
-        var statements = new List<string>();
+        var operations = new List<DdlSchemaCompareSqlOperation>();
 
         string[] sourcePk = source.Columns.Where(static column => column.IsPrimaryKey).Select(column => column.Name).OrderBy(static name => name, StringComparer.OrdinalIgnoreCase).ToArray();
         string[] targetPk = target.Columns.Where(static column => column.IsPrimaryKey).Select(column => column.Name).OrderBy(static name => name, StringComparer.OrdinalIgnoreCase).ToArray();
 
         if (sourcePk.SequenceEqual(targetPk, StringComparer.OrdinalIgnoreCase))
-            return statements;
+            return operations;
 
         if (targetPk.Length > 0)
         {
             string? targetPkName = target.Indexes.FirstOrDefault(static index => index.IsPrimaryKey)?.Name;
             string? dropPk = BuildDropPrimaryKeySql(provider, targetSchema, targetTableName, targetPkName, dialect);
             if (!string.IsNullOrWhiteSpace(dropPk))
-                statements.Add(dropPk);
+            {
+                operations.Add(new DdlSchemaCompareSqlOperation(
+                    "Primary Key",
+                    "PK",
+                    "Recriar PK",
+                    dropPk,
+                    IsDestructive: true));
+            }
             else
                 warnings.Add("Primary key divergente sem nome resolvido para DROP automatico.");
         }
@@ -713,13 +754,18 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         {
             string? sourcePkName = source.Indexes.FirstOrDefault(static index => index.IsPrimaryKey)?.Name;
             string fragment = dialect.EmitPrimaryKeyConstraint(sourcePkName, sourcePk);
-            statements.Add($"ALTER TABLE {QualifyIdentifier(provider, dialect, targetSchema, targetTableName)} ADD {fragment};");
+            operations.Add(new DdlSchemaCompareSqlOperation(
+                "Primary Key",
+                "PK",
+                "Recriar PK",
+                $"ALTER TABLE {QualifyIdentifier(provider, dialect, targetSchema, targetTableName)} ADD {fragment};",
+                IsDestructive: false));
         }
 
-        return statements;
+        return operations;
     }
 
-    private static IReadOnlyList<string> BuildUniqueSql(
+    private static IReadOnlyList<DdlSchemaCompareSqlOperation> BuildUniqueOperations(
         TableMetadata source,
         TableMetadata target,
         DatabaseProvider provider,
@@ -728,7 +774,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         Providers.Dialects.ISqlDialect dialect,
         ICollection<string> warnings)
     {
-        var statements = new List<string>();
+        var operations = new List<DdlSchemaCompareSqlOperation>();
 
         Dictionary<string, IndexMetadata> sourceUnique = source.Indexes
             .Where(static index => index.IsUnique && !index.IsPrimaryKey)
@@ -745,7 +791,14 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
 
             string? dropUnique = BuildDropUniqueSql(provider, targetSchema, targetTableName, targetIndex.Name, dialect);
             if (!string.IsNullOrWhiteSpace(dropUnique))
-                statements.Add(dropUnique);
+            {
+                operations.Add(new DdlSchemaCompareSqlOperation(
+                    "Unique",
+                    "UQ/Indices unicos",
+                    "Sincronizar UNIQUE",
+                    dropUnique,
+                    IsDestructive: true));
+            }
             else
                 warnings.Add($"Unique index {targetIndex.Name} divergente sem suporte para DROP automatico.");
         }
@@ -756,13 +809,18 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
                 continue;
 
             string fragment = dialect.EmitUniqueConstraint(sourceIndex.Name, sourceIndex.Columns);
-            statements.Add($"ALTER TABLE {QualifyIdentifier(provider, dialect, targetSchema, targetTableName)} ADD {fragment};");
+            operations.Add(new DdlSchemaCompareSqlOperation(
+                "Unique",
+                "UQ/Indices unicos",
+                "Sincronizar UNIQUE",
+                $"ALTER TABLE {QualifyIdentifier(provider, dialect, targetSchema, targetTableName)} ADD {fragment};",
+                IsDestructive: false));
         }
 
-        return statements;
+        return operations;
     }
 
-    private static IReadOnlyList<string> BuildForeignKeySql(
+    private static IReadOnlyList<DdlSchemaCompareSqlOperation> BuildForeignKeyOperations(
         TableMetadata source,
         TableMetadata target,
         DatabaseProvider provider,
@@ -770,7 +828,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         string targetTableName,
         Providers.Dialects.ISqlDialect dialect)
     {
-        var statements = new List<string>();
+        var operations = new List<DdlSchemaCompareSqlOperation>();
 
         Dictionary<string, ForeignKeyRelation> sourceFks = source.OutboundForeignKeys
             .ToDictionary(BuildForeignKeySignature, static fk => fk, StringComparer.OrdinalIgnoreCase);
@@ -784,7 +842,14 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
 
             string? dropFk = BuildDropForeignKeySql(provider, dialect, targetSchema, targetTableName, targetFk.ConstraintName);
             if (!string.IsNullOrWhiteSpace(dropFk))
-                statements.Add(dropFk);
+            {
+                operations.Add(new DdlSchemaCompareSqlOperation(
+                    "FK extra",
+                    targetFk.ConstraintName,
+                    "Remover FK",
+                    dropFk,
+                    IsDestructive: true));
+            }
         }
 
         foreach ((string signature, ForeignKeyRelation sourceFk) in sourceFks)
@@ -801,10 +866,15 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
                 sourceFk.OnDelete,
                 sourceFk.OnUpdate);
 
-            statements.Add(addFk.Emit(new DdlEmitContext(provider), targetSchema, targetTableName));
+            operations.Add(new DdlSchemaCompareSqlOperation(
+                "FK ausente",
+                sourceFk.ConstraintName,
+                "Adicionar FK",
+                addFk.Emit(new DdlEmitContext(provider), targetSchema, targetTableName),
+                IsDestructive: false));
         }
 
-        return statements;
+        return operations;
     }
 
     private static string? BuildDropPrimaryKeySql(
@@ -1258,6 +1328,11 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
     {
         Left,
         Right,
+    }
+
+    internal void SetComparisonSqlOperationsForTesting(IEnumerable<DdlSchemaCompareSqlOperation> operations)
+    {
+        _comparisonSqlOperations = operations?.ToArray() ?? [];
     }
 }
 

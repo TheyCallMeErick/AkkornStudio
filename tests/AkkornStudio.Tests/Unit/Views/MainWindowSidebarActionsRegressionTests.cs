@@ -31,6 +31,7 @@ public class MainWindowSidebarActionsRegressionTests
 
         Assert.DoesNotContain("B(\"ConnectionBadgeBtn\", () =>", source);
         Assert.Contains("CurrentShell.StartMenu.OpenSavedConnectionRequested += OnStartOpenSavedConnectionRequested;", source);
+        Assert.Contains("CurrentShell.StartMenu.OpenSchemaCompareRequested += OnStartOpenSchemaCompareRequested;", source);
         Assert.Contains("vm.ConnectionManager.IsVisible = false;", source);
         Assert.DoesNotContain("CurrentVm.ConnectionManager.IsVisible = false;", source);
     }
