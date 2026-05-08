@@ -217,7 +217,7 @@
                                     Classes.wizard-selected="{Binding IsSelectedWizard}"
                                     Padding="12" MinWidth="138" MinHeight="112">
                               <StackPanel Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <Image Source="{Binding SvgAssetUri}" Width="42" Height="42" Stretch="Uniform"/>
+                                <Image Source="{Binding SvgImageSource}" Width="42" Height="42" Stretch="Uniform"/>
                                 <TextBlock Text="{Binding DisplayName}"
                                            FontSize="{StaticResource FontSizeBody}"
                                            FontWeight="{StaticResource FontWeightTitle}"
@@ -238,7 +238,7 @@
                           Margin="0,0,0,12">
                     <Grid ColumnDefinitions="Auto,12,*,Auto">
                       <Image Grid.Column="0"
-                             Source="{Binding SelectedProviderOption.SvgAssetUri}"
+                             Source="{Binding SelectedProviderOption.SvgImageSource}"
                              Width="24"
                              Height="24"
                              Stretch="Uniform"/>

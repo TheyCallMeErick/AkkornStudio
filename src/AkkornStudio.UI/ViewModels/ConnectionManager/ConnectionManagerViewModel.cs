@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Material.Icons;
 using AkkornStudio.UI;
+using Avalonia.Svg.Skia;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using AkkornStudio.Core;
@@ -1737,10 +1738,26 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         MaterialIconKind iconKind,
         string svgAssetUri) : ViewModelBase
     {
+        private static SvgImage? CreateSvgImageSource(string assetUri)
+        {
+            try
+            {
+                return new SvgImage
+                {
+                    Source = SvgSource.Load(assetUri, baseUri: null),
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         public DatabaseProvider Provider { get; } = provider;
         public string DisplayName { get; } = displayName;
         public MaterialIconKind IconKind { get; } = iconKind;
         public string SvgAssetUri { get; } = svgAssetUri;
+        public SvgImage? SvgImageSource { get; } = CreateSvgImageSource(svgAssetUri);
 
         private bool _isSelectedWizard;
         public bool IsSelectedWizard
