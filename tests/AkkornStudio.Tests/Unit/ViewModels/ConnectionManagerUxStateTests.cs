@@ -74,6 +74,44 @@ public class ConnectionManagerUxStateTests
     }
 
     [Fact]
+    public void Open_WithSavedProfiles_AlwaysSelectsFirstProfile()
+    {
+        var vm = new ConnectionManagerViewModel();
+        vm.Profiles.Clear();
+
+        var first = new ConnectionProfile
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = "Primary",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db1",
+            Username = "u",
+            Password = "p",
+        };
+        var second = new ConnectionProfile
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = "Secondary",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db2",
+            Username = "u",
+            Password = "p",
+        };
+
+        vm.Profiles.Add(first);
+        vm.Profiles.Add(second);
+        vm.SelectedProfile = second;
+
+        vm.Open();
+
+        Assert.Same(first, vm.SelectedProfile);
+    }
+
+    [Fact]
     public void ConnectOrOpenManagerCommand_WithSavedProfiles_SelectsFirstProfileAndAvoidsEditorMode()
     {
         var modalManager = new RecordingModalManager();
@@ -113,6 +151,8 @@ public class ConnectionManagerUxStateTests
         Assert.Equal(GlobalModalKind.ConnectionManager, modalManager.LastRequest?.Kind);
         Assert.False(modalManager.LastRequest?.BeginNewProfile);
         Assert.False(vm.IsConnecting);
+        Assert.Same(first, vm.SelectedProfile);
+        Assert.False(vm.IsEditing);
     }
 
     [Fact]

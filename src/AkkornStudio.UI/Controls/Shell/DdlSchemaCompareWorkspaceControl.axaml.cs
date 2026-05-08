@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using AkkornStudio.UI.ViewModels;
 using System.IO;
@@ -65,5 +66,11 @@ public partial class DdlSchemaCompareWorkspaceControl : UserControl
         _ = e;
         SqlPreviewTextBox?.SelectAll();
         SqlPreviewTextBox?.Focus();
+    }
+
+    private void DifferenceIncludeCheckBox_OnTapped(object? sender, TappedEventArgs e)
+    {
+        _ = sender;
+        e.Handled = true;
     }
 }

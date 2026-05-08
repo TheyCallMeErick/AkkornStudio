@@ -12,7 +12,7 @@ public class ConnectionCatalogServiceTests
     public async Task SaveAndGetDetailsAsync_WhenConnectionExists_ReturnsStoredValues()
     {
         var store = new InMemoryConnectionProfileStore();
-        var service = new ConnectionCatalogService(store);
+        var service = new ConnectionCatalogService(store, new ConnectionProfilesChangedNotifier());
 
         var details = new ConnectionDetailsDto(
             Id: "conn-1",
@@ -50,7 +50,7 @@ public class ConnectionCatalogServiceTests
         var store = new InMemoryConnectionProfileStore(
             BuildProfile("b", "Zulu"),
             BuildProfile("a", "Alpha"));
-        var service = new ConnectionCatalogService(store);
+        var service = new ConnectionCatalogService(store, new ConnectionProfilesChangedNotifier());
 
         IReadOnlyList<ConnectionSummaryDto> summaries = await service.ListSummariesAsync();
 
@@ -63,7 +63,7 @@ public class ConnectionCatalogServiceTests
     public async Task DeleteAsync_WhenConnectionExists_RemovesIt()
     {
         var store = new InMemoryConnectionProfileStore(BuildProfile("a", "Alpha"));
-        var service = new ConnectionCatalogService(store);
+        var service = new ConnectionCatalogService(store, new ConnectionProfilesChangedNotifier());
 
         OperationResultDto<bool> deleted = await service.DeleteAsync("a");
         IReadOnlyList<ConnectionSummaryDto> summaries = await service.ListSummariesAsync();

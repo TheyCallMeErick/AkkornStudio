@@ -8,11 +8,13 @@ public sealed class ConnectionCatalogService : IConnectionCatalogService
     private readonly IConnectionProfileStore _profileStore;
     private readonly CredentialVaultStore _credentialVault;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly IConnectionProfilesChangedNotifier _notifier;
 
-    public ConnectionCatalogService(IConnectionProfileStore profileStore)
+    public ConnectionCatalogService(IConnectionProfileStore profileStore, IConnectionProfilesChangedNotifier notifier)
     {
         _profileStore = profileStore;
         _credentialVault = new CredentialVaultStore();
+        _notifier = notifier;
     }
 
     public async Task<IReadOnlyList<ConnectionSummaryDto>> ListSummariesAsync(CancellationToken cancellationToken = default)
@@ -74,6 +76,7 @@ public sealed class ConnectionCatalogService : IConnectionCatalogService
                 profiles.Add(profile);
 
             _profileStore.PersistProfiles(profiles, _credentialVault);
+            _notifier.NotifyProfilesChanged();
             return Ok(ConnectionContractMapper.ToDetails(profile));
         }
         catch (Exception ex)
@@ -126,6 +129,7 @@ public sealed class ConnectionCatalogService : IConnectionCatalogService
 
             profiles.Add(duplicate);
             _profileStore.PersistProfiles(profiles, _credentialVault);
+            _notifier.NotifyProfilesChanged();
 
             return Ok(ConnectionContractMapper.ToDetails(duplicate));
         }
@@ -157,6 +161,7 @@ public sealed class ConnectionCatalogService : IConnectionCatalogService
             profiles.Remove(profile);
             _profileStore.PersistProfiles(profiles, _credentialVault);
             _credentialVault.RemoveSecret(connectionId);
+            _notifier.NotifyProfilesChanged();
 
             return Ok(true);
         }

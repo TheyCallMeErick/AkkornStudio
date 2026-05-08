@@ -1,7 +1,10 @@
 using System.Collections.ObjectModel;
 using System.Text;
+using AkkornStudio.Core;
+using AkkornStudio.Registry;
 using Avalonia.Media;
 using AkkornStudio.UI.Services.Localization;
+using Material.Icons;
 
 namespace AkkornStudio.UI.ViewModels;
 
@@ -41,6 +44,7 @@ public sealed class DdlSchemaCompareDifferenceItemViewModel : ViewModelBase
 {
     private bool _isIncluded;
     private DdlSchemaCompareDiffReviewStatus _reviewStatus;
+    private bool _isSelectedForInspection;
 
     public required string Id { get; init; }
     public required string Category { get; init; }
@@ -84,6 +88,32 @@ public sealed class DdlSchemaCompareDifferenceItemViewModel : ViewModelBase
         }
     }
 
+    public bool IsSelectedForInspection
+    {
+        get => _isSelectedForInspection;
+        set => Set(ref _isSelectedForInspection, value);
+    }
+
+    public bool IsHighSeverity => Severity == DdlSchemaCompareDiffSeverity.High;
+    public bool IsMediumSeverity => Severity == DdlSchemaCompareDiffSeverity.Medium;
+    public bool IsLowSeverity => Severity == DdlSchemaCompareDiffSeverity.Low;
+    public bool IsInfoSeverity => Severity == DdlSchemaCompareDiffSeverity.Info;
+    public bool IsIgnored => !IsIncluded;
+    public bool IsReviewed => ReviewStatus == DdlSchemaCompareDiffReviewStatus.Reviewed;
+
+    public string SourceTargetSummary =>
+        $"Origem: {NormalizePreviewValue(SourceValue)}  ->  Destino: {NormalizePreviewValue(TargetValue)}";
+
+    public string InclusionStateLabel => ReviewStatus switch
+    {
+        DdlSchemaCompareDiffReviewStatus.Included => "Incluida no SQL",
+        DdlSchemaCompareDiffReviewStatus.Ignored => "Ignorada no script",
+        DdlSchemaCompareDiffReviewStatus.Reviewed => IsIncluded ? "Revisada e incluida" : "Revisada e ignorada",
+        _ => IsIncluded ? "Incluida no SQL" : "Pendente",
+    };
+
+    public MaterialIconKind CategoryIconKind => ResolveCategoryIcon(Category, SuggestedAction, IsDestructive);
+
     public string SeverityLabel => Severity switch
     {
         DdlSchemaCompareDiffSeverity.High => Loc("ddl.compare.severity.high", "High"),
@@ -105,10 +135,88 @@ public sealed class DdlSchemaCompareDifferenceItemViewModel : ViewModelBase
         string value = LocalizationService.Instance[key];
         return string.Equals(value, key, StringComparison.Ordinal) ? fallback : value;
     }
+
+    private static string NormalizePreviewValue(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "-";
+
+        string normalized = value
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Trim();
+
+        return normalized.Length <= 88
+            ? normalized
+            : normalized[..85] + "...";
+    }
+
+    private static MaterialIconKind ResolveCategoryIcon(string category, string action, bool isDestructive)
+    {
+        if (isDestructive)
+            return MaterialIconKind.AlertOutline;
+
+        if (action.Contains("ADD FK", StringComparison.OrdinalIgnoreCase)
+            || action.Contains("FK", StringComparison.OrdinalIgnoreCase)
+            || category.Contains("fk", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.LinkVariant;
+
+        if (category.Contains("pk", StringComparison.OrdinalIgnoreCase)
+            || category.Contains("primary", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.KeyVariant;
+
+        if (category.Contains("unique", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.ShieldCheck;
+
+        if (category.Contains("indice", StringComparison.OrdinalIgnoreCase)
+            || category.Contains("index", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.FormatListNumbered;
+
+        if (category.Contains("dependencia", StringComparison.OrdinalIgnoreCase)
+            || category.Contains("extern", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.ShareVariant;
+
+        if (action.Contains("ADD", StringComparison.OrdinalIgnoreCase)
+            || category.Contains("ausente", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.PlusBoxOutline;
+
+        if (action.Contains("DROP", StringComparison.OrdinalIgnoreCase)
+            || category.Contains("extra", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.MinusBoxOutline;
+
+        if (action.Contains("ALTER", StringComparison.OrdinalIgnoreCase)
+            || category.Contains("tipo", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.SwapHorizontal;
+
+        if (category.Contains("null", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.LockOpenVariant;
+
+        if (category.Contains("default", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.EqualBox;
+
+        return MaterialIconKind.InformationOutline;
+    }
 }
 
 public sealed partial class DdlSchemaCompareWorkspaceViewModel
 {
+    private readonly record struct EndpointDisplayInfo(
+        string Connection,
+        string Database,
+        string Schema,
+        string Table);
+
+    private enum DifferenceQuickFilter
+    {
+        None,
+        HighRisk,
+        Destructive,
+        Included,
+        Pending,
+        Ignored,
+        Reviewed,
+    }
+
     private DdlSchemaCompareWizardStep _wizardStep = DdlSchemaCompareWizardStep.Selection;
     private DdlSchemaCompareDifferenceItemViewModel? _selectedDifference;
     private string _differenceSearchText = string.Empty;
@@ -144,6 +252,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
     private bool _sqlPreviewWrapLines;
     private bool _sqlPreviewShowComments = true;
     private string _displaySqlPreview = string.Empty;
+    private DifferenceQuickFilter _activeQuickFilter = DifferenceQuickFilter.None;
+    private bool _suppressQuickFilterReset;
 
     public RelayCommand SwapSourceTargetCommand { get; private set; } = null!;
     public RelayCommand RefreshMetadataCommand { get; private set; } = null!;
@@ -162,6 +272,14 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
     public RelayCommand MarkSelectedDifferenceReviewedCommand { get; private set; } = null!;
     public RelayCommand CopySelectedSqlCommand { get; private set; } = null!;
     public RelayCommand ClosePreviewCommand { get; private set; } = null!;
+    public RelayCommand<DdlSchemaCompareDifferenceItemViewModel> SelectDifferenceForInspectionCommand { get; private set; } = null!;
+    public RelayCommand QuickFilterHighRiskCommand { get; private set; } = null!;
+    public RelayCommand QuickFilterDestructiveCommand { get; private set; } = null!;
+    public RelayCommand QuickFilterIncludedCommand { get; private set; } = null!;
+    public RelayCommand QuickFilterPendingCommand { get; private set; } = null!;
+    public RelayCommand QuickFilterIgnoredCommand { get; private set; } = null!;
+    public RelayCommand QuickFilterReviewedCommand { get; private set; } = null!;
+    public RelayCommand ClearQuickFilterCommand { get; private set; } = null!;
 
     public ObservableCollection<DdlSchemaCompareDifferenceItemViewModel> Differences { get; } = [];
     public ObservableCollection<DdlSchemaCompareDifferenceItemViewModel> FilteredDifferences { get; } = [];
@@ -182,6 +300,14 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             RaisePropertyChanged(nameof(IsReviewStep));
             RaisePropertyChanged(nameof(IsSqlOptionsStep));
             RaisePropertyChanged(nameof(IsSqlPreviewStep));
+            RaisePropertyChanged(nameof(IsSelectionStepCurrent));
+            RaisePropertyChanged(nameof(IsReviewStepCurrent));
+            RaisePropertyChanged(nameof(IsSqlOptionsStepCurrent));
+            RaisePropertyChanged(nameof(IsSqlPreviewStepCurrent));
+            RaisePropertyChanged(nameof(IsSelectionStepCompleted));
+            RaisePropertyChanged(nameof(IsReviewStepCompleted));
+            RaisePropertyChanged(nameof(IsSqlOptionsStepCompleted));
+            RaisePropertyChanged(nameof(IsSqlPreviewStepCompleted));
             RaisePropertyChanged(nameof(SelectionStepState));
             RaisePropertyChanged(nameof(ReviewStepState));
             RaisePropertyChanged(nameof(SqlOptionsStepState));
@@ -199,6 +325,16 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
     public bool IsSqlOptionsStep => WizardStep == DdlSchemaCompareWizardStep.SqlOptions;
     public bool IsSqlPreviewStep => WizardStep == DdlSchemaCompareWizardStep.SqlPreview;
 
+    public bool IsSelectionStepCurrent => WizardStep == DdlSchemaCompareWizardStep.Selection;
+    public bool IsReviewStepCurrent => WizardStep == DdlSchemaCompareWizardStep.Review;
+    public bool IsSqlOptionsStepCurrent => WizardStep == DdlSchemaCompareWizardStep.SqlOptions;
+    public bool IsSqlPreviewStepCurrent => WizardStep == DdlSchemaCompareWizardStep.SqlPreview;
+
+    public bool IsSelectionStepCompleted => (int)WizardStep > (int)DdlSchemaCompareWizardStep.Selection;
+    public bool IsReviewStepCompleted => (int)WizardStep > (int)DdlSchemaCompareWizardStep.Review;
+    public bool IsSqlOptionsStepCompleted => (int)WizardStep > (int)DdlSchemaCompareWizardStep.SqlOptions;
+    public bool IsSqlPreviewStepCompleted => (int)WizardStep > (int)DdlSchemaCompareWizardStep.SqlPreview;
+
     public string SelectionStepState => ResolveStepState(DdlSchemaCompareWizardStep.Selection);
     public string ReviewStepState => ResolveStepState(DdlSchemaCompareWizardStep.Review);
     public string SqlOptionsStepState => ResolveStepState(DdlSchemaCompareWizardStep.SqlOptions);
@@ -215,6 +351,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         {
             if (!Set(ref _selectedDifference, value))
                 return;
+
+            UpdateDifferenceInspectionSelection();
 
             IncludeSelectedDifferenceCommand.NotifyCanExecuteChanged();
             IgnoreSelectedDifferenceCommand.NotifyCanExecuteChanged();
@@ -234,6 +372,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             if (!Set(ref _differenceSearchText, value ?? string.Empty))
                 return;
 
+            if (!_suppressQuickFilterReset)
+                ClearQuickFilterState();
             ApplyDifferenceFilters();
         }
     }
@@ -246,6 +386,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             if (!Set(ref _selectedCategoryFilter, value ?? FilterOptionAll))
                 return;
 
+            if (!_suppressQuickFilterReset)
+                ClearQuickFilterState();
             ApplyDifferenceFilters();
         }
     }
@@ -258,6 +400,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             if (!Set(ref _selectedSeverityFilter, value ?? FilterOptionAll))
                 return;
 
+            if (!_suppressQuickFilterReset)
+                ClearQuickFilterState();
             ApplyDifferenceFilters();
         }
     }
@@ -270,6 +414,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             if (!Set(ref _selectedActionFilter, value ?? FilterOptionAll))
                 return;
 
+            if (!_suppressQuickFilterReset)
+                ClearQuickFilterState();
             ApplyDifferenceFilters();
         }
     }
@@ -282,6 +428,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             if (!Set(ref _selectedStatusFilter, value ?? FilterOptionAll))
                 return;
 
+            if (!_suppressQuickFilterReset)
+                ClearQuickFilterState();
             ApplyDifferenceFilters();
         }
     }
@@ -322,6 +470,14 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
     public int ExecutableDestructiveCount => Differences.Count(d => d.IsIncluded && d.IsDestructive && !CommentDestructiveOperations);
     public int CommentedDestructiveCount => Differences.Count(d => d.IsIncluded && d.IsDestructive && CommentDestructiveOperations);
     public bool HasExecutableDestructive => ExecutableDestructiveCount > 0;
+    public bool HasIncludedDestructive => Differences.Any(d => d.IsIncluded && d.IsDestructive);
+
+    public bool IsQuickFilterHighRiskActive => _activeQuickFilter == DifferenceQuickFilter.HighRisk;
+    public bool IsQuickFilterDestructiveActive => _activeQuickFilter == DifferenceQuickFilter.Destructive;
+    public bool IsQuickFilterIncludedActive => _activeQuickFilter == DifferenceQuickFilter.Included;
+    public bool IsQuickFilterPendingActive => _activeQuickFilter == DifferenceQuickFilter.Pending;
+    public bool IsQuickFilterIgnoredActive => _activeQuickFilter == DifferenceQuickFilter.Ignored;
+    public bool IsQuickFilterReviewedActive => _activeQuickFilter == DifferenceQuickFilter.Reviewed;
 
     public DdlSchemaCompareSqlGenerationMode SqlGenerationMode
     {
@@ -584,6 +740,20 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
 
     public string SourceEndpointLabel => ResolveSourceLabel();
     public string TargetEndpointLabel => ResolveTargetLabel();
+    public string SourceConnectionName => ResolveSourceEndpointInfo().Connection;
+    public string SourceDatabaseName => ResolveSourceEndpointInfo().Database;
+    public string SourceSchemaName => ResolveSourceEndpointInfo().Schema;
+    public string SourceTableName => ResolveSourceEndpointInfo().Table;
+    public string SourceObjectPath => $"{SourceDatabaseName} / {SourceSchemaName} / {SourceTableName}";
+    public string TargetConnectionName => ResolveTargetEndpointInfo().Connection;
+    public string TargetDatabaseName => ResolveTargetEndpointInfo().Database;
+    public string TargetSchemaName => ResolveTargetEndpointInfo().Schema;
+    public string TargetTableName => ResolveTargetEndpointInfo().Table;
+    public string TargetObjectPath => $"{TargetDatabaseName} / {TargetSchemaName} / {TargetTableName}";
+    public string DirectionFlowSummary => "Origem -> Destino";
+    public string DirectionCenterSummaryText => "O SQL sera gerado para alterar o destino e deixa-lo igual a origem.";
+    public string DirectionTargetBadgeText => "Destino sera alterado";
+    public string DirectionProductionBadgeText => "Producao detectada";
     public string DirectionArrowSummary =>
         SelectedDirection == DdlSchemaCompareDirection.LeftToRight
             ? $"{LeftSelectedProfile?.Name ?? "-"} -> {RightSelectedProfile?.Name ?? "-"}"
@@ -602,10 +772,14 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         !HasCompared
             ? L("ddl.compare.empty.notCompared", "Configure source and target to start the comparison.")
             : HasDifferences
-                ? L("ddl.compare.empty.noFilteredDifferences", "No differences match the current filters.")
-                : L("ddl.compare.empty.noDifferences", "Tables are synchronized. No SQL is required.");
+                ? L("ddl.compare.empty.noFilteredDifferences", "Nenhuma diferenca encontrada para os filtros atuais.")
+                : L("ddl.compare.empty.noDifferences", "As tabelas estao sincronizadas. Nenhuma alteracao e necessaria.");
 
     public string NoSelectionWarningText => L("ddl.compare.empty.noSelectedDifferences", "No differences selected for SQL generation.");
+
+    public string DetailEmptyStateText => "Selecione uma diferenca para ver detalhes, riscos e SQL sugerido.";
+
+    public string FooterDestructiveWarningText => "Atencao: ha operacoes destrutivas incluidas no SQL.";
 
     public bool CanRunComparison => !IsBusy && !IsCompatibilityBlocked;
 
@@ -614,21 +788,21 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
     public string FooterContextText => WizardStep switch
     {
         DdlSchemaCompareWizardStep.Selection => string.Format(
-            L("ddl.compare.footer.context.selection", "Comparison setup • {0}"),
+            L("ddl.compare.footer.context.selection", "Configuracao da comparacao - {0}"),
             IsCompatibilityBlocked ? L("ddl.compare.footer.context.pendingMetadata", "metadata pending") : L("ddl.compare.footer.context.readyToCompare", "ready to compare")),
         DdlSchemaCompareWizardStep.Review => string.Format(
-            L("ddl.compare.footer.context.review", "{0} selected of {1} • {2} high risk • {3} destructive"),
+            L("ddl.compare.footer.context.review", "{0} incluidas de {1} - {2} alto risco - {3} destrutivas ignoradas"),
             IncludedCount,
             TotalDifferenceCount,
             HighRiskCount,
-            DestructiveCount),
+            Differences.Count(d => d.IsDestructive && !d.IsIncluded)),
         DdlSchemaCompareWizardStep.SqlOptions => string.Format(
-            L("ddl.compare.footer.context.options", "Mode {0} • {1} included • transaction {2}"),
+            L("ddl.compare.footer.context.options", "Modo {0} - {1} incluidas - transacao {2}"),
             ResolveModeLabel(SqlGenerationMode),
             IncludedCount,
             IncludeTransaction ? L("common.enabled", "enabled") : L("common.disabled", "disabled")),
         DdlSchemaCompareWizardStep.SqlPreview => string.Format(
-            L("ddl.compare.footer.context.preview", "SQL generated • {0} executable destructive"),
+            L("ddl.compare.footer.context.preview", "SQL gerado - {0} destrutivas executaveis"),
             ExecutableDestructiveCount),
         _ => string.Empty,
     };
@@ -666,6 +840,21 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             },
             () => SelectedDifference is not null);
         ClosePreviewCommand = new RelayCommand(ClosePreview, () => WizardStep == DdlSchemaCompareWizardStep.SqlPreview);
+        SelectDifferenceForInspectionCommand = new RelayCommand<DdlSchemaCompareDifferenceItemViewModel>(
+            diff =>
+            {
+                if (diff is not null)
+                    SelectedDifference = diff;
+            },
+            diff => diff is not null);
+
+        QuickFilterHighRiskCommand = new RelayCommand(() => ApplyQuickFilter(DifferenceQuickFilter.HighRisk), () => Differences.Count > 0);
+        QuickFilterDestructiveCommand = new RelayCommand(() => ApplyQuickFilter(DifferenceQuickFilter.Destructive), () => Differences.Count > 0);
+        QuickFilterIncludedCommand = new RelayCommand(() => ApplyQuickFilter(DifferenceQuickFilter.Included), () => Differences.Count > 0);
+        QuickFilterPendingCommand = new RelayCommand(() => ApplyQuickFilter(DifferenceQuickFilter.Pending), () => Differences.Count > 0);
+        QuickFilterIgnoredCommand = new RelayCommand(() => ApplyQuickFilter(DifferenceQuickFilter.Ignored), () => Differences.Count > 0);
+        QuickFilterReviewedCommand = new RelayCommand(() => ApplyQuickFilter(DifferenceQuickFilter.Reviewed), () => Differences.Count > 0);
+        ClearQuickFilterCommand = new RelayCommand(() => ApplyQuickFilter(DifferenceQuickFilter.None), () => Differences.Count > 0);
 
         CategoryFilterOptions.Clear();
         SeverityFilterOptions.Clear();
@@ -822,6 +1011,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         RaisePropertyChanged(nameof(ExecutableDestructiveCount));
         RaisePropertyChanged(nameof(CommentedDestructiveCount));
         RaisePropertyChanged(nameof(HasExecutableDestructive));
+        RaisePropertyChanged(nameof(HasIncludedDestructive));
         RaisePropertyChanged(nameof(EmptyStateText));
         RaisePropertyChanged(nameof(GenerationConfigSummary));
         RaisePropertyChanged(nameof(FooterContextText));
@@ -834,6 +1024,13 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         AdvanceReviewStepCommand.NotifyCanExecuteChanged();
         GeneratePreviewStepCommand.NotifyCanExecuteChanged();
         BackStepCommand.NotifyCanExecuteChanged();
+        QuickFilterHighRiskCommand.NotifyCanExecuteChanged();
+        QuickFilterDestructiveCommand.NotifyCanExecuteChanged();
+        QuickFilterIncludedCommand.NotifyCanExecuteChanged();
+        QuickFilterPendingCommand.NotifyCanExecuteChanged();
+        QuickFilterIgnoredCommand.NotifyCanExecuteChanged();
+        QuickFilterReviewedCommand.NotifyCanExecuteChanged();
+        ClearQuickFilterCommand.NotifyCanExecuteChanged();
     }
 
     private void ApplyDifferenceFilters()
@@ -867,9 +1064,96 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
 
         if (SelectedDifference is not null && !FilteredDifferences.Contains(SelectedDifference))
             SelectedDifference = FilteredDifferences.FirstOrDefault();
+        else if (SelectedDifference is null && FilteredDifferences.Count > 0)
+            SelectedDifference = FilteredDifferences[0];
 
         RaisePropertyChanged(nameof(HasFilteredDifferences));
         RaisePropertyChanged(nameof(EmptyStateText));
+    }
+
+    private void ApplyQuickFilter(DifferenceQuickFilter filter)
+    {
+        _activeQuickFilter = filter;
+        RaiseQuickFilterStateChanged();
+
+        _suppressQuickFilterReset = true;
+        SelectedSeverityFilter = FilterOptionAll;
+        SelectedStatusFilter = FilterOptionAll;
+        DifferenceSearchText = string.Empty;
+        _suppressQuickFilterReset = false;
+
+        switch (filter)
+        {
+            case DifferenceQuickFilter.HighRisk:
+                _suppressQuickFilterReset = true;
+                SelectedSeverityFilter = Differences
+                    .Select(static diff => diff.SeverityLabel)
+                    .FirstOrDefault(label => label.Contains("high", StringComparison.OrdinalIgnoreCase)
+                                             || label.Contains("alto", StringComparison.OrdinalIgnoreCase))
+                    ?? FilterOptionAll;
+                _suppressQuickFilterReset = false;
+                break;
+            case DifferenceQuickFilter.Included:
+                _suppressQuickFilterReset = true;
+                SelectedStatusFilter = FilterStatusIncluded;
+                _suppressQuickFilterReset = false;
+                break;
+            case DifferenceQuickFilter.Pending:
+                _suppressQuickFilterReset = true;
+                SelectedStatusFilter = FilterStatusPending;
+                _suppressQuickFilterReset = false;
+                break;
+            case DifferenceQuickFilter.Ignored:
+                _suppressQuickFilterReset = true;
+                SelectedStatusFilter = FilterStatusIgnored;
+                _suppressQuickFilterReset = false;
+                break;
+            case DifferenceQuickFilter.Reviewed:
+                _suppressQuickFilterReset = true;
+                SelectedStatusFilter = FilterStatusReviewed;
+                _suppressQuickFilterReset = false;
+                break;
+            case DifferenceQuickFilter.Destructive:
+                ApplyDifferenceFilters();
+                FilteredDifferences.Clear();
+                foreach (DdlSchemaCompareDifferenceItemViewModel diff in Differences.Where(static d => d.IsDestructive))
+                    FilteredDifferences.Add(diff);
+                if (SelectedDifference is not null && !FilteredDifferences.Contains(SelectedDifference))
+                    SelectedDifference = FilteredDifferences.FirstOrDefault();
+                RaisePropertyChanged(nameof(HasFilteredDifferences));
+                RaisePropertyChanged(nameof(EmptyStateText));
+                return;
+            case DifferenceQuickFilter.None:
+            default:
+                break;
+        }
+
+        ApplyDifferenceFilters();
+    }
+
+    private void RaiseQuickFilterStateChanged()
+    {
+        RaisePropertyChanged(nameof(IsQuickFilterHighRiskActive));
+        RaisePropertyChanged(nameof(IsQuickFilterDestructiveActive));
+        RaisePropertyChanged(nameof(IsQuickFilterIncludedActive));
+        RaisePropertyChanged(nameof(IsQuickFilterPendingActive));
+        RaisePropertyChanged(nameof(IsQuickFilterIgnoredActive));
+        RaisePropertyChanged(nameof(IsQuickFilterReviewedActive));
+    }
+
+    private void ClearQuickFilterState()
+    {
+        if (_activeQuickFilter == DifferenceQuickFilter.None)
+            return;
+
+        _activeQuickFilter = DifferenceQuickFilter.None;
+        RaiseQuickFilterStateChanged();
+    }
+
+    private void UpdateDifferenceInspectionSelection()
+    {
+        foreach (DdlSchemaCompareDifferenceItemViewModel diff in Differences)
+            diff.IsSelectedForInspection = ReferenceEquals(diff, SelectedDifference);
     }
 
     private void BuildWizardDifferencesFromRows()
@@ -889,6 +1173,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         foreach (string warning in CompareWarnings)
             WizardWarnings.Add(warning);
 
+        _activeQuickFilter = DifferenceQuickFilter.None;
+        RaiseQuickFilterStateChanged();
         RefreshFilterOptionsFromDifferences();
         ApplyDifferenceFilters();
         RecomputeDiffSummary();
@@ -993,24 +1279,25 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
     private string ResolveExecutableSqlForDiff(DdlSchemaCompareDiffRowViewModel row, string defaultCategory)
     {
         string normalizedCategory = string.IsNullOrWhiteSpace(row.Category) ? defaultCategory : row.Category;
+        string normalizedAction = NormalizeMatchToken(row.Action);
 
         IEnumerable<DdlSchemaCompareSqlOperation> matches = _comparisonSqlOperations
             .Where(operation =>
-                string.Equals(operation.Item, row.Item, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(operation.Action, row.Action, StringComparison.OrdinalIgnoreCase));
+                IsOperationItemMatch(operation.Item, row.Item)
+                && string.Equals(NormalizeMatchToken(operation.Action), normalizedAction, StringComparison.Ordinal));
 
         if (!matches.Any())
         {
             matches = _comparisonSqlOperations.Where(operation =>
-                string.Equals(operation.Category, normalizedCategory, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(operation.Action, row.Action, StringComparison.OrdinalIgnoreCase));
+                string.Equals(NormalizeMatchToken(operation.Category), NormalizeMatchToken(normalizedCategory), StringComparison.Ordinal)
+                && string.Equals(NormalizeMatchToken(operation.Action), normalizedAction, StringComparison.Ordinal));
         }
 
         if (!matches.Any() && (string.Equals(row.Action, "Sincronizar UNIQUE", StringComparison.OrdinalIgnoreCase)
             || string.Equals(row.Action, "Recriar PK", StringComparison.OrdinalIgnoreCase)))
         {
             matches = _comparisonSqlOperations.Where(operation =>
-                string.Equals(operation.Action, row.Action, StringComparison.OrdinalIgnoreCase));
+                string.Equals(NormalizeMatchToken(operation.Action), normalizedAction, StringComparison.Ordinal));
         }
 
         string[] statements = matches
@@ -1019,7 +1306,204 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        return statements.Length == 0 ? string.Empty : string.Join(Environment.NewLine, statements);
+        if (statements.Length > 0)
+            return string.Join(Environment.NewLine, statements);
+
+        return BuildFallbackExecutableSqlForDiff(row);
+    }
+
+    private string BuildFallbackExecutableSqlForDiff(DdlSchemaCompareDiffRowViewModel row)
+    {
+        if (!row.Action.Contains("ALTER COLUMN", StringComparison.OrdinalIgnoreCase))
+            return string.Empty;
+
+        if (!TryResolveTargetDialectContext(out DatabaseProvider provider, out Providers.Dialects.ISqlDialect dialect, out string targetSchema, out string targetTable))
+            return string.Empty;
+
+        string dataType = ResolveDesiredColumnType(row);
+        if (string.IsNullOrWhiteSpace(dataType))
+            return string.Empty;
+
+        bool? nullable = ResolveDesiredNullability(row);
+        if (nullable is null)
+            return string.Empty;
+
+        try
+        {
+            return dialect.EmitAlterTableAlterColumnType(targetSchema, targetTable, row.Item, dataType, nullable.Value);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private bool TryResolveTargetDialectContext(
+        out DatabaseProvider provider,
+        out Providers.Dialects.ISqlDialect dialect,
+        out string targetSchema,
+        out string targetTable)
+    {
+        provider = LeftSelectedProfile?.Provider ?? RightSelectedProfile?.Provider ?? DatabaseProvider.Postgres;
+        dialect = ProviderRegistry.CreateDefault().GetDialect(provider);
+
+        string? schema = SelectedDirection == DdlSchemaCompareDirection.LeftToRight
+            ? RightSelectedSchema
+            : LeftSelectedSchema;
+        string? table = SelectedDirection == DdlSchemaCompareDirection.LeftToRight
+            ? RightSelectedTable
+            : LeftSelectedTable;
+
+        if (string.IsNullOrWhiteSpace(table))
+        {
+            targetSchema = string.Empty;
+            targetTable = string.Empty;
+            return false;
+        }
+
+        targetSchema = NormalizeSchema(provider, schema ?? string.Empty);
+        targetTable = table.Trim();
+        return true;
+    }
+
+    private string ResolveDesiredColumnType(DdlSchemaCompareDiffRowViewModel row)
+    {
+        if (row.Category.Contains("Tipo", StringComparison.OrdinalIgnoreCase))
+        {
+            string direct = ExtractColumnTypeToken(row.LeftValue);
+            if (!string.IsNullOrWhiteSpace(direct))
+                return direct;
+        }
+
+        DdlSchemaCompareDiffRowViewModel? typeRow = ColumnDiffs.FirstOrDefault(candidate =>
+            candidate.Item.Equals(row.Item, StringComparison.OrdinalIgnoreCase)
+            && candidate.Category.Contains("Tipo", StringComparison.OrdinalIgnoreCase));
+
+        if (typeRow is not null)
+        {
+            string fromTypeRow = ExtractColumnTypeToken(typeRow.LeftValue);
+            if (!string.IsNullOrWhiteSpace(fromTypeRow))
+                return fromTypeRow;
+        }
+
+        string fromLeft = ExtractColumnTypeToken(row.LeftValue);
+        if (!string.IsNullOrWhiteSpace(fromLeft))
+            return fromLeft;
+
+        return ExtractColumnTypeToken(row.RightValue);
+    }
+
+    private bool? ResolveDesiredNullability(DdlSchemaCompareDiffRowViewModel row)
+    {
+        if (row.Category.Contains("Nullable", StringComparison.OrdinalIgnoreCase))
+        {
+            bool? direct = ParseNullabilityToken(row.LeftValue);
+            if (direct is not null)
+                return direct;
+        }
+
+        DdlSchemaCompareDiffRowViewModel? nullableRow = ColumnDiffs.FirstOrDefault(candidate =>
+            candidate.Item.Equals(row.Item, StringComparison.OrdinalIgnoreCase)
+            && candidate.Category.Contains("Nullable", StringComparison.OrdinalIgnoreCase));
+
+        if (nullableRow is not null)
+        {
+            bool? fromNullableRow = ParseNullabilityToken(nullableRow.LeftValue);
+            if (fromNullableRow is not null)
+                return fromNullableRow;
+        }
+
+        bool? fromLeft = ParseNullabilityToken(row.LeftValue);
+        if (fromLeft is not null)
+            return fromLeft;
+
+        return ParseNullabilityToken(row.RightValue);
+    }
+
+    private static string ExtractColumnTypeToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        string token = value.Trim();
+        int pipeIndex = token.IndexOf('|');
+        if (pipeIndex >= 0)
+            token = token[..pipeIndex].Trim();
+
+        if (token.Equals("(nao existe)", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("YES", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("NO", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("NULL", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("NOT NULL", StringComparison.OrdinalIgnoreCase))
+            return string.Empty;
+
+        return token;
+    }
+
+    private static bool? ParseNullabilityToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        string normalized = value.Trim();
+        if (normalized.Contains("NOT NULL", StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (normalized.Contains("NULL", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (normalized.Equals("YES", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (normalized.Equals("NO", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return null;
+    }
+
+    private static bool IsOperationItemMatch(string operationItem, string rowItem)
+    {
+        string normalizedOperationItem = NormalizeItemToken(operationItem);
+        string normalizedRowItem = NormalizeItemToken(rowItem);
+        if (string.Equals(normalizedOperationItem, normalizedRowItem, StringComparison.Ordinal))
+            return true;
+
+        int lastDot = normalizedRowItem.LastIndexOf('.');
+        if (lastDot >= 0)
+            return string.Equals(normalizedOperationItem, normalizedRowItem[(lastDot + 1)..], StringComparison.Ordinal);
+
+        return false;
+    }
+
+    private static string NormalizeItemToken(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var builder = new StringBuilder(value.Length);
+        foreach (char ch in value.Trim())
+        {
+            if (char.IsWhiteSpace(ch))
+                continue;
+            if (ch is '[' or ']' or '"' or '\'' or '`')
+                continue;
+            builder.Append(char.ToUpperInvariant(ch));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string NormalizeMatchToken(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var builder = new StringBuilder(value.Length);
+        foreach (char ch in value.Trim())
+        {
+            if (char.IsWhiteSpace(ch))
+                continue;
+            builder.Append(char.ToUpperInvariant(ch));
+        }
+
+        return builder.ToString();
     }
 
     private string BuildRiskSummary(string action, DdlSchemaCompareDiffSeverity severity, bool destructive)
@@ -1228,29 +1712,48 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
 
     private string ResolveSourceLabel()
     {
-        return SelectedDirection == DdlSchemaCompareDirection.LeftToRight
-            ? BuildEndpointLabel(LeftSelectedProfile, LeftSelectedDatabase, LeftSelectedSchema, LeftSelectedTable)
-            : BuildEndpointLabel(RightSelectedProfile, RightSelectedDatabase, RightSelectedSchema, RightSelectedTable);
+        EndpointDisplayInfo endpoint = ResolveSourceEndpointInfo();
+        return $"{endpoint.Connection}.{endpoint.Database}.{endpoint.Schema}.{endpoint.Table}";
     }
 
     private string ResolveTargetLabel()
     {
-        return SelectedDirection == DdlSchemaCompareDirection.LeftToRight
-            ? BuildEndpointLabel(RightSelectedProfile, RightSelectedDatabase, RightSelectedSchema, RightSelectedTable)
-            : BuildEndpointLabel(LeftSelectedProfile, LeftSelectedDatabase, LeftSelectedSchema, LeftSelectedTable);
+        EndpointDisplayInfo endpoint = ResolveTargetEndpointInfo();
+        return $"{endpoint.Connection}.{endpoint.Database}.{endpoint.Schema}.{endpoint.Table}";
     }
 
-    private static string BuildEndpointLabel(
+    private EndpointDisplayInfo ResolveSourceEndpointInfo()
+    {
+        return SelectedDirection == DdlSchemaCompareDirection.LeftToRight
+            ? BuildEndpointDisplayInfo(LeftSelectedProfile, LeftSelectedDatabase, LeftSelectedSchema, LeftSelectedTable)
+            : BuildEndpointDisplayInfo(RightSelectedProfile, RightSelectedDatabase, RightSelectedSchema, RightSelectedTable);
+    }
+
+    private EndpointDisplayInfo ResolveTargetEndpointInfo()
+    {
+        return SelectedDirection == DdlSchemaCompareDirection.LeftToRight
+            ? BuildEndpointDisplayInfo(RightSelectedProfile, RightSelectedDatabase, RightSelectedSchema, RightSelectedTable)
+            : BuildEndpointDisplayInfo(LeftSelectedProfile, LeftSelectedDatabase, LeftSelectedSchema, LeftSelectedTable);
+    }
+
+    private static EndpointDisplayInfo BuildEndpointDisplayInfo(
         ConnectionProfile? profile,
         string? database,
         string? schema,
         string? table)
     {
-        string profileName = profile?.Name ?? "-";
-        string db = string.IsNullOrWhiteSpace(database) ? "-" : database.Trim();
-        string sch = string.IsNullOrWhiteSpace(schema) ? "-" : schema.Trim();
-        string tbl = string.IsNullOrWhiteSpace(table) ? "-" : table.Trim();
-        return $"{profileName}.{db}.{sch}.{tbl}";
+        return new EndpointDisplayInfo(
+            NormalizeEndpointPart(profile?.Name),
+            NormalizeEndpointPart(database),
+            NormalizeEndpointPart(schema),
+            NormalizeEndpointPart(table));
+    }
+
+    private static string NormalizeEndpointPart(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? "-"
+            : value.Trim();
     }
 
     private static bool LooksLikeProduction(string text)
@@ -1263,12 +1766,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
 
     internal void UpdateSelectionStepState()
     {
-        string source = ResolveSourceLabel();
         string target = ResolveTargetLabel();
-        DirectionImpactText = string.Format(
-            L("ddl.compare.direction.impact", "Generate SQL to make {0} match {1}."),
-            target,
-            source);
+        DirectionImpactText = L("ddl.compare.direction.impact.short", "O SQL alterara apenas o destino.");
         IsTargetProductionLike = LooksLikeProduction(target);
         CompareAndContinueCommand?.NotifyCanExecuteChanged();
         RefreshMetadataCommand?.NotifyCanExecuteChanged();
@@ -1276,6 +1775,17 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         RaisePropertyChanged(nameof(CanRunComparison));
         RaisePropertyChanged(nameof(SourceEndpointLabel));
         RaisePropertyChanged(nameof(TargetEndpointLabel));
+        RaisePropertyChanged(nameof(SourceConnectionName));
+        RaisePropertyChanged(nameof(SourceDatabaseName));
+        RaisePropertyChanged(nameof(SourceSchemaName));
+        RaisePropertyChanged(nameof(SourceTableName));
+        RaisePropertyChanged(nameof(SourceObjectPath));
+        RaisePropertyChanged(nameof(TargetConnectionName));
+        RaisePropertyChanged(nameof(TargetDatabaseName));
+        RaisePropertyChanged(nameof(TargetSchemaName));
+        RaisePropertyChanged(nameof(TargetTableName));
+        RaisePropertyChanged(nameof(TargetObjectPath));
+        RaisePropertyChanged(nameof(DirectionFlowSummary));
         RaisePropertyChanged(nameof(DirectionArrowSummary));
         RaisePropertyChanged(nameof(FooterContextText));
     }

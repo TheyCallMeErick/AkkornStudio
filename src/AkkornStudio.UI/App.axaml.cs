@@ -130,6 +130,7 @@ public partial class App : Application
             new FireAndForgetSafetyExecutor(sp.GetRequiredService<ILogger<ConnectionManagerViewModel>>()));
         services.AddSingleton<IConnectionHealthLifecycleCoordinator>(sp =>
             new ConnectionHealthLifecycleCoordinator(sp.GetRequiredService<IConnectionHealthMonitorService>()));
+        services.AddSingleton<IConnectionProfilesChangedNotifier, ConnectionProfilesChangedNotifier>();
         services.AddSingleton<IConnectionCatalogService, ConnectionCatalogService>();
         services.AddSingleton<IConnectionValidationService, ConnectionValidationService>();
         services.AddSingleton<IConnectionUrlParserService, ConnectionUrlParserService>();

@@ -116,6 +116,64 @@ public sealed class DdlSchemaCompareWorkspaceViewModelSqlGenerationTests
         Assert.True(sqlIndex > commentIndex);
     }
 
+    [Fact]
+    public void BuildWizardDifferencesFromRows_EmitsFallbackAlterColumnWhenMappingIsMissing()
+    {
+        using var vm = new DdlSchemaCompareWorkspaceViewModel(new ConnectionManagerViewModel());
+        vm.RightSelectedSchema = "dbo";
+        vm.RightSelectedTable = "CondicaoRefis";
+
+        vm.ColumnDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
+            "Tipo",
+            "id",
+            "char",
+            "int",
+            "Alto",
+            "ALTER COLUMN"));
+        vm.ColumnDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
+            "Nullable",
+            "id",
+            "NO",
+            "YES",
+            "Alto",
+            "ALTER COLUMN"));
+
+        vm.BuildWizardDifferencesFromRowsForTesting();
+
+        DdlSchemaCompareDifferenceItemViewModel typeDiff = Assert.Single(vm.Differences.Where(d => d.Category == "Tipo"));
+        Assert.Contains("ALTER TABLE", typeDiff.SuggestedSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ALTER COLUMN", typeDiff.SuggestedSql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("TODO", typeDiff.SuggestedSql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildWizardDifferencesFromRows_MatchesMappedSqlWithNormalizedTokens()
+    {
+        using var vm = new DdlSchemaCompareWorkspaceViewModel(new ConnectionManagerViewModel());
+        vm.SetComparisonSqlOperationsForTesting(
+        [
+            new DdlSchemaCompareWorkspaceViewModel.DdlSchemaCompareSqlOperation(
+                "Tipo",
+                "[id]",
+                "ALTER   COLUMN",
+                "ALTER TABLE [dbo].[destino] ALTER COLUMN [id] CHAR NOT NULL;",
+                IsDestructive: true),
+        ]);
+
+        vm.ColumnDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
+            "Tipo",
+            "dbo.id",
+            "char",
+            "int",
+            "Alto",
+            "ALTER COLUMN"));
+
+        vm.BuildWizardDifferencesFromRowsForTesting();
+
+        DdlSchemaCompareDifferenceItemViewModel diff = Assert.Single(vm.Differences);
+        Assert.Equal("ALTER TABLE [dbo].[destino] ALTER COLUMN [id] CHAR NOT NULL;", diff.SuggestedSql);
+    }
+
     private static int CountOccurrences(string source, string value)
     {
         if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(value))

@@ -57,6 +57,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         CompareCommand = new RelayCommand(() => _ = CompareAsync(), () => !IsBusy && !IsCompatibilityBlocked);
         RefreshBothCommand = new RelayCommand(() => _ = RefreshBothAsync(), () => !IsBusy);
         CopySqlCommand = new RelayCommand(() => CopySqlRequested?.Invoke(GeneratedSql), () => HasGeneratedSql);
+        OpenConnectionManagerCommand = new RelayCommand(OpenConnectionManager, () => !IsBusy);
 
         InitializeWizardState();
         _connectionManager.ProfilesChanged += HandleProfilesChanged;
@@ -70,6 +71,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
     public RelayCommand RefreshBothCommand { get; }
 
     public RelayCommand CopySqlCommand { get; }
+
+    public RelayCommand OpenConnectionManagerCommand { get; }
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
 
@@ -94,6 +97,11 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
     public ObservableCollection<DdlSchemaCompareDiffRowViewModel> ExternalImpactDiffs { get; } = [];
 
     public ObservableCollection<string> CompareWarnings { get; } = [];
+
+    public bool HasAvailableProfiles => Profiles.Count > 0;
+
+    public string NoConnectionsWarningText =>
+        "Nenhuma conexao cadastrada. Adicione uma conexao para comparar tabelas.";
 
     public IReadOnlyList<DdlSchemaCompareDirection> DirectionOptions { get; } = [
         DdlSchemaCompareDirection.LeftToRight,
@@ -214,6 +222,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
             CompareAndContinueCommand?.NotifyCanExecuteChanged();
             RefreshMetadataCommand?.NotifyCanExecuteChanged();
             SwapSourceTargetCommand?.NotifyCanExecuteChanged();
+            OpenConnectionManagerCommand.NotifyCanExecuteChanged();
             RaisePropertyChanged(nameof(CanRunComparison));
         }
     }
@@ -232,6 +241,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
             CompareAndContinueCommand?.NotifyCanExecuteChanged();
             RefreshMetadataCommand?.NotifyCanExecuteChanged();
             SwapSourceTargetCommand?.NotifyCanExecuteChanged();
+            OpenConnectionManagerCommand.NotifyCanExecuteChanged();
             RaisePropertyChanged(nameof(CanRunComparison));
         }
     }
@@ -340,6 +350,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         Profiles.Clear();
         foreach (ConnectionProfile profile in _connectionManager.Profiles.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
             Profiles.Add(profile);
+
+        RaisePropertyChanged(nameof(HasAvailableProfiles));
 
         LeftSelectedProfile ??= ResolveDefaultProfile();
         RightSelectedProfile ??= ResolveDefaultProfile(exceptProfileId: LeftSelectedProfile?.Id) ?? LeftSelectedProfile;
@@ -545,6 +557,14 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         RaisePropertyChanged(nameof(LeftProviderLabel));
         RaisePropertyChanged(nameof(RightProviderLabel));
 
+        if (Profiles.Count == 0)
+        {
+            IsCompatibilityBlocked = true;
+            CompatibilityMessage = NoConnectionsWarningText;
+            UpdateSelectionStepState();
+            return;
+        }
+
         ConnectionProfile? leftProfile = LeftSelectedProfile;
         ConnectionProfile? rightProfile = RightSelectedProfile;
 
@@ -575,6 +595,12 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         IsCompatibilityBlocked = false;
         CompatibilityMessage = "Conexoes compativeis para comparacao.";
         UpdateSelectionStepState();
+    }
+
+    private void OpenConnectionManager()
+    {
+        if (_connectionManager.ConnectOrOpenManagerCommand.CanExecute(null))
+            _connectionManager.ConnectOrOpenManagerCommand.Execute(null);
     }
 
     private async Task CompareAsync()

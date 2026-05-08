@@ -24,6 +24,7 @@ public sealed class ConnectionManagerViewModelFactory : IConnectionManagerViewMo
     private readonly IFireAndForgetSafetyExecutor _fireAndForgetSafetyExecutor;
     private readonly IConnectionHealthLifecycleCoordinator _healthLifecycleCoordinator;
     private readonly IGlobalModalManager _globalModalManager;
+    private readonly IConnectionProfilesChangedNotifier _profilesChangedNotifier;
 
     public static IConnectionManagerViewModelFactory CreateDefault(
         ILocalizationService? localizationService = null,
@@ -38,7 +39,8 @@ public sealed class ConnectionManagerViewModelFactory : IConnectionManagerViewMo
         var sessionOrchestrator = new ConnectionSessionOrchestrator();
         var profileStore = new ConnectionProfileStore();
         var connectionTestExecutor = new DbOrchestratorConnectionTestExecutor();
-        var connectionCatalogService = new ConnectionCatalogService(profileStore);
+        var profilesChangedNotifier = new ConnectionProfilesChangedNotifier();
+        var connectionCatalogService = new ConnectionCatalogService(profileStore, profilesChangedNotifier);
         var connectionValidationService = new ConnectionValidationService();
         var providerCapabilityService = new ProviderCapabilityService();
         var connectionUrlParserService = new ConnectionUrlParserService();
@@ -71,7 +73,8 @@ public sealed class ConnectionManagerViewModelFactory : IConnectionManagerViewMo
             activationWorkflow,
             fireAndForgetSafetyExecutor,
             healthLifecycleCoordinator,
-            GlobalModalManager.Instance);
+            GlobalModalManager.Instance,
+            profilesChangedNotifier);
     }
 
     public ConnectionManagerViewModelFactory(
@@ -90,7 +93,8 @@ public sealed class ConnectionManagerViewModelFactory : IConnectionManagerViewMo
         IConnectionActivationWorkflow activationWorkflow,
         IFireAndForgetSafetyExecutor fireAndForgetSafetyExecutor,
         IConnectionHealthLifecycleCoordinator healthLifecycleCoordinator,
-        IGlobalModalManager globalModalManager)
+        IGlobalModalManager globalModalManager,
+        IConnectionProfilesChangedNotifier profilesChangedNotifier)
     {
         _errorMessageMapper = errorMessageMapper;
         _statusPresenter = statusPresenter;
@@ -108,6 +112,7 @@ public sealed class ConnectionManagerViewModelFactory : IConnectionManagerViewMo
         _fireAndForgetSafetyExecutor = fireAndForgetSafetyExecutor;
         _healthLifecycleCoordinator = healthLifecycleCoordinator;
         _globalModalManager = globalModalManager;
+        _profilesChangedNotifier = profilesChangedNotifier;
     }
 
     public ConnectionManagerViewModel Create()
@@ -128,6 +133,7 @@ public sealed class ConnectionManagerViewModelFactory : IConnectionManagerViewMo
             activationWorkflow: _activationWorkflow,
             fireAndForgetSafetyExecutor: _fireAndForgetSafetyExecutor,
             healthLifecycleCoordinator: _healthLifecycleCoordinator,
-            globalModalManager: _globalModalManager);
+            globalModalManager: _globalModalManager,
+            profilesChangedNotifier: _profilesChangedNotifier);
     }
 }
