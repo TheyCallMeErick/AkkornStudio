@@ -13,14 +13,15 @@
       <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
       <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusMD}"/>
-      <Setter Property="Padding" Value="12"/>
-      <Setter Property="MinHeight" Value="116"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusLG}"/>
+      <Setter Property="Padding" Value="14"/>
+      <Setter Property="MinHeight" Value="124"/>
     </Style>
 
     <Style Selector="Border.connection-picker-card:pointerover">
       <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
       <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryHoverBrush}"/>
+      <Setter Property="BoxShadow" Value="0 10 20 0 #22000000"/>
     </Style>
 
     <Style Selector="TextBlock.label">
@@ -30,12 +31,14 @@
     </Style>
 
     <Style Selector="Button.connection-card-action">
-      <Setter Property="MinWidth" Value="34"/>
-      <Setter Property="Height" Value="30"/>
-      <Setter Property="Padding" Value="8,6"/>
+      <Setter Property="MinWidth" Value="36"/>
+      <Setter Property="Height" Value="34"/>
+      <Setter Property="Padding" Value="0"/>
       <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
 
     <Style Selector="Button.connection-card-action.connect">
@@ -54,6 +57,22 @@
       <Setter Property="Background" Value="#1A991B1B"/>
       <Setter Property="BorderBrush" Value="#4AEF4444"/>
       <Setter Property="Foreground" Value="#EF4444"/>
+    </Style>
+
+    <Style Selector="Border.connection-provider-pill">
+      <Setter Property="Background" Value="#162B3242"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="8,2"/>
+    </Style>
+
+    <Style Selector="Border.connection-meta-pill">
+      <Setter Property="Background" Value="{StaticResource Bg0Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
+      <Setter Property="Padding" Value="6,3"/>
     </Style>
 
     <Style Selector="Border.wizard-provider-card">
@@ -144,27 +163,41 @@
                       <Grid RowDefinitions="Auto,Auto"
                             ColumnDefinitions="Auto,*,Auto"
                             RowSpacing="8"
-                            ColumnSpacing="10">
-                        <Grid Grid.Row="0"
-                              Grid.Column="0"
-                              Grid.RowSpan="2"
-                              Width="30"
-                              Height="30"
-                              VerticalAlignment="Center">
-                          <mi:MaterialIcon Kind="Database"
-                                           Width="18"
-                                           Height="18"
-                                           Foreground="{StaticResource AccentPrimaryHoverBrush}"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
-                          <Image Source="{Binding ProviderIconSvgSource}"
-                                 Width="30"
-                                 Height="30"
-                                 Stretch="Uniform"/>
-                        </Grid>
-                        <StackPanel Grid.Row="0" Grid.Column="1" Margin="10,0,0,0" Spacing="2" VerticalAlignment="Center">
-                          <TextBlock Text="{Binding ConnectionName}" FontWeight="{StaticResource FontWeightStrong}" TextTrimming="CharacterEllipsis"/>
-                          <TextBlock Text="{Binding ProviderName}" Foreground="{StaticResource TextMutedBrush}" FontSize="{StaticResource FontSizeCaption}"/>
+                            ColumnSpacing="12">
+                        <Border Grid.Row="0"
+                                Grid.Column="0"
+                                Grid.RowSpan="2"
+                                Width="36"
+                                Height="36"
+                                Background="{StaticResource Bg0Brush}"
+                                BorderBrush="{StaticResource BorderSubtleBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{StaticResource RadiusSM}"
+                                VerticalAlignment="Center">
+                          <Grid>
+                            <mi:MaterialIcon Kind="Database"
+                                              Width="18"
+                                              Height="18"
+                                              Foreground="{StaticResource AccentPrimaryHoverBrush}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                            <Image Source="{Binding ProviderIconSvgSource}"
+                                   Width="28"
+                                   Height="28"
+                                   Stretch="Uniform"/>
+                          </Grid>
+                        </Border>
+                        <StackPanel Grid.Row="0" Grid.Column="1" Margin="2,0,0,0" Spacing="4" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding ConnectionName}"
+                                     FontWeight="{StaticResource FontWeightStrong}"
+                                     FontSize="{StaticResource FontSizeBody}"
+                                     TextTrimming="CharacterEllipsis"/>
+                          <Border Classes="connection-provider-pill"
+                                  HorizontalAlignment="Left">
+                            <TextBlock Text="{Binding ProviderName}"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="{StaticResource FontSizeCaption}"/>
+                          </Border>
                         </StackPanel>
                         <StackPanel Grid.Row="0"
                                     Grid.Column="2"
@@ -173,32 +206,52 @@
                                     Spacing="8"
                                     VerticalAlignment="Center"
                                     HorizontalAlignment="Right">
-                          <Button Classes="connection-card-action connect"
-                                  Command="{Binding DataContext.ConnectWithProfileCommand, ElementName=RootConnectionManager}"
+                          <Button Classes="connection-card-action delete"
+                                  Command="{Binding DataContext.DeleteConnectionProfileCommand, ElementName=RootConnectionManager}"
                                   CommandParameter="{Binding Profile}"
-                                  ToolTip.Tip="Conectar">
-                            <mi:MaterialIcon Kind="Link" Width="15" Height="15"/>
+                                  ToolTip.Tip="Excluir conexao">
+                            <mi:MaterialIcon Kind="Delete" Width="15" Height="15"/>
                           </Button>
                           <Button Classes="connection-card-action edit"
                                   Command="{Binding DataContext.EditConnectionProfileCommand, ElementName=RootConnectionManager}"
                                   CommandParameter="{Binding Profile}"
-                                  ToolTip.Tip="Editar">
-                            <mi:MaterialIcon Kind="Pencil" Width="14" Height="14"/>
+                                  ToolTip.Tip="Editar conexao">
+                            <mi:MaterialIcon Kind="Pencil" Width="15" Height="15"/>
                           </Button>
-                          <Button Classes="connection-card-action delete"
-                                  Command="{Binding DataContext.DeleteConnectionProfileCommand, ElementName=RootConnectionManager}"
+                          <Button Classes="connection-card-action connect"
+                                  Command="{Binding DataContext.ConnectWithProfileCommand, ElementName=RootConnectionManager}"
                                   CommandParameter="{Binding Profile}"
-                                  ToolTip.Tip="Excluir">
-                            <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
+                                  ToolTip.Tip="Conectar">
+                            <mi:MaterialIcon Kind="LanConnect" Width="15" Height="15"/>
                           </Button>
                         </StackPanel>
 
-                        <TextBlock Grid.Row="1"
-                                   Grid.Column="1"
-                                   Margin="10,0,0,0"
-                                   Text="{Binding DatabaseName}"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                   TextTrimming="CharacterEllipsis"/>
+                        <StackPanel Grid.Row="1"
+                                    Grid.Column="1"
+                                    Margin="2,0,0,0"
+                                    Orientation="Horizontal"
+                                    Spacing="6">
+                          <Border Classes="connection-meta-pill">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                              <mi:MaterialIcon Kind="DatabaseOutline" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}"/>
+                              <TextBlock Text="{Binding DatabaseName}"
+                                         FontSize="{StaticResource FontSizeCaption}"
+                                         Foreground="{StaticResource TextSecondaryBrush}"
+                                         MaxWidth="210"
+                                         TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                          </Border>
+                          <Border Classes="connection-meta-pill">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                              <mi:MaterialIcon Kind="Server" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}"/>
+                              <TextBlock Text="{Binding HostName}"
+                                         FontSize="{StaticResource FontSizeCaption}"
+                                         Foreground="{StaticResource TextSecondaryBrush}"
+                                         MaxWidth="180"
+                                         TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                          </Border>
+                        </StackPanel>
                       </Grid>
                     </Border>
                   </DataTemplate>

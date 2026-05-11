@@ -72,6 +72,7 @@
           AvailableConnections="{Binding Profiles}"
           SelectedConnection="{Binding SidebarSelectedConnection}"
           AvailableDatabases="{Binding AvailableDatabases}"
+          AvailableDatabaseOptions="{Binding AvailableDatabaseCatalogs}"
           SelectedDatabase="{Binding SelectedDatabase}"
           IsDatabaseSelectionVisible="{Binding IsDatabaseSelectionVisible}"
           AvailableSchemas="{Binding AvailableSchemas}"

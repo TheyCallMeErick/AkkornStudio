@@ -37,6 +37,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     }
 
     private const string ConnectionModalLogFile = "connection-modal-debug.log";
+    private const int DatabaseReadProbeLimit = 30;
     // Latency above this threshold is considered "Degraded" rather than "Online"
     private const double DegradedLatencyThresholdMs = 500.0;
     // How often the background health monitor pings the active connection (seconds)
@@ -222,6 +223,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     public ObservableCollection<string> AvailableSchemas { get; } = [];
 
     public ObservableCollection<string> AvailableDatabases { get; } = [];
+    public ObservableCollection<DatabaseCatalogItem> AvailableDatabaseCatalogs { get; } = [];
 
     private string? _selectedDatabase;
     public string? SelectedDatabase
@@ -353,6 +355,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
                 : L("connection.metadata.none", "Conecte-se para carregar metadados.");
         }
     }
+
+    public DbMetadata? ActiveMetadata => ResolveCurrentMetadata();
 
     public string ActiveConnectionLabel
     {
@@ -1197,6 +1201,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
 
                     // Mark as active only after successful activation.
                     ActiveProfileId = profile.Id;
+                    await RefreshActiveLatencyAsync(profile, ct);
                     StartRefreshHealthSafe();
 
                     ActiveServerVersion = await _dbConnectionService.GetServerVersionAsync()
@@ -1337,25 +1342,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     {
         ConnectionProfile? profile = Profiles.FirstOrDefault(x => x.Id == _activeProfileId);
         if (profile is not null)
-        {
-            try
-            {
-                ConnectionTestResult testResult = await _connectionTestExecutor.ExecuteAsync(
-                    profile.ToConnectionConfig(),
-                    profile.Provider,
-                    profile.TimeoutSeconds,
-                    ct);
-
-                if (testResult.Success && testResult.Latency.HasValue)
-                    ActiveLatencyMs = (int)testResult.Latency.Value.TotalMilliseconds;
-                else if (!testResult.Success)
-                    ActiveLatencyMs = null;
-            }
-            catch
-            {
-                ActiveLatencyMs = null;
-            }
-        }
+            await RefreshActiveLatencyAsync(profile, ct);
 
         ActiveHealthStatus = await _healthLifecycleCoordinator.EvaluateActiveStatusAsync(
             Profiles,
@@ -1363,6 +1350,26 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             _connectionTestExecutor.ExecuteAsync,
             DegradedLatencyThresholdMs,
             ct);
+    }
+
+    private async Task RefreshActiveLatencyAsync(ConnectionProfile profile, CancellationToken ct = default)
+    {
+        try
+        {
+            ConnectionTestResult testResult = await _connectionTestExecutor.ExecuteAsync(
+                profile.ToConnectionConfig(),
+                profile.Provider,
+                profile.TimeoutSeconds,
+                ct);
+
+            ActiveLatencyMs = testResult.Success && testResult.Latency.HasValue
+                ? (int)testResult.Latency.Value.TotalMilliseconds
+                : null;
+        }
+        catch
+        {
+            ActiveLatencyMs = null;
+        }
     }
 
     private async Task ReloadMetadataAsync()
@@ -1426,6 +1433,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     private async Task SyncDatabaseOptionsAsync(CancellationToken ct)
     {
         AvailableDatabases.Clear();
+        AvailableDatabaseCatalogs.Clear();
 
         ConnectionProfile? activeProfile = Profiles.FirstOrDefault(p =>
             string.Equals(p.Id, ActiveProfileId, StringComparison.OrdinalIgnoreCase));
@@ -1439,15 +1447,40 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         if (!SupportsDatabaseOrCatalogSelection)
         {
             SelectedDatabase = activeProfile.Database;
+            if (!string.IsNullOrWhiteSpace(activeProfile.Database))
+            {
+                AvailableDatabases.Add(activeProfile.Database);
+                AvailableDatabaseCatalogs.Add(new DatabaseCatalogItem(activeProfile.Database, true));
+            }
             RaisePropertyChanged(nameof(IsDatabaseSelectionVisible));
             return;
         }
 
         string[] databases = await _dbConnectionService.ListDatabasesAsync(ct);
-        foreach (string name in databases)
+        string[] distinctDatabases = databases
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        int probeCount = 0;
+        foreach (string name in distinctDatabases)
         {
-            if (!string.IsNullOrWhiteSpace(name))
-                AvailableDatabases.Add(name);
+            AvailableDatabases.Add(name);
+            bool? hasReadPermission = null;
+            if (probeCount < DatabaseReadProbeLimit)
+            {
+                hasReadPermission = await _dbConnectionService.HasReadAccessToDatabaseAsync(name, ct);
+                probeCount++;
+            }
+
+            AvailableDatabaseCatalogs.Add(new DatabaseCatalogItem(name, hasReadPermission));
+        }
+
+        if (!string.IsNullOrWhiteSpace(activeProfile.Database)
+            && !AvailableDatabases.Any(name => string.Equals(name, activeProfile.Database, StringComparison.OrdinalIgnoreCase)))
+        {
+            AvailableDatabases.Add(activeProfile.Database);
+            AvailableDatabaseCatalogs.Add(new DatabaseCatalogItem(activeProfile.Database, null));
         }
 
         string? nextDatabase = AvailableDatabases.Any(name =>
@@ -1491,7 +1524,10 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
                 ConnectionProfile? updatedActiveProfile = Profiles.FirstOrDefault(p =>
                     string.Equals(p.Id, ActiveProfileId, StringComparison.OrdinalIgnoreCase));
                 if (updatedActiveProfile is not null)
+                {
                     await LoadDatabaseTablesAsync(updatedActiveProfile, token);
+                    await RefreshActiveLatencyAsync(updatedActiveProfile, token);
+                }
             }
 
             ActiveServerVersion = await _dbConnectionService.GetServerVersionAsync()
@@ -2005,6 +2041,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         public SvgImage? ProviderIconSvgSource { get; }
         public string ConnectionName => string.IsNullOrWhiteSpace(Profile.Name) ? "-" : Profile.Name;
         public string DatabaseName => string.IsNullOrWhiteSpace(Profile.Database) ? "-" : Profile.Database;
+        public string HostName => string.IsNullOrWhiteSpace(Profile.Host) ? "-" : Profile.Host;
         public string ProviderName => Profile.Provider.ToString();
         public string SearchText =>
             $"{ConnectionName} {DatabaseName} {ProviderName} {Profile.Host} {Profile.Username}".Trim();

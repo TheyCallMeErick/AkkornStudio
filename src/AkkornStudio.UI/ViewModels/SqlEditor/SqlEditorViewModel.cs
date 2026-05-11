@@ -100,6 +100,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private string? _connectionSwitcherSelectedProfileId;
     private string? _connectionSwitcherSelectedDatabase;
     private DbMetadata? _cachedSchemaMetadata;
+    private string? _cachedSchemaSelection;
     private IReadOnlyList<SqlEditorSchemaTableItem> _schemaTablesCache = [];
     private IReadOnlyList<SqlEditorSchemaTableItem> _filteredSchemaTablesCache = [];
     private string _filteredSchemaNeedleCache = string.Empty;
@@ -2036,6 +2037,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private void InvalidateSchemaTableCaches()
     {
         _cachedSchemaMetadata = null;
+        _cachedSchemaSelection = null;
         _schemaTablesCache = [];
         _filteredSchemaTablesCache = [];
         _filteredSchemaNeedleCache = string.Empty;
@@ -2046,6 +2048,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private void EnsureSchemaTablesCache()
     {
         DbMetadata? metadata = _metadataResolver();
+        string? selectedSchema = ResolveSchemaSelection();
         if (metadata is null)
         {
             if (_isSchemaTablesCacheValid && _schemaTablesCache.Count == 0)
@@ -2056,15 +2059,27 @@ public sealed class SqlEditorViewModel : ViewModelBase
             return;
         }
 
-        if (_isSchemaTablesCacheValid && ReferenceEquals(_cachedSchemaMetadata, metadata))
-            return;
+        if (_isSchemaTablesCacheValid
+            && ReferenceEquals(_cachedSchemaMetadata, metadata)
+            && string.Equals(_cachedSchemaSelection, selectedSchema, StringComparison.OrdinalIgnoreCase))
+        return;
 
-        _schemaTablesCache = BuildSchemaTables(metadata);
+        _schemaTablesCache = BuildSchemaTables(metadata, selectedSchema);
         _cachedSchemaMetadata = metadata;
+        _cachedSchemaSelection = selectedSchema;
         _filteredSchemaTablesCache = [];
         _filteredSchemaNeedleCache = string.Empty;
         _isSchemaTablesCacheValid = true;
         _isFilteredSchemaTablesCacheValid = false;
+    }
+
+    private string? ResolveSchemaSelection()
+    {
+        string? selected = SharedConnectionManager?.SelectedSchema;
+        if (string.IsNullOrWhiteSpace(selected))
+            return null;
+
+        return selected.Trim();
     }
 
     public bool TryBuildReportExportContext(out SqlEditorReportExportContext? context)
@@ -2823,11 +2838,17 @@ public sealed class SqlEditorViewModel : ViewModelBase
             .ToList();
     }
 
-    private IReadOnlyList<SqlEditorSchemaTableItem> BuildSchemaTables(DbMetadata metadata)
+    private IReadOnlyList<SqlEditorSchemaTableItem> BuildSchemaTables(DbMetadata metadata, string? selectedSchema)
     {
         IReadOnlyDictionary<string, string> relationshipIndex = BuildColumnRelationshipIndex(metadata);
+        IEnumerable<SchemaMetadata> schemas = metadata.Schemas;
+        if (!string.IsNullOrWhiteSpace(selectedSchema))
+        {
+            schemas = schemas.Where(schema =>
+                string.Equals(schema.Name, selectedSchema, StringComparison.OrdinalIgnoreCase));
+        }
 
-        return metadata.Schemas
+        return schemas
             .SelectMany(schema => schema.Tables.Select(table =>
             {
                 IReadOnlyList<SqlEditorSchemaColumnItem> columns = BuildSchemaColumns(table, relationshipIndex);

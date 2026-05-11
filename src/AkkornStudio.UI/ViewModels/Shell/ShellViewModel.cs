@@ -2614,7 +2614,9 @@ public sealed class ShellViewModel : ViewModelBase
         return null;
     }
 
-    private DbMetadata? ResolveSqlEditorMetadata() => null;
+    private DbMetadata? ResolveSqlEditorMetadata() =>
+        _sqlEditorConnectionManager.ActiveMetadata
+        ?? ResolveSharedMetadata();
 
     private ConnectionManagerViewModel? ResolveSharedConnectionManager() =>
         Canvas?.ConnectionManager ?? DdlCanvas?.ConnectionManager;

@@ -34,7 +34,11 @@
         <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center" Spacing="2">
           <StackPanel Orientation="Horizontal" Spacing="5"
                       IsVisible="{Binding IsConnected, ElementName=Root}">
-            <Ellipse Width="6" Height="6" Fill="{StaticResource StatusOkBrush}"/>
+            <Ellipse x:Name="ConnectedStatusDot"
+                     Width="6"
+                     Height="6"
+                     Fill="{StaticResource StatusOkBrush}"
+                     RenderTransformOrigin="0.5,0.5"/>
             <TextBlock Text="Conectado"
                        Foreground="{StaticResource StatusOkBrush}"
                        FontSize="{StaticResource FontSizeCaption}"
@@ -107,7 +111,7 @@
                   Command="{Binding OpenConnectionManagerCommand, ElementName=Root}"
                   IsEnabled="{Binding IsReloading, ElementName=Root, Converter={x:Static BoolConverters.Not}}"
                   ToolTip.Tip="Abrir conexoes">
-            <mi:MaterialIcon Kind="Connection" Width="16" Height="16"/>
+            <mi:MaterialIcon Kind="SwapHorizontal" Width="16" Height="16"/>
           </Button>
         </Grid>
       </StackPanel>
@@ -133,42 +137,9 @@
           <Button Grid.Column="1"
                   Classes="secondary compact"
                   IsEnabled="{Binding IsReloading, ElementName=Root, Converter={x:Static BoolConverters.Not}}"
+                  Click="OnOpenDatabaseSwitcherClick"
                   ToolTip.Tip="Selecionar banco">
-            <mi:MaterialIcon Kind="ChevronDown" Width="16" Height="16"/>
-            <Button.Flyout>
-              <Flyout Placement="BottomEdgeAlignedRight">
-                <Border Background="{StaticResource Bg1Brush}"
-                        BorderBrush="{StaticResource BorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="{StaticResource RadiusSM}"
-                        Padding="6"
-                        MinWidth="260">
-                  <StackPanel Spacing="4">
-                    <TextBlock Text="Bancos disponiveis"
-                               FontSize="{StaticResource FontSizeCaption}"
-                               Foreground="{StaticResource TextMutedBrush}"/>
-                    <ItemsControl ItemsSource="{Binding AvailableDatabases, ElementName=Root}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                          <Button Classes="secondary compact"
-                                  HorizontalAlignment="Stretch"
-                                  HorizontalContentAlignment="Left"
-                                  Click="OnDatabaseOptionClick">
-                            <Grid ColumnDefinitions="Auto,*">
-                              <mi:MaterialIcon Kind="Database" Width="14" Height="14" VerticalAlignment="Center"/>
-                              <TextBlock Grid.Column="1"
-                                         Margin="8,0,0,0"
-                                         Text="{Binding .}"
-                                         TextTrimming="CharacterEllipsis"/>
-                            </Grid>
-                          </Button>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </StackPanel>
-                </Border>
-              </Flyout>
-            </Button.Flyout>
+            <mi:MaterialIcon Kind="SwapHorizontal" Width="16" Height="16"/>
           </Button>
         </Grid>
       </StackPanel>
@@ -207,24 +178,22 @@
                     <TextBlock Text="Schemas disponiveis"
                                FontSize="{StaticResource FontSizeCaption}"
                                Foreground="{StaticResource TextMutedBrush}"/>
-                    <ItemsControl ItemsSource="{Binding AvailableSchemas, ElementName=Root}">
-                      <ItemsControl.ItemTemplate>
+                    <ListBox ItemsSource="{Binding AvailableSchemas, ElementName=Root}"
+                             SelectedItem="{Binding SelectedSchema, ElementName=Root, Mode=OneWay}"
+                             SelectionChanged="OnSchemaSelectionChanged"
+                             MaxHeight="220">
+                      <ListBox.ItemTemplate>
                         <DataTemplate>
-                          <Button Classes="secondary compact"
-                                  HorizontalAlignment="Stretch"
-                                  HorizontalContentAlignment="Left"
-                                  Click="OnSchemaOptionClick">
-                            <Grid ColumnDefinitions="Auto,*">
-                              <mi:MaterialIcon Kind="TableColumn" Width="14" Height="14" VerticalAlignment="Center"/>
-                              <TextBlock Grid.Column="1"
-                                         Margin="8,0,0,0"
-                                         Text="{Binding .}"
-                                         TextTrimming="CharacterEllipsis"/>
-                            </Grid>
-                          </Button>
+                          <Grid ColumnDefinitions="Auto,*">
+                            <mi:MaterialIcon Kind="TableColumn" Width="14" Height="14" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Margin="8,0,0,0"
+                                       Text="{Binding .}"
+                                       TextTrimming="CharacterEllipsis"/>
+                          </Grid>
                         </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                      </ListBox.ItemTemplate>
+                    </ListBox>
                   </StackPanel>
                 </Border>
               </Flyout>

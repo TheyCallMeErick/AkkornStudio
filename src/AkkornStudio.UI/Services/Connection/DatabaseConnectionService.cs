@@ -198,7 +198,11 @@ public sealed class DatabaseConnectionService : IDisposable
 
         try
         {
-            DataTable? table = await ExecutePreviewAsTableAsync(_activeConfig, sql, 10000, ct);
+            DataTable? table = await ExecutePreviewAsTableAsync(
+                _activeConfig,
+                sql,
+                PreviewExecutionOptions.NoLimit,
+                ct);
             if (table is null || table.Columns.Count == 0)
                 return [];
 
@@ -241,6 +245,37 @@ public sealed class DatabaseConnectionService : IDisposable
         _metadataService = null;
         _loadedMetadata = null;
         _activeConfig = switched;
+    }
+
+    /// <summary>
+    /// Best-effort read permission probe for a specific database/catalog.
+    /// Returns true when metadata read succeeds, false when access fails, null when no active config exists.
+    /// </summary>
+    public async Task<bool?> HasReadAccessToDatabaseAsync(string databaseName, CancellationToken ct = default)
+    {
+        if (_activeConfig is null || string.IsNullOrWhiteSpace(databaseName))
+            return null;
+
+        ConnectionConfig target = _activeConfig with { Database = databaseName };
+        string sql = target.Provider switch
+        {
+            DatabaseProvider.Postgres => "SELECT 1 FROM information_schema.tables LIMIT 1;",
+            DatabaseProvider.MySql => "SELECT 1 FROM information_schema.tables LIMIT 1;",
+            DatabaseProvider.SqlServer => "SELECT TOP 1 1 FROM INFORMATION_SCHEMA.TABLES;",
+            DatabaseProvider.SQLite => "SELECT 1;",
+            _ => "SELECT 1;",
+        };
+
+        try
+        {
+            _ = await ExecutePreviewAsTableAsync(target, sql, 1, ct);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Read permission probe failed for database {Database}", databaseName);
+            return false;
+        }
     }
 
     /// <summary>
