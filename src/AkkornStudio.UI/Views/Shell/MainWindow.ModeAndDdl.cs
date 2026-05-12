@@ -769,6 +769,18 @@ public partial class MainWindow
     {
         switch (CurrentShell.ActivePreviewContract.Kind)
         {
+            case WorkspaceDocumentPreviewKind.Query:
+            {
+                CanvasViewModel queryCanvas = CurrentShell.ActiveQueryCanvasDocument
+                    ?? CurrentShell.EnsureCanvas();
+                queryCanvas.LiveSql.Recompile();
+                DatabaseProvider provider = ResolveActiveConnectionConfigForWorkspace()?.Provider ?? queryCanvas.Provider;
+                CurrentShell.OutputPreview.OpenForQuery(queryCanvas, queryCanvas.LiveSql, provider.ToString());
+                TrackCriticalFlow("CF-07-sql-preview", "open_query_preview", "ok");
+                await Task.CompletedTask;
+                return;
+            }
+
             case WorkspaceDocumentPreviewKind.Ddl:
             {
                 await ViewDdlSqlAsync();

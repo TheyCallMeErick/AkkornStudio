@@ -622,6 +622,22 @@
             </Grid>
           </Border>
 
+          <!-- Comparison summary -->
+          <Border Background="{StaticResource Bg0Brush}"
+                  BorderBrush="{StaticResource BorderSubtleBrush}"
+                  BorderThickness="1"
+                  CornerRadius="{StaticResource RadiusSM}"
+                  Margin="8,3,8,3"
+                  Padding="6,4"
+                  IsVisible="{Binding HasComparisonInlineSummary}">
+            <TextBlock Text="{Binding ComparisonInlineSummary}"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       FontFamily="{StaticResource MonoFont}"
+                       TextTrimming="CharacterEllipsis"
+                       MaxLines="2"/>
+          </Border>
+
           <!-- OUTPUT BAND -->
           <Border Background="{StaticResource Bg1Brush}" Padding="3,2,3,4" CornerRadius="{StaticResource RadiusLGBottom}" ClipToBounds="True">
             <Grid ColumnDefinitions="*,*">

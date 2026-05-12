@@ -6,6 +6,7 @@ using AkkornStudio.UI.Services.Localization;
 using AkkornStudio.UI.Services.Search;
 using AkkornStudio.UI.Services.Settings;
 using AkkornStudio.UI.Services.SqlEditor;
+using AkkornStudio.UI.Services.SqlEditor.Results;
 using AkkornStudio.UI.ViewModels;
 using System.Diagnostics;
 using System.Data;
@@ -255,6 +256,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
     public ICommand CloseResultsSheetCommand { get; }
     public ICommand ReopenResultsSheetCommand { get; }
     public IReadOnlyList<DatabaseProvider> AvailableProviders { get; } = Enum.GetValues<DatabaseProvider>();
+
+    public event EventHandler<SqlResultPageRequestedEventArgs>? SqlResultPageRequested;
 
     public bool Top1000WithoutWhereEnabled
     {
@@ -1446,7 +1449,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
                 return result;
 
             StoreResult(result);
-            OpenResultsSheet();
+            ShowResultInPreferredSurface(result);
             UpdateExecutionTelemetry([result]);
             UpdateExecutionFeedback(result);
             RaiseSqlPanelPropertiesChanged();
@@ -1522,7 +1525,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
             {
                 SqlEditorResultSet empty = await ExecuteSqlAsync(null, maxRows, enforceMutationGuard: true);
                 StoreResult(empty);
-                OpenResultsSheet();
+                ShowResultInPreferredSurface(empty);
                 UpdateExecutionTelemetry([empty]);
                 UpdateExecutionFeedback(empty);
                 RaiseSqlPanelPropertiesChanged();
@@ -1546,7 +1549,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
                     break;
 
                 StoreResult(result);
-                OpenResultsSheet();
+                ShowResultInPreferredSurface(result);
                 UpdateExecutionFeedback(result);
                 RaiseSqlPanelPropertiesChanged();
 
@@ -1758,7 +1761,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
                 return result;
 
             StoreResult(result);
-            OpenResultsSheet();
+            ShowResultInPreferredSurface(result);
             UpdateExecutionTelemetry([result]);
             UpdateExecutionFeedback(result);
             RaiseSqlPanelPropertiesChanged();
@@ -1854,7 +1857,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
             SqlEditorResultSet result = await ExecuteSqlAsync(sql, maxRows, enforceMutationGuard: false);
 
             StoreResult(result);
-            OpenResultsSheet();
+            ShowResultInPreferredSurface(result);
             UpdateExecutionTelemetry([result]);
             UpdateExecutionFeedback(result);
             RaiseSqlPanelPropertiesChanged();
@@ -2585,6 +2588,42 @@ public sealed class SqlEditorViewModel : ViewModelBase
     {
         IsResultsSheetOpen = false;
         NotifyCommands();
+    }
+
+    private void ShowResultInPreferredSurface(SqlEditorResultSet result)
+    {
+        if (TryRequestResultPage(result))
+            return;
+
+        OpenResultsSheet();
+    }
+
+    private bool TryRequestResultPage(SqlEditorResultSet result)
+    {
+        if (SqlResultPageRequested is null)
+            return false;
+
+        if (!result.Success || result.Data is null)
+            return false;
+
+        string statement = result.StatementSql?.TrimStart() ?? string.Empty;
+        if (!statement.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        ConnectionConfig? config = ResolveConnectionConfigForActiveTab();
+        string connectionId = ActiveTabConnectionProfileId
+            ?? config?.Database
+            ?? "unknown-connection";
+
+        var request = new SqlResultSessionCreateRequest(
+            SqlText: result.StatementSql ?? string.Empty,
+            ConnectionId: connectionId,
+            DatabaseName: config?.Database,
+            SchemaName: null,
+            ResultSet: result);
+
+        SqlResultPageRequested.Invoke(this, new SqlResultPageRequestedEventArgs(request));
+        return true;
     }
 
     public void ClearOutputMessages()

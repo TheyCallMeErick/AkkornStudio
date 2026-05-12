@@ -14,6 +14,7 @@ public sealed class WorkspaceDocumentDiagnosticsContractRegistry : IWorkspaceDoc
             WorkspaceDocumentType.QueryCanvas => HasDiagnosticsContract,
             WorkspaceDocumentType.DdlCanvas => HasDiagnosticsContract,
             WorkspaceDocumentType.SqlEditor => NoDiagnosticsContract,
+            WorkspaceDocumentType.SqlResult => NoDiagnosticsContract,
             WorkspaceDocumentType.DdlSchemaCompare => NoDiagnosticsContract,
             WorkspaceDocumentType.ErDiagram => NoDiagnosticsContract,
             _ => NoDiagnosticsContract,

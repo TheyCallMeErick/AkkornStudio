@@ -275,6 +275,7 @@ public partial class MainWindow : Window
         CurrentShell.StartMenu.OpenConnectionsRequested += OnStartOpenConnectionsRequested;
         CurrentShell.StartMenu.OpenFromDiskRequested += OnStartOpenFromDiskRequested;
         CurrentShell.StartMenu.OpenSchemaCompareRequested += OnStartOpenSchemaCompareRequested;
+        CurrentShell.StartMenu.OpenSqlEditorRequested += OnStartOpenSqlEditorRequested;
         CurrentShell.StartMenu.OpenSavedConnectionRequested += OnStartOpenSavedConnectionRequested;
         CurrentShell.StartMenu.OpenRecentProjectRequested += OnStartOpenRecentProjectRequested;
         CurrentShell.StartMenu.OpenTemplateRequested += OnStartOpenTemplateRequested;
@@ -309,6 +310,13 @@ public partial class MainWindow : Window
         EnterCanvasMode();
         CurrentShell.OpenNewDocument(WorkspaceDocumentType.DdlSchemaCompare);
         CurrentShell.ActivateDocument(WorkspaceDocumentType.DdlSchemaCompare);
+        SyncModeToggleState();
+    }
+
+    private void OnStartOpenSqlEditorRequested()
+    {
+        EnterCanvasMode();
+        CurrentShell.ActivateDocument(WorkspaceDocumentType.SqlEditor);
         SyncModeToggleState();
     }
 

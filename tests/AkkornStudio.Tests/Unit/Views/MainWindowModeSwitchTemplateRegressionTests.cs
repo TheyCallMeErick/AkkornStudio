@@ -5,13 +5,12 @@ namespace AkkornStudio.Tests.Unit.Views;
 public sealed class MainWindowModeSwitchTemplateRegressionTests
 {
     [Fact]
-    public void ModeSwitch_ContainsSqlEditorButtonWithExpectedHandler()
+    public void ModeSwitch_DoesNotExposeSqlEditorButtonInHeader()
     {
         string xaml = ReadMainWindowXaml();
 
-        Assert.Contains("Name=\"SqlEditorModeBtn\"", xaml);
-        Assert.Contains("Content=\"{Binding [mode.sql], Source={x:Static loc:LocalizationService.Instance}}\"", xaml);
-        Assert.Contains("Click=\"SqlEditorModeBtn_Click\"", xaml);
+        Assert.DoesNotContain("Name=\"SqlEditorModeBtn\"", xaml);
+        Assert.DoesNotContain("Click=\"SqlEditorModeBtn_Click\"", xaml);
     }
 
     [Fact]

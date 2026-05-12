@@ -34,6 +34,16 @@ public sealed class WorkspaceDocumentPageContractRegistry : IWorkspaceDocumentPa
         ShowsQueryTabs: false,
         CanCollapseSidebars: false);
 
+    private static readonly WorkspaceDocumentPageContract SqlResultContract = new(
+        ShowsQueryCanvasPage: false,
+        ShowsDdlCanvasPage: false,
+        ShowsSqlEditorPage: false,
+        ShowsSchemaComparePage: false,
+        ShowsDiagramSidebar: false,
+        ShowsSqlEditorSidebar: false,
+        ShowsQueryTabs: false,
+        CanCollapseSidebars: false);
+
     private static readonly WorkspaceDocumentPageContract SchemaCompareContract = new(
         ShowsQueryCanvasPage: false,
         ShowsDdlCanvasPage: false,
@@ -61,6 +71,7 @@ public sealed class WorkspaceDocumentPageContractRegistry : IWorkspaceDocumentPa
             WorkspaceDocumentType.QueryCanvas => QueryContract,
             WorkspaceDocumentType.DdlCanvas => DdlContract,
             WorkspaceDocumentType.SqlEditor => SqlEditorContract,
+            WorkspaceDocumentType.SqlResult => SqlResultContract,
             WorkspaceDocumentType.DdlSchemaCompare => SchemaCompareContract,
             WorkspaceDocumentType.ErDiagram => ErDiagramContract,
             _ => QueryContract,

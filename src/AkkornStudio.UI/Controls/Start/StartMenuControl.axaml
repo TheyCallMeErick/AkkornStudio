@@ -282,9 +282,12 @@
                 <Grid RowDefinitions="Auto,*,Auto,Auto,Auto">
                   <TextBlock Classes="meta" Text="{Binding [start.quickActions], Source={x:Static loc:LocalizationService.Instance}}" FontWeight="{StaticResource FontWeightStrong}"/>
                   <TextBlock Grid.Row="1" Classes="meta" Text="{Binding [start.quickActionsSubtitle], Source={x:Static loc:LocalizationService.Instance}}" TextWrapping="Wrap" Opacity="0.9" Margin="0,6,0,0"/>
-                  <Button Grid.Row="2" Classes="ghost" Content="{Binding [main.open], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding OpenFromDiskCommand}" Margin="0,8,0,0" HorizontalAlignment="Center" MinWidth="132"/>
-                  <Button Grid.Row="3" Classes="primary" Content="{Binding [menu.newDiagram], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding CreateNewDiagramCommand}" Margin="0,8,0,0" HorizontalAlignment="Center" MinWidth="164"/>
-                  <Button Grid.Row="4" Classes="ghost" Content="{Binding [start.compareTables], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding OpenSchemaCompareCommand}" Margin="0,8,0,0" HorizontalAlignment="Center" MinWidth="164"/>
+                  <Button Grid.Row="2" Classes="primary" Content="{Binding [mode.sql], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding OpenSqlEditorCommand}" Margin="0,8,0,0" HorizontalAlignment="Center" MinWidth="164"/>
+                  <Button Grid.Row="3" Classes="ghost" Content="{Binding [menu.newDiagram], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding CreateNewDiagramCommand}" Margin="0,8,0,0" HorizontalAlignment="Center" MinWidth="164"/>
+                  <Grid Grid.Row="4" ColumnDefinitions="*,8,*" Margin="0,8,0,0">
+                    <Button Grid.Column="0" Classes="ghost" Content="{Binding [main.open], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding OpenFromDiskCommand}" HorizontalAlignment="Stretch"/>
+                    <Button Grid.Column="2" Classes="ghost" Content="{Binding [start.compareTables], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding OpenSchemaCompareCommand}" HorizontalAlignment="Stretch"/>
+                  </Grid>
                 </Grid>
               </Border>
 

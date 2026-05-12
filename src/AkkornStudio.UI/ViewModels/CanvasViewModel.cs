@@ -573,7 +573,10 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
         if (e.NewItems is not null)
         {
             foreach (NodeViewModel node in e.NewItems)
+            {
                 AttachNodeTracking(node);
+                node.SyncComparisonInlineSummary(Connections);
+            }
         }
 
         if (e.OldItems is not null)
@@ -656,6 +659,8 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
                 node.SyncWindowFunctionPins(Connections);
             else if (node.Type is NodeType.Subquery or NodeType.SubqueryReference or NodeType.SubqueryDefinition)
                 node.SyncSubqueryInputPins(Connections);
+
+            node.SyncComparisonInlineSummary(Connections);
         }
 
         if (e.NewItems is not null)
@@ -1240,7 +1245,16 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
     /// type-defining node's parameter changes.
     /// </summary>
     internal void NotifyNodeParameterChanged(NodeViewModel node, string paramName)
-        => _domainStrategy.OnParameterChanged(node, paramName, Connections, Nodes);
+    {
+        _domainStrategy.OnParameterChanged(node, paramName, Connections, Nodes);
+        RefreshComparisonInlineSummaries();
+    }
+
+    private void RefreshComparisonInlineSummaries()
+    {
+        foreach (NodeViewModel node in Nodes)
+            node.SyncComparisonInlineSummary(Connections);
+    }
 
     // â”€â”€ Selection (delegated to SelectionManager) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

@@ -73,6 +73,18 @@ public class StartMenuViewModelTests
     }
 
     [Fact]
+    public void OpenSqlEditorCommand_RaisesEvent()
+    {
+        var vm = new StartMenuViewModel();
+        var called = false;
+
+        vm.OpenSqlEditorRequested += () => called = true;
+        vm.OpenSqlEditorCommand.Execute(null);
+
+        Assert.True(called);
+    }
+
+    [Fact]
     public void RecentSearchQuery_FiltersRecentProjects()
     {
         var vm = new StartMenuViewModel();

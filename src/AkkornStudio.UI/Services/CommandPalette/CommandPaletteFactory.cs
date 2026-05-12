@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Material.Icons;
+using AkkornStudio.Core;
 using AkkornStudio.Nodes;
 using AkkornStudio.UI.Controls;
 using AkkornStudio.UI.Controls.Shell;
@@ -624,6 +625,16 @@ public class CommandPaletteFactory(
 
         switch (shell.ActivePreviewContract.Kind)
         {
+            case WorkspaceDocumentPreviewKind.Query:
+            {
+                CanvasViewModel queryCanvas = shell.ActiveQueryCanvasDocument
+                    ?? shell.EnsureCanvas();
+                queryCanvas.LiveSql.Recompile();
+                DatabaseProvider provider = queryCanvas.ActiveConnectionConfig?.Provider ?? queryCanvas.Provider;
+                shell.OutputPreview.OpenForQuery(queryCanvas, queryCanvas.LiveSql, provider.ToString());
+                return;
+            }
+
             case WorkspaceDocumentPreviewKind.Ddl:
             {
                 CanvasViewModel ddlCanvas = shell.EnsureDdlCanvas();

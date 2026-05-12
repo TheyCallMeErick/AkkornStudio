@@ -301,11 +301,6 @@
                       Click="DdlModeBtn_Click"
                       ToolTip.Tip="{Binding [tooltip.switchToDdlMode], Source={x:Static loc:LocalizationService.Instance}}"/>
               <Button Classes="mode-switch-btn"
-                      Name="SqlEditorModeBtn"
-                      Content="{Binding [mode.sql], Source={x:Static loc:LocalizationService.Instance}}"
-                      Click="SqlEditorModeBtn_Click"
-                      ToolTip.Tip="{Binding [tooltip.switchToSqlMode], Source={x:Static loc:LocalizationService.Instance}}"/>
-              <Button Classes="mode-switch-btn"
                       Name="ErDiagramModeBtn"
                       Content="ER"
                       Click="ErDiagramModeBtn_Click"
@@ -490,6 +485,11 @@
                               Margin="8"
                               DataContext="{ReflectionBinding DataContext.ActiveSqlEditorDocument, ElementName=RootWindow}"
                               IsVisible="{ReflectionBinding DataContext.ActivePageContract.ShowsSqlEditorPage, ElementName=RootWindow}"/>
+
+      <sqled:SqlResultPageControl Grid.Column="2"
+                                  Margin="8"
+                                  DataContext="{ReflectionBinding DataContext.ActiveSqlResultDocument, ElementName=RootWindow}"
+                                  IsVisible="{ReflectionBinding DataContext.IsSqlResultDocumentPageActive, ElementName=RootWindow}"/>
 
       <er:ErCanvasControl Grid.Column="2"
                           Margin="8"

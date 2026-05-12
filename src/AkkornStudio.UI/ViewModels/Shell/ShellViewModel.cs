@@ -12,6 +12,7 @@ using AkkornStudio.UI.Services.ConnectionManager;
 using AkkornStudio.UI.Services.Localization;
 using AkkornStudio.UI.Services.Settings;
 using AkkornStudio.UI.Services.SqlEditor;
+using AkkornStudio.UI.Services.SqlEditor.Results;
 using AkkornStudio.UI.Services.Workspace;
 using AkkornStudio.UI.Services.Workspace.Diagnostics;
 using AkkornStudio.UI.Services.Workspace.Models;
@@ -43,6 +44,7 @@ public sealed class ShellViewModel : ViewModelBase
         Query,
         Ddl,
         SqlEditor,
+        SqlResult,
         ErDiagram,
         DdlSchemaCompare,
     }
@@ -94,11 +96,14 @@ public sealed class ShellViewModel : ViewModelBase
     private PropertyChangedEventHandler? _outputPreviewPropertyChanged;
     private Guid? _queryDocumentId;
     private Guid? _ddlDocumentId;
+    private Guid? _sqlResultDocumentId;
     private Guid? _erDiagramDocumentId;
     private Guid? _ddlSchemaCompareDocumentId;
     private Guid? _connectionModalOwnerDocumentId;
     private Guid? _lastSyncedWorkspaceDocumentId;
     private ProjectConventionSettings _projectConventionSettings = AppSettingsStore.LoadProjectConventionSettings();
+    private readonly SqlResultSessionService _sqlResultSessionService = new();
+    private SqlResultPageViewModel? _sqlResultPage;
 
     public ShellViewModel(
         CanvasViewModel? canvas = null,
@@ -125,14 +130,7 @@ public sealed class ShellViewModel : ViewModelBase
         LeftSidebar = new LeftSidebarViewModel();
         RightSidebar = new RightSidebarViewModel();
         OutputPreview = new OutputPreviewModalViewModel();
-        SqlEditor = _sqlEditorViewModelFactory.Create(new SqlEditorViewModelFactoryContext
-        {
-            ConnectionConfigResolver = ResolveSqlEditorActiveConnectionConfig,
-            ConnectionConfigByProfileIdResolver = ResolveSqlEditorConnectionByProfileId,
-            ConnectionProfilesResolver = ResolveSqlEditorConnectionProfiles,
-            MetadataResolver = ResolveSqlEditorMetadata,
-            SharedConnectionManagerResolver = ResolveSqlEditorConnectionManager,
-        });
+        SqlEditor = BuildSqlEditorDocument();
         QueryModeCommand = new RelayCommand(() => ActivateDocument(WorkspaceDocumentType.QueryCanvas));
         DdlModeCommand = new RelayCommand(() => ActivateDocument(WorkspaceDocumentType.DdlCanvas));
         SqlEditorModeCommand = new RelayCommand(() => ActivateDocument(WorkspaceDocumentType.SqlEditor));
@@ -214,6 +212,8 @@ public sealed class ShellViewModel : ViewModelBase
 
     public bool IsSqlEditorDocumentPageActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.SqlEditor;
 
+    public bool IsSqlResultDocumentPageActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.SqlResult;
+
     public bool IsDiagramDocumentPageActive => IsQueryDocumentPageActive || IsDdlDocumentPageActive;
 
     public bool IsErDiagramDocumentPageActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.ErDiagram;
@@ -262,6 +262,7 @@ public sealed class ShellViewModel : ViewModelBase
     {
         WorkspaceDocumentType.DdlCanvas => AppMode.Ddl,
         WorkspaceDocumentType.SqlEditor => AppMode.SqlEditor,
+        WorkspaceDocumentType.SqlResult => AppMode.SqlResult,
         WorkspaceDocumentType.ErDiagram => AppMode.ErDiagram,
         WorkspaceDocumentType.DdlSchemaCompare => AppMode.DdlSchemaCompare,
         _ => AppMode.Query,
@@ -272,6 +273,8 @@ public sealed class ShellViewModel : ViewModelBase
     public bool IsDdlModeActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.DdlCanvas;
 
     public bool IsSqlEditorModeActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.SqlEditor;
+
+    public bool IsSqlResultModeActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.SqlResult;
 
     public bool IsErDiagramModeActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.ErDiagram;
 
@@ -364,6 +367,11 @@ public sealed class ShellViewModel : ViewModelBase
     public SqlEditorViewModel? ActiveSqlEditorDocument =>
         ActiveWorkspaceDocumentType == WorkspaceDocumentType.SqlEditor
             ? ActiveWorkspaceDocument?.DocumentViewModel as SqlEditorViewModel
+            : null;
+
+    public SqlResultPageViewModel? ActiveSqlResultDocument =>
+        ActiveWorkspaceDocumentType == WorkspaceDocumentType.SqlResult
+            ? ActiveWorkspaceDocument?.DocumentViewModel as SqlResultPageViewModel
             : null;
 
     public ErCanvasViewModel? ActiveErDiagramDocument =>
@@ -559,6 +567,7 @@ public sealed class ShellViewModel : ViewModelBase
         {
             WorkspaceDocumentType.DdlCanvas => OpenNewDdlDocument(),
             WorkspaceDocumentType.SqlEditor => OpenNewSqlEditorDocument(),
+            WorkspaceDocumentType.SqlResult => OpenNewSqlResultDocument(),
             WorkspaceDocumentType.ErDiagram => OpenNewErDiagramDocument(),
             WorkspaceDocumentType.DdlSchemaCompare => OpenNewDdlSchemaCompareDocument(),
             _ => OpenNewQueryDocument(),
@@ -636,6 +645,7 @@ public sealed class ShellViewModel : ViewModelBase
                 WorkspaceDocumentType.QueryCanvas => BuildCanvasDocument(savedDocument, isDdl: false),
                 WorkspaceDocumentType.DdlCanvas => BuildCanvasDocument(savedDocument, isDdl: true),
                 WorkspaceDocumentType.SqlEditor => BuildSqlEditorDocument(),
+                WorkspaceDocumentType.SqlResult => BuildSqlResultDocument(),
                 WorkspaceDocumentType.ErDiagram => BuildErDiagramDocument(),
                 WorkspaceDocumentType.DdlSchemaCompare => BuildDdlSchemaCompareDocument(),
                 _ => BuildCanvasDocument(savedDocument, isDdl: false),
@@ -669,6 +679,9 @@ public sealed class ShellViewModel : ViewModelBase
         _ddlDocumentId = _workspaceRouter.OpenDocuments
             .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.DdlCanvas)
             ?.Descriptor.DocumentId;
+        _sqlResultDocumentId = _workspaceRouter.OpenDocuments
+            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.SqlResult)
+            ?.Descriptor.DocumentId;
         _erDiagramDocumentId = _workspaceRouter.OpenDocuments
             .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.ErDiagram)
             ?.Descriptor.DocumentId;
@@ -685,6 +698,9 @@ public sealed class ShellViewModel : ViewModelBase
         _erCanvas = _workspaceRouter.OpenDocuments
             .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.ErDiagram)
             ?.DocumentViewModel as ErCanvasViewModel;
+        _sqlResultPage = _workspaceRouter.OpenDocuments
+            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.SqlResult)
+            ?.DocumentViewModel as SqlResultPageViewModel;
 
         SyncStateFromActiveDocument();
         RaiseActiveDocumentPropertiesChanged();
@@ -1001,6 +1017,7 @@ public sealed class ShellViewModel : ViewModelBase
             WorkspaceDocumentType.QueryCanvas => ActiveQueryCanvasDocument?.ConnectionManager
                 ?? ResolveKnownQueryCanvas()?.ConnectionManager,
             WorkspaceDocumentType.SqlEditor => ResolveSqlEditorConnectionManager(),
+            WorkspaceDocumentType.SqlResult => ResolveSqlEditorConnectionManager(),
             WorkspaceDocumentType.DdlSchemaCompare => ResolveSqlEditorConnectionManager(),
             _ => ActiveCanvas?.ConnectionManager ?? ResolveSharedConnectionManager(),
         };
@@ -1088,6 +1105,7 @@ public sealed class ShellViewModel : ViewModelBase
             WorkspaceDocumentType.QueryCanvas => _queryDocumentId.HasValue && _workspaceRouter.TryActivate(_queryDocumentId.Value),
             WorkspaceDocumentType.DdlCanvas => _ddlDocumentId.HasValue && _workspaceRouter.TryActivate(_ddlDocumentId.Value),
             WorkspaceDocumentType.SqlEditor => TryActivateLastDocumentByType(WorkspaceDocumentType.SqlEditor),
+            WorkspaceDocumentType.SqlResult => TryActivateLastDocumentByType(WorkspaceDocumentType.SqlResult),
             WorkspaceDocumentType.ErDiagram => TryActivateLastDocumentByType(WorkspaceDocumentType.ErDiagram),
             WorkspaceDocumentType.DdlSchemaCompare => TryActivateLastDocumentByType(WorkspaceDocumentType.DdlSchemaCompare),
             _ => false,
@@ -1137,6 +1155,7 @@ public sealed class ShellViewModel : ViewModelBase
                 CloseDiagramConnectionManager(ResolveKnownQueryCanvas());
                 break;
             case WorkspaceDocumentType.SqlEditor:
+            case WorkspaceDocumentType.SqlResult:
             case WorkspaceDocumentType.ErDiagram:
             case WorkspaceDocumentType.DdlSchemaCompare:
                 HideDiagramOnlyOverlays();
@@ -1167,16 +1186,19 @@ public sealed class ShellViewModel : ViewModelBase
         RaisePropertyChanged(nameof(ActiveQueryCanvasDocument));
         RaisePropertyChanged(nameof(ActiveDdlCanvasDocument));
         RaisePropertyChanged(nameof(ActiveSqlEditorDocument));
+        RaisePropertyChanged(nameof(ActiveSqlResultDocument));
         RaisePropertyChanged(nameof(ActiveErDiagramDocument));
         RaisePropertyChanged(nameof(ActiveDdlSchemaCompareDocument));
         RaisePropertyChanged(nameof(IsQueryDocumentPageActive));
         RaisePropertyChanged(nameof(IsDdlDocumentPageActive));
         RaisePropertyChanged(nameof(IsSqlEditorDocumentPageActive));
+        RaisePropertyChanged(nameof(IsSqlResultDocumentPageActive));
         RaisePropertyChanged(nameof(IsErDiagramDocumentPageActive));
         RaisePropertyChanged(nameof(IsDdlSchemaCompareDocumentPageActive));
         RaisePropertyChanged(nameof(IsQueryModeActive));
         RaisePropertyChanged(nameof(IsDdlModeActive));
         RaisePropertyChanged(nameof(IsSqlEditorModeActive));
+        RaisePropertyChanged(nameof(IsSqlResultModeActive));
         RaisePropertyChanged(nameof(IsErDiagramModeActive));
         RaisePropertyChanged(nameof(IsDdlSchemaCompareModeActive));
         RaisePropertyChanged(nameof(IsDiagramDocumentPageActive));
@@ -1305,16 +1327,24 @@ public sealed class ShellViewModel : ViewModelBase
         int nextOrdinal = _workspaceRouter.OpenDocuments.Count(document =>
             document.Descriptor.DocumentType == WorkspaceDocumentType.SqlEditor) + 1;
         string title = nextOrdinal == 1 ? "SQL Editor" : $"SQL Editor {nextOrdinal}";
-        SqlEditorViewModel sqlEditorDocument = _sqlEditorViewModelFactory.Create(new SqlEditorViewModelFactoryContext
-        {
-            ConnectionConfigResolver = ResolveSqlEditorActiveConnectionConfig,
-            ConnectionConfigByProfileIdResolver = ResolveSqlEditorConnectionByProfileId,
-            ConnectionProfilesResolver = ResolveSqlEditorConnectionProfiles,
-            MetadataResolver = ResolveSqlEditorMetadata,
-            SharedConnectionManagerResolver = ResolveSqlEditorConnectionManager,
-        });
+        SqlEditorViewModel sqlEditorDocument = BuildSqlEditorDocument();
         Guid documentId = Guid.NewGuid();
         RegisterOrUpdateDocument(documentId, WorkspaceDocumentType.SqlEditor, title, sqlEditorDocument, activate: true);
+        SyncStateFromActiveDocument();
+        RaiseActiveDocumentPropertiesChanged();
+        SyncExtractedPanels();
+        return documentId;
+    }
+
+    private Guid OpenNewSqlResultDocument()
+    {
+        int nextOrdinal = _workspaceRouter.OpenDocuments.Count(document =>
+            document.Descriptor.DocumentType == WorkspaceDocumentType.SqlResult) + 1;
+        string title = nextOrdinal == 1 ? "SQL Result" : $"SQL Result {nextOrdinal}";
+        SqlResultPageViewModel resultDocument = BuildSqlResultDocument();
+        Guid documentId = Guid.NewGuid();
+        RegisterOrUpdateDocument(documentId, WorkspaceDocumentType.SqlResult, title, resultDocument, activate: true);
+        _sqlResultDocumentId ??= documentId;
         SyncStateFromActiveDocument();
         RaiseActiveDocumentPropertiesChanged();
         SyncExtractedPanels();
@@ -1420,7 +1450,7 @@ public sealed class ShellViewModel : ViewModelBase
 
     private SqlEditorViewModel BuildSqlEditorDocument()
     {
-        return _sqlEditorViewModelFactory.Create(new SqlEditorViewModelFactoryContext
+        SqlEditorViewModel viewModel = _sqlEditorViewModelFactory.Create(new SqlEditorViewModelFactoryContext
         {
             ConnectionConfigResolver = ResolveSqlEditorActiveConnectionConfig,
             ConnectionConfigByProfileIdResolver = ResolveSqlEditorConnectionByProfileId,
@@ -1428,6 +1458,66 @@ public sealed class ShellViewModel : ViewModelBase
             MetadataResolver = ResolveSqlEditorMetadata,
             SharedConnectionManagerResolver = ResolveSqlEditorConnectionManager,
         });
+        viewModel.SqlResultPageRequested -= OnSqlEditorResultPageRequested;
+        viewModel.SqlResultPageRequested += OnSqlEditorResultPageRequested;
+        return viewModel;
+    }
+
+    private SqlResultPageViewModel BuildSqlResultDocument()
+    {
+        _sqlResultPage ??= new SqlResultPageViewModel();
+        _sqlResultPage.ConfigureBackNavigation(sourceDocumentId =>
+        {
+            if (sourceDocumentId.HasValue && TryActivateWorkspaceDocument(sourceDocumentId.Value))
+                return;
+
+            ActivateDocument(WorkspaceDocumentType.SqlEditor);
+        });
+        return _sqlResultPage;
+    }
+
+    private void OnSqlEditorResultPageRequested(object? sender, SqlResultPageRequestedEventArgs e)
+    {
+        if (sender is not SqlEditorViewModel sourceEditor)
+            return;
+
+        Guid? sourceDocumentId = _workspaceRouter.OpenDocuments
+            .FirstOrDefault(document => ReferenceEquals(document.DocumentViewModel, sourceEditor))
+            ?.Descriptor.DocumentId;
+
+        SqlResultSession session = _sqlResultSessionService.Add(e.Request);
+        SqlResultPageViewModel resultPage = EnsureSqlResultDocument();
+        resultPage.SetSession(session, sourceDocumentId);
+        ActivateDocument(WorkspaceDocumentType.SqlResult);
+    }
+
+    private SqlResultPageViewModel EnsureSqlResultDocument()
+    {
+        if (_sqlResultDocumentId.HasValue)
+        {
+            SqlResultPageViewModel? existing = _workspaceRouter.OpenDocuments
+                .FirstOrDefault(document =>
+                    document.Descriptor.DocumentType == WorkspaceDocumentType.SqlResult)
+                ?.DocumentViewModel as SqlResultPageViewModel;
+            if (existing is not null)
+            {
+                _sqlResultPage = existing;
+                return existing;
+            }
+        }
+
+        Guid id = OpenNewDocument(WorkspaceDocumentType.SqlResult);
+        SqlResultPageViewModel? created = _workspaceRouter.OpenDocuments
+            .FirstOrDefault(document => document.Descriptor.DocumentId == id)
+            ?.DocumentViewModel as SqlResultPageViewModel;
+        if (created is not null)
+        {
+            _sqlResultPage = created;
+            return created;
+        }
+
+        _sqlResultPage ??= BuildSqlResultDocument();
+        return _sqlResultPage;
     }
 
     private ErCanvasViewModel BuildErDiagramDocument()

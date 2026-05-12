@@ -82,7 +82,7 @@ public class CommandPaletteFactoryNewCanvasTests
     }
 
     [Fact]
-    public void TogglePreviewCommand_InQueryMode_ShowsUnavailableState()
+    public void TogglePreviewCommand_InQueryMode_OpensQueryPreviewState()
     {
 #pragma warning disable SYSLIB0050
         var window = (Window)FormatterServices.GetUninitializedObject(typeof(Window));
@@ -110,7 +110,8 @@ public class CommandPaletteFactoryNewCanvasTests
         cmd.Execute();
 
         Assert.True(shell.OutputPreview.IsVisible);
-        Assert.Equal(OutputPreviewModalViewModel.EOutputPreviewMode.Unavailable, shell.OutputPreview.Mode);
+        Assert.Equal(OutputPreviewModalViewModel.EOutputPreviewMode.Query, shell.OutputPreview.Mode);
+        Assert.True(shell.OutputPreview.ShowQueryPrimaryContent);
     }
 
     [Fact]

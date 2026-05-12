@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AkkornStudio.UI.ViewModels"
+             xmlns:loc="using:AkkornStudio.UI.Services.Localization"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             x:Class="AkkornStudio.UI.Controls.SqlEditor.SqlResultPageControl"
+             x:DataType="vm:SqlResultPageViewModel">
+  <Grid Margin="8"
+        RowDefinitions="Auto,Auto,*"
+        IsVisible="{Binding HasSession}">
+    <Border Grid.Row="0"
+            Classes="surface-card"
+            Padding="10">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto"
+            ColumnSpacing="8">
+        <Button Grid.Column="0"
+                Classes="secondary compact"
+                Command="{Binding BackToEditorCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <mi:MaterialIcon Kind="ArrowLeft" Width="14" Height="14"/>
+            <TextBlock Text="{Binding [common.back], Source={x:Static loc:LocalizationService.Instance}}"/>
+          </StackPanel>
+        </Button>
+
+        <TextBlock Grid.Column="1"
+                   VerticalAlignment="Center"
+                   Text="{Binding SqlText}"
+                   TextWrapping="NoWrap"
+                   TextTrimming="CharacterEllipsis"/>
+
+        <Border Grid.Column="2"
+                Classes="chip"
+                Padding="8,2">
+          <TextBlock Text="{Binding StatusText}"/>
+        </Border>
+
+        <Border Grid.Column="3"
+                Classes="chip"
+                Padding="8,2">
+          <TextBlock Text="{Binding RowCountText, StringFormat='Linhas: {0}'}"/>
+        </Border>
+
+        <Border Grid.Column="4"
+                Classes="chip"
+                Padding="8,2">
+          <TextBlock Text="{Binding ColumnCountText, StringFormat='Colunas: {0}'}"/>
+        </Border>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="1"
+            Margin="0,8,0,8"
+            Classes="surface-card"
+            Padding="10">
+      <Grid ColumnDefinitions="*,*,*"
+            ColumnSpacing="12">
+        <TextBlock Grid.Column="0" Text="{Binding ConnectionId, StringFormat='Conexão: {0}'}"/>
+        <TextBlock Grid.Column="1" Text="{Binding DatabaseName, StringFormat='Banco: {0}'}"/>
+        <TextBlock Grid.Column="2" Text="{Binding ExecutedAtText, StringFormat='Executado em: {0}'}"/>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            Classes="surface-card"
+            Padding="8">
+      <DataGrid ItemsSource="{Binding RowsView}"
+                IsReadOnly="True"
+                GridLinesVisibility="Horizontal"
+                AutoGenerateColumns="True"
+                SelectionMode="Extended"/>
+    </Border>
+  </Grid>
+</UserControl>
