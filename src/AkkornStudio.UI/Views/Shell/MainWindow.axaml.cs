@@ -377,6 +377,7 @@ public partial class MainWindow : Window
             WorkspaceDocumentType.DdlCanvas => GetDdlCanvasForInteraction().ConnectionManager,
             WorkspaceDocumentType.QueryCanvas => GetQueryCanvasForInteraction().ConnectionManager,
             WorkspaceDocumentType.SqlEditor => ResolveDiagramCanvasForConnectionSidebar().ConnectionManager,
+            WorkspaceDocumentType.SqlResult => ResolveDiagramCanvasForConnectionSidebar().ConnectionManager,
             WorkspaceDocumentType.DdlSchemaCompare => CurrentShell.ActiveConnectionManager
                 ?? ResolveDiagramCanvasForConnectionSidebar().ConnectionManager,
             _ => ResolveDiagramCanvasForConnectionSidebar().ConnectionManager,
@@ -840,6 +841,7 @@ public partial class MainWindow : Window
             WorkspaceDocumentType.DdlCanvas => GetDdlCanvasForInteraction().ActiveConnectionConfig,
             WorkspaceDocumentType.QueryCanvas => GetQueryCanvasForInteraction().ActiveConnectionConfig,
             WorkspaceDocumentType.SqlEditor => ResolveDiagramCanvasForConnectionSidebar().ActiveConnectionConfig,
+            WorkspaceDocumentType.SqlResult => ResolveDiagramCanvasForConnectionSidebar().ActiveConnectionConfig,
             WorkspaceDocumentType.DdlSchemaCompare => null,
             _ => GetQueryCanvasForInteraction().ActiveConnectionConfig
                 ?? CurrentShell.DdlCanvas?.ActiveConnectionConfig,
@@ -853,6 +855,7 @@ public partial class MainWindow : Window
             WorkspaceDocumentType.DdlCanvas => GetDdlCanvasForInteraction().DatabaseMetadata,
             WorkspaceDocumentType.QueryCanvas => GetQueryCanvasForInteraction().DatabaseMetadata,
             WorkspaceDocumentType.SqlEditor => ResolveDiagramCanvasForConnectionSidebar().DatabaseMetadata,
+            WorkspaceDocumentType.SqlResult => ResolveDiagramCanvasForConnectionSidebar().DatabaseMetadata,
             WorkspaceDocumentType.DdlSchemaCompare => null,
             _ => GetQueryCanvasForInteraction().DatabaseMetadata
                 ?? CurrentShell.DdlCanvas?.DatabaseMetadata,

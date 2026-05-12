@@ -1466,6 +1466,7 @@ public sealed class ShellViewModel : ViewModelBase
     private SqlResultPageViewModel BuildSqlResultDocument()
     {
         _sqlResultPage ??= new SqlResultPageViewModel();
+        _sqlResultPage.ConfigureSessionService(_sqlResultSessionService);
         _sqlResultPage.ConfigureBackNavigation(sourceDocumentId =>
         {
             if (sourceDocumentId.HasValue && TryActivateWorkspaceDocument(sourceDocumentId.Value))

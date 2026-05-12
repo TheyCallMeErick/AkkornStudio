@@ -22,6 +22,8 @@ public sealed class MainWindowModeSwitchTemplateRegressionTests
         Assert.Contains("IsVisible=\"{ReflectionBinding DataContext.ActivePageContract.ShowsSqlEditorPage, ElementName=RootWindow}\"", xaml);
         Assert.Contains("<sqled:SqlEditorControl Grid.Column=\"2\"", xaml);
         Assert.Contains("DataContext=\"{ReflectionBinding DataContext.ActiveSqlEditorDocument, ElementName=RootWindow}\"", xaml);
+        Assert.Contains("<sqled:SqlResultPageControl Grid.Column=\"2\"", xaml);
+        Assert.Contains("DataContext=\"{ReflectionBinding DataContext.ActiveSqlResultDocument, ElementName=RootWindow}\"", xaml);
     }
 
     [Fact]

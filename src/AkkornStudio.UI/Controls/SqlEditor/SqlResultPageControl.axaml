@@ -1,17 +1,21 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:AkkornStudio.UI.ViewModels"
+             xmlns:result="using:AkkornStudio.UI.Services.SqlEditor.Results"
              xmlns:loc="using:AkkornStudio.UI.Services.Localization"
              xmlns:mi="using:Material.Icons.Avalonia"
              x:Class="AkkornStudio.UI.Controls.SqlEditor.SqlResultPageControl"
+             x:Name="Root"
              x:DataType="vm:SqlResultPageViewModel">
   <Grid Margin="8"
         RowDefinitions="Auto,Auto,*"
+        ColumnDefinitions="280,*"
         IsVisible="{Binding HasSession}">
     <Border Grid.Row="0"
+            Grid.ColumnSpan="2"
             Classes="surface-card"
             Padding="10">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto"
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto"
             ColumnSpacing="8">
         <Button Grid.Column="0"
                 Classes="secondary compact"
@@ -37,37 +41,437 @@
         <Border Grid.Column="3"
                 Classes="chip"
                 Padding="8,2">
-          <TextBlock Text="{Binding RowCountText, StringFormat='Linhas: {0}'}"/>
+          <TextBlock Text="{Binding RowCountText, StringFormat='Rows: {0}'}"/>
         </Border>
 
         <Border Grid.Column="4"
                 Classes="chip"
                 Padding="8,2">
-          <TextBlock Text="{Binding ColumnCountText, StringFormat='Colunas: {0}'}"/>
+          <TextBlock Text="{Binding ColumnCountText, StringFormat='Columns: {0}'}"/>
         </Border>
+
+        <Button Grid.Column="5"
+                Classes="secondary compact"
+                Command="{Binding TogglePinCommand}"
+                Content="{Binding TogglePinText}"/>
+
+        <Button Grid.Column="6"
+                Classes="danger compact"
+                Command="{Binding CloseSessionCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+            <TextBlock Text="Close Session"/>
+          </StackPanel>
+        </Button>
       </Grid>
     </Border>
 
     <Border Grid.Row="1"
+            Grid.ColumnSpan="2"
             Margin="0,8,0,8"
             Classes="surface-card"
             Padding="10">
-      <Grid ColumnDefinitions="*,*,*"
+      <Grid ColumnDefinitions="*,*,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
             ColumnSpacing="12">
-        <TextBlock Grid.Column="0" Text="{Binding ConnectionId, StringFormat='Conexão: {0}'}"/>
-        <TextBlock Grid.Column="1" Text="{Binding DatabaseName, StringFormat='Banco: {0}'}"/>
-        <TextBlock Grid.Column="2" Text="{Binding ExecutedAtText, StringFormat='Executado em: {0}'}"/>
+        <TextBlock Grid.Column="0" Text="{Binding ConnectionId, StringFormat='Connection: {0}'}"/>
+        <TextBlock Grid.Column="1" Text="{Binding DatabaseName, StringFormat='Database: {0}'}"/>
+        <TextBlock Grid.Column="2" Text="{Binding ExecutedAtText, StringFormat='Executed At: {0}'}"/>
+        <TextBox Grid.Column="3"
+                 Width="220"
+                 Watermark="Search all columns"
+                 Text="{Binding SearchText}"/>
+        <ComboBox Grid.Column="4"
+                  Width="180"
+                  ItemsSource="{Binding AvailableSortColumns}"
+                  SelectedItem="{Binding SelectedSortColumn, Mode=TwoWay}"/>
+        <Button Grid.Column="5"
+                Classes="secondary compact"
+                Command="{Binding ToggleSortDirectionCommand}"
+                Content="{Binding SortDirectionText}"/>
+        <Button Grid.Column="6"
+                Classes="secondary compact"
+                Command="{Binding AddSortCriterionCommand}"
+                Content="Add sort"/>
+        <Button Grid.Column="7"
+                Classes="secondary compact"
+                Command="{Binding ClearSortCriteriaCommand}"
+                Content="Clear sorts"/>
+        <ComboBox Grid.Column="8"
+                  Width="170"
+                  ItemsSource="{Binding AvailableSortColumns}"
+                  SelectedItem="{Binding SelectedGroupColumn, Mode=TwoWay}"/>
+        <Button Grid.Column="9"
+                Classes="secondary compact"
+                Command="{Binding AddGroupColumnCommand}"
+                Content="Add group"/>
+        <Button Grid.Column="10"
+                Classes="secondary compact"
+                Command="{Binding ClearGroupColumnsCommand}"
+                Content="Clear groups"/>
+        <ComboBox Grid.Column="11"
+                  Width="170"
+                  ItemsSource="{Binding AvailableSortColumns}"
+                  SelectedItem="{Binding SelectedFilterColumn, Mode=TwoWay}"/>
+        <ComboBox Grid.Column="12"
+                  Width="130"
+                  ItemsSource="{Binding AvailableFilterOperations}"
+                  SelectedItem="{Binding SelectedFilterOperation, Mode=TwoWay}"/>
+        <TextBox Grid.Column="13"
+                 Width="170"
+                 Watermark="Column filter"
+                 Text="{Binding ColumnFilterValue}"/>
+        <StackPanel Grid.Column="14"
+                    Orientation="Horizontal"
+                    Spacing="6">
+          <Button Classes="secondary compact"
+                  Command="{Binding ApplyColumnFilterCommand}"
+                  Content="Add filter"/>
+          <Button Classes="secondary compact"
+                  Command="{Binding ClearColumnFilterCommand}"
+                  Content="Clear filters"/>
+        </StackPanel>
       </Grid>
     </Border>
 
     <Border Grid.Row="2"
+            Grid.Column="0"
+            Margin="0,0,8,0"
             Classes="surface-card"
             Padding="8">
-      <DataGrid ItemsSource="{Binding RowsView}"
-                IsReadOnly="True"
-                GridLinesVisibility="Horizontal"
-                AutoGenerateColumns="True"
-                SelectionMode="Extended"/>
+      <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*">
+        <TextBlock Grid.Row="0"
+                   Text="Recent Sessions"
+                   FontWeight="{StaticResource FontWeightStrong}"/>
+
+        <ListBox Grid.Row="1"
+                 Margin="0,8,0,0"
+                 ItemsSource="{Binding Sessions}"
+                 SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
+                 IsVisible="{Binding HasSessions}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="result:SqlResultSession">
+              <Border Classes="surface-card"
+                      Margin="0,0,0,6"
+                      Padding="8">
+                <Grid RowDefinitions="Auto,Auto"
+                      ColumnDefinitions="*,Auto">
+                  <TextBlock Grid.Row="0"
+                             Grid.Column="0"
+                             Text="{Binding SqlText}"
+                             TextTrimming="CharacterEllipsis"
+                             TextWrapping="NoWrap"/>
+                  <TextBlock Grid.Row="1"
+                             Grid.Column="0"
+                             Margin="0,4,0,0"
+                             Text="{Binding ExecutedAt.LocalDateTime, StringFormat='dd/MM HH:mm:ss'}"
+                             Foreground="{StaticResource TextSecondaryBrush}"/>
+                  <Border Grid.Row="0"
+                          Grid.Column="1"
+                          Grid.RowSpan="2"
+                          Classes="chip"
+                          IsVisible="{Binding IsPinned}"
+                          Padding="6,2">
+                    <TextBlock Text="Pinned"/>
+                  </Border>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <Grid Grid.Row="2"
+              Margin="0,8,0,0"
+              ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0"
+                     Text="Group Criteria"
+                     FontWeight="{StaticResource FontWeightStrong}"/>
+          <Button Grid.Column="1"
+                  Classes="secondary compact"
+                  Command="{Binding ClearGroupColumnsCommand}"
+                  Content="Clear"/>
+        </Grid>
+
+        <ItemsControl Grid.Row="3"
+                      Margin="0,6,0,0"
+                      ItemsSource="{Binding ActiveGroupColumns}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="0,0,0,4"
+                    ColumnDefinitions="*,Auto"
+                    ColumnSpacing="6">
+                <TextBlock Grid.Column="0"
+                           VerticalAlignment="Center"
+                           Text="{Binding ColumnName}"/>
+                <Button Grid.Column="1"
+                        Classes="secondary compact"
+                        Command="{Binding DataContext.RemoveGroupColumnCommand, ElementName=Root}"
+                        CommandParameter="{Binding .}"
+                        Content="x"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Grid Grid.Row="4"
+              Margin="0,8,0,0"
+              ColumnDefinitions="*,Auto"
+              IsVisible="{Binding HasGroupBuckets}">
+          <TextBlock Grid.Column="0"
+                     Text="Group Buckets"
+                     FontWeight="{StaticResource FontWeightStrong}"/>
+        </Grid>
+
+        <ItemsControl Grid.Row="5"
+                      Margin="0,6,0,0"
+                      ItemsSource="{Binding GroupBuckets}"
+                      IsVisible="{Binding HasGroupBuckets}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="0,0,0,4"
+                    ColumnDefinitions="*,Auto,Auto"
+                    ColumnSpacing="6">
+                <TextBlock Grid.Column="0"
+                           VerticalAlignment="Center"
+                           Text="{Binding GroupKey}"/>
+                <TextBlock Grid.Column="1"
+                           VerticalAlignment="Center"
+                           Text="{Binding RowCount}"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <Button Grid.Column="2"
+                        Classes="secondary compact"
+                        Command="{Binding DataContext.ToggleGroupBucketCollapsedCommand, ElementName=Root}"
+                        CommandParameter="{Binding .}"
+                        Content="{Binding CollapseActionText}"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Grid Grid.Row="6"
+              Margin="0,8,0,0"
+              ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0"
+                     Text="Sort Criteria"
+                     FontWeight="{StaticResource FontWeightStrong}"/>
+          <Button Grid.Column="1"
+                  Classes="secondary compact"
+                  Command="{Binding ClearSortCriteriaCommand}"
+                  Content="Clear"/>
+        </Grid>
+
+        <ItemsControl Grid.Row="7"
+                      Margin="0,6,0,0"
+                      ItemsSource="{Binding ActiveSortCriteria}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="0,0,0,4"
+                    ColumnDefinitions="*,Auto,Auto"
+                    ColumnSpacing="6">
+                <TextBlock Grid.Column="0"
+                           VerticalAlignment="Center"
+                           Text="{Binding ColumnName}"/>
+                <TextBlock Grid.Column="1"
+                           VerticalAlignment="Center"
+                           Text="{Binding DirectionText}"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <Button Grid.Column="2"
+                        Classes="secondary compact"
+                        Command="{Binding DataContext.RemoveSortCriterionCommand, ElementName=Root}"
+                        CommandParameter="{Binding .}"
+                        Content="x"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Grid Grid.Row="8"
+              Margin="0,8,0,0"
+              ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0"
+                     Text="Filter Criteria"
+                     FontWeight="{StaticResource FontWeightStrong}"/>
+          <Button Grid.Column="1"
+                  Classes="secondary compact"
+                  Command="{Binding ClearColumnFilterCommand}"
+                  Content="Clear"/>
+        </Grid>
+
+        <ItemsControl Grid.Row="9"
+                      Margin="0,6,0,0"
+                      ItemsSource="{Binding ActiveFilterCriteria}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="0,0,0,4"
+                    ColumnDefinitions="*,Auto,Auto,Auto"
+                    ColumnSpacing="6">
+                <TextBlock Grid.Column="0"
+                           VerticalAlignment="Center"
+                           Text="{Binding ColumnName}"/>
+                <TextBlock Grid.Column="1"
+                           VerticalAlignment="Center"
+                           Text="{Binding OperationText}"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="2"
+                           VerticalAlignment="Center"
+                           Text="{Binding Value}"/>
+                <Button Grid.Column="3"
+                        Classes="secondary compact"
+                        Command="{Binding DataContext.RemoveColumnFilterCommand, ElementName=Root}"
+                        CommandParameter="{Binding .}"
+                        Content="x"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Grid Grid.Row="10"
+              Margin="0,8,0,0"
+              ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0"
+                     Text="Visible Columns"
+                     FontWeight="{StaticResource FontWeightStrong}"/>
+          <Button Grid.Column="1"
+                  Classes="secondary compact"
+                  Command="{Binding ShowAllColumnsCommand}"
+                  Content="Show all"/>
+        </Grid>
+
+        <ScrollViewer Grid.Row="11"
+                      Margin="0,8,0,0"
+                      MaxHeight="220"
+                      VerticalScrollBarVisibility="Auto">
+          <ItemsControl ItemsSource="{Binding ColumnVisibilityItems}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid Margin="0,0,0,4"
+                      ColumnDefinitions="*,Auto,Auto,Auto"
+                      ColumnSpacing="4">
+                  <CheckBox Grid.Column="0"
+                            Content="{Binding ColumnName}"
+                            IsChecked="{Binding IsVisible, Mode=TwoWay}"/>
+                  <Button Grid.Column="1"
+                          Classes="secondary compact"
+                          Command="{Binding DataContext.MoveColumnUpCommand, ElementName=Root}"
+                          CommandParameter="{Binding .}"
+                          Content="Up"/>
+                  <Button Grid.Column="2"
+                          Classes="secondary compact"
+                          Command="{Binding DataContext.MoveColumnDownCommand, ElementName=Root}"
+                          CommandParameter="{Binding .}"
+                          Content="Down"/>
+                  <Button Grid.Column="3"
+                          Classes="secondary compact"
+                          Command="{Binding DataContext.ToggleColumnFrozenCommand, ElementName=Root}"
+                          CommandParameter="{Binding .}"
+                          Content="{Binding FrozenActionText}"/>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            Grid.Column="1"
+            Classes="surface-card"
+            Padding="8">
+      <Grid RowDefinitions="*,Auto,Auto">
+        <DataGrid Grid.Row="0"
+                  ItemsSource="{Binding RowsView}"
+                  SelectedItem="{Binding SelectedRowItem, Mode=TwoWay}"
+                  IsReadOnly="True"
+                  GridLinesVisibility="Horizontal"
+                  AutoGenerateColumns="True"
+                  FrozenColumnCount="{Binding FrozenColumnCount}"
+                  SelectionMode="Extended"/>
+
+        <Grid Grid.Row="1"
+              Margin="0,8,0,0"
+              ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*"
+              ColumnSpacing="8">
+          <Button Grid.Column="0"
+                  Classes="secondary compact"
+                  Command="{Binding FirstPageCommand}"
+                  Content="&lt;&lt;"/>
+          <Button Grid.Column="1"
+                  Classes="secondary compact"
+                  Command="{Binding PreviousPageCommand}"
+                  Content="&lt;"/>
+          <Button Grid.Column="2"
+                  Classes="secondary compact"
+                  Command="{Binding NextPageCommand}"
+                  Content="&gt;"/>
+          <Button Grid.Column="3"
+                  Classes="secondary compact"
+                  Command="{Binding LastPageCommand}"
+                  Content="&gt;&gt;"/>
+          <TextBlock Grid.Column="4"
+                     VerticalAlignment="Center"
+                     Text="{Binding PageSummaryText, StringFormat='Page {0}'}"/>
+          <TextBlock Grid.Column="5"
+                     HorizontalAlignment="Right"
+                     VerticalAlignment="Center"
+                     Text="{Binding RowCountText, StringFormat='Filtered Rows: {0}'}"
+                     Foreground="{StaticResource TextSecondaryBrush}"/>
+        </Grid>
+
+        <Border Grid.Row="2"
+                Margin="0,8,0,0"
+                Padding="8"
+                Classes="surface-card"
+                IsVisible="{Binding HasSelectedRow}">
+          <Grid ColumnDefinitions="2*,3*"
+                ColumnSpacing="10">
+            <Grid Grid.Column="0"
+                  RowDefinitions="Auto,*">
+              <Grid Grid.Row="0"
+                    ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding SelectedRowSummary, StringFormat='Selected {0}'}"
+                           FontWeight="{StaticResource FontWeightStrong}"/>
+                <Button Grid.Column="1"
+                        Classes="secondary compact"
+                        Command="{Binding ClearSelectedRowCommand}"
+                        Content="Clear"/>
+              </Grid>
+
+              <ItemsControl Grid.Row="1"
+                            Margin="0,8,0,0"
+                            ItemsSource="{Binding SelectedRowFields}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid Margin="0,0,0,4"
+                          ColumnDefinitions="Auto,*"
+                          ColumnSpacing="6">
+                      <TextBlock Grid.Column="0"
+                                 Text="{Binding ColumnName}"
+                                 FontWeight="{StaticResource FontWeightStrong}"/>
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding Value}"
+                                 TextWrapping="Wrap"/>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Grid>
+
+            <Grid Grid.Column="1"
+                  RowDefinitions="Auto,*">
+              <TextBlock Grid.Row="0"
+                         Text="Row JSON"
+                         FontWeight="{StaticResource FontWeightStrong}"/>
+              <TextBox Grid.Row="1"
+                       Margin="0,8,0,0"
+                       IsReadOnly="True"
+                       AcceptsReturn="True"
+                       TextWrapping="Wrap"
+                       Text="{Binding SelectedRowJson}"/>
+            </Grid>
+          </Grid>
+        </Border>
+      </Grid>
     </Border>
   </Grid>
 </UserControl>
+

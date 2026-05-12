@@ -74,4 +74,24 @@ public class ShellDocumentPageContractTests
         Assert.Equal(WorkspaceDocumentPreviewKind.Unavailable, shell.ActivePreviewContract.Kind);
         Assert.False(shell.ActiveDiagnosticsContract.HasLocalDiagnostics);
     }
+
+    [Fact]
+    public void ActivePageContract_SqlResultDocument_ExposesDedicatedResultPageWithoutSidebars()
+    {
+        var shell = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
+        shell.EnterCanvas();
+        shell.OpenNewDocument(WorkspaceDocumentType.SqlResult);
+        shell.ActivateDocument(WorkspaceDocumentType.SqlResult);
+
+        Assert.True(shell.IsSqlResultDocumentPageActive);
+        Assert.False(shell.IsDiagramDocumentPageActive);
+        Assert.False(shell.ActivePageContract.ShowsQueryCanvasPage);
+        Assert.False(shell.ActivePageContract.ShowsDdlCanvasPage);
+        Assert.False(shell.ActivePageContract.ShowsSqlEditorPage);
+        Assert.False(shell.ActivePageContract.ShowsDiagramSidebar);
+        Assert.False(shell.ActivePageContract.ShowsSqlEditorSidebar);
+        Assert.False(shell.ActivePageContract.CanCollapseSidebars);
+        Assert.Equal(WorkspaceDocumentPreviewKind.Unavailable, shell.ActivePreviewContract.Kind);
+        Assert.False(shell.ActiveDiagnosticsContract.HasLocalDiagnostics);
+    }
 }

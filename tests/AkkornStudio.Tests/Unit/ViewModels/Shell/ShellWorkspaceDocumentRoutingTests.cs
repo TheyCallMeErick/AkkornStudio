@@ -521,6 +521,26 @@ public class ShellWorkspaceDocumentRoutingTests
     }
 
     [Fact]
+    public void OpenNewDocument_SqlResult_WhenTypeAlreadyExists_ActivatesExistingInsteadOfCreatingDuplicate()
+    {
+        var shell = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
+        shell.EnterCanvas();
+        Guid firstSqlResultId = shell.OpenNewDocument(WorkspaceDocumentType.SqlResult);
+
+        Guid secondSqlResultId = shell.OpenNewDocument(WorkspaceDocumentType.SqlResult);
+
+        Assert.Equal(firstSqlResultId, secondSqlResultId);
+        int sqlResultDocumentCount = 0;
+        foreach (OpenWorkspaceDocument document in shell.OpenWorkspaceDocuments)
+        {
+            if (document.Descriptor.DocumentType == WorkspaceDocumentType.SqlResult)
+                sqlResultDocumentCount++;
+        }
+
+        Assert.Equal(1, sqlResultDocumentCount);
+    }
+
+    [Fact]
     public void SetActiveDocumentType_SqlEditor_HidesDiagramOnlyOverlaysDefensively()
     {
         var shell = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
