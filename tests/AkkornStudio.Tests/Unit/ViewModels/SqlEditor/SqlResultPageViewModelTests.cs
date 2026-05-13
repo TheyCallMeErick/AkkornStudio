@@ -1,4 +1,6 @@
 using System.Data;
+using AkkornStudio.Core;
+using AkkornStudio.UI.Services.SqlEditor;
 using AkkornStudio.UI.Services.SqlEditor.Results;
 using AkkornStudio.UI.ViewModels;
 
@@ -680,6 +682,839 @@ public sealed class SqlResultPageViewModelTests
         Assert.DoesNotContain("name", first.ViewState.VisibleColumns);
     }
 
+    [Fact]
+    public void SelectCell_UpdatesState_AndCopySelectedCellPublishesClipboardPayload()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ]);
+
+        string? clipboardPayload = null;
+        sut.ClipboardCopyRequested += payload => clipboardPayload = payload;
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        DataRowView firstRow = rowsView[0];
+
+        sut.SelectCell(firstRow, "name");
+        sut.CopySelectedCellCommand.Execute(null);
+
+        Assert.True(sut.HasSelectedCell);
+        Assert.Equal("R1 · name", sut.SelectedCellSummary);
+        Assert.Equal("alice", clipboardPayload);
+    }
+
+    [Fact]
+    public void GenerateWhereClauseCommand_WhenEligible_BuildsWhereUsingPrimaryKey()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+
+        string? clipboardPayload = null;
+        sut.ClipboardCopyRequested += payload => clipboardPayload = payload;
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        sut.SelectedRowItem = rowsView[1];
+        sut.SelectCell(rowsView[1], "name");
+
+        sut.GenerateWhereClauseCommand.Execute(null);
+
+        Assert.Equal("WHERE id = 2", sut.GeneratedWhereClause);
+        Assert.Equal("WHERE id = 2", clipboardPayload);
+    }
+
+    [Fact]
+    public void CopySelectedRowAsMarkdownCommand_FormatsAsMarkdownTable()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ]);
+
+        string? clipboardPayload = null;
+        sut.ClipboardCopyRequested += payload => clipboardPayload = payload;
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        sut.SelectedRowItem = rowsView[0];
+
+        sut.CopySelectedRowAsMarkdownCommand.Execute(null);
+
+        Assert.NotNull(clipboardPayload);
+        Assert.Contains("| id | name |", clipboardPayload, StringComparison.Ordinal);
+        Assert.Contains("| 1 | alice |", clipboardPayload, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BuildColumnProfilesAsync_WhenSessionHasData_PopulatesProfileCollection()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+                (3, "bob"),
+            ]);
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        bool profiled = await sut.BuildColumnProfilesAsync();
+
+        Assert.True(profiled);
+        Assert.True(sut.HasColumnProfiles);
+        Assert.NotEmpty(sut.ColumnProfiles);
+        Assert.Contains("generated", sut.ColumnProfileStatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void FilterBySelectedCellValueCommand_AddsEqualsFilterAndRestrictsRows()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+                (3, "bob"),
+            ]);
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        sut.SelectCell(rowsView[0], "name");
+
+        sut.FilterBySelectedCellValueCommand.Execute(null);
+
+        Assert.Single(session.ViewState.Filters);
+        Assert.Equal("name", session.ViewState.Filters[0].ColumnName);
+        Assert.Equal("equals", session.ViewState.Filters[0].Operation);
+        Assert.Equal("alice", session.ViewState.Filters[0].Value);
+        Assert.Equal("1", sut.RowCountText);
+    }
+
+    [Fact]
+    public void TryApplyInlineCellEdit_WhenEligible_CreatesPendingEditAndUpdatesValue()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        DataRowView firstRow = rowsView[0];
+
+        bool edited = sut.TryApplyInlineCellEdit(firstRow, "name", "alice-updated", out string? errorMessage);
+
+        Assert.True(edited);
+        Assert.Null(errorMessage);
+        Assert.True(sut.HasPendingEdits);
+        Assert.Equal(1, sut.PendingEditsCount);
+        PendingCellEdit pending = Assert.Single(session.ViewState.PendingEdits);
+        Assert.Equal("name", pending.ColumnName);
+        Assert.Equal("alice", pending.OriginalValue);
+        Assert.Equal("alice-updated", pending.NewValue);
+        Assert.Equal(1, Convert.ToInt32(pending.KeyValues["id"]));
+        Assert.Equal("alice-updated", Convert.ToString(firstRow["name"]));
+    }
+
+    [Fact]
+    public void TryApplyInlineCellEdit_WhenRevertedToOriginal_RemovesPendingEdit()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        DataRowView row = rowsView[0];
+
+        bool firstEdit = sut.TryApplyInlineCellEdit(row, "name", "alice-updated", out _);
+        bool secondEdit = sut.TryApplyInlineCellEdit(row, "name", "alice", out _);
+
+        Assert.True(firstEdit);
+        Assert.True(secondEdit);
+        Assert.False(sut.HasPendingEdits);
+        Assert.Equal(0, sut.PendingEditsCount);
+        Assert.Empty(session.ViewState.PendingEdits);
+        Assert.Equal("alice", Convert.ToString(row["name"]));
+    }
+
+    [Fact]
+    public void CancelPendingEditsCommand_RestoresOriginalValuesAndClearsPendingState()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+
+        bool firstEdit = sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _);
+        bool secondEdit = sut.TryApplyInlineCellEdit(rowsView[1], "name", "bob-updated", out _);
+        Assert.True(firstEdit);
+        Assert.True(secondEdit);
+        Assert.Equal(2, sut.PendingEditsCount);
+        Assert.True(sut.CanCancelPendingEdits);
+
+        sut.CancelPendingEditsCommand.Execute(null);
+
+        Assert.False(sut.HasPendingEdits);
+        Assert.Equal(0, sut.PendingEditsCount);
+        Assert.False(sut.CanCancelPendingEdits);
+        Assert.Empty(session.ViewState.PendingEdits);
+        DataView restoredRowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.Equal("alice", Convert.ToString(restoredRowsView[0]["name"]));
+        Assert.Equal("bob", Convert.ToString(restoredRowsView[1]["name"]));
+    }
+
+    [Fact]
+    public void TryApplyInlineCellEdit_WhenTypeConversionFails_ReturnsErrorAndKeepsOriginalValue()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildNumericEditableSession();
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        DataRowView row = rowsView[0];
+
+        bool edited = sut.TryApplyInlineCellEdit(row, "qty", "not-a-number", out string? errorMessage);
+
+        Assert.False(edited);
+        Assert.Equal("Invalid value for column 'qty'.", errorMessage);
+        Assert.False(sut.HasPendingEdits);
+        Assert.Empty(session.ViewState.PendingEdits);
+        Assert.Equal(10, Convert.ToInt32(row["qty"]));
+    }
+
+    [Fact]
+    public void IsCellPending_WhenPendingEditExists_ReturnsTrueForEditedCellOnly()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+
+        bool edited = sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _);
+
+        Assert.True(edited);
+        Assert.True(sut.IsCellPending(rowsView[0], "name"));
+        Assert.False(sut.IsCellPending(rowsView[1], "name"));
+        Assert.False(sut.IsCellPending(rowsView[0], "id"));
+    }
+
+    [Fact]
+    public void IsCellPending_AfterCancelPendingEdits_ReturnsFalse()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        bool edited = sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _);
+        Assert.True(edited);
+        Assert.True(sut.IsCellPending(rowsView[0], "name"));
+
+        sut.CancelPendingEditsCommand.Execute(null);
+
+        DataView restoredRowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.False(sut.IsCellPending(restoredRowsView[0], "name"));
+    }
+
+    [Fact]
+    public void GeneratePendingSqlCommand_WhenHasPendingEdits_BuildsProviderAwareSql()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "dbo.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]),
+            provider: DatabaseProvider.SqlServer);
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+
+        sut.GeneratePendingSqlCommand.Execute(null);
+
+        Assert.True(sut.HasGeneratedPendingSqlText);
+        Assert.Contains("UPDATE [dbo].[customers]", sut.GeneratedPendingSqlText, StringComparison.Ordinal);
+        Assert.Contains("[name] = 'alice-updated'", sut.GeneratedPendingSqlText, StringComparison.Ordinal);
+        Assert.Contains("WHERE [id] = 1", sut.GeneratedPendingSqlText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PreparePendingChangesPreviewAsync_WhenHasPendingEdits_PopulatesPreviewState()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+
+        bool prepared = await sut.PreparePendingChangesPreviewAsync();
+
+        Assert.True(prepared);
+        Assert.True(sut.HasPendingChangeSetPreview);
+        Assert.Contains("Pending edits: 1 cell(s) in 1 row(s).", sut.PendingChangeSetSummaryText, StringComparison.Ordinal);
+        Assert.Contains("name: alice -> alice-updated", sut.PendingChangeSetSummaryText, StringComparison.Ordinal);
+        Assert.True(sut.HasGeneratedPendingSqlText);
+        Assert.False(string.IsNullOrWhiteSpace(sut.PendingDiffPreviewText));
+    }
+
+    [Fact]
+    public void CopyGeneratedPendingSqlCommand_RaisesClipboardPayload()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+        sut.GeneratePendingSqlCommand.Execute(null);
+
+        string? copiedText = null;
+        sut.ClipboardCopyRequested += text => copiedText = text;
+        sut.CopyGeneratedPendingSqlCommand.Execute(null);
+
+        Assert.False(string.IsNullOrWhiteSpace(copiedText));
+        Assert.Equal(sut.GeneratedPendingSqlText, copiedText);
+    }
+
+    [Fact]
+    public void SendGeneratedPendingSqlToEditorCommand_UsesConfiguredCallbackAndSourceDocumentId()
+    {
+        var sut = new SqlResultPageViewModel();
+        Guid sourceDocumentId = Guid.NewGuid();
+        Guid? receivedSourceId = null;
+        string? receivedSql = null;
+        sut.ConfigureSqlAppendToEditor((docId, sql) =>
+        {
+            receivedSourceId = docId;
+            receivedSql = sql;
+        });
+
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceDocumentId);
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+        sut.GeneratePendingSqlCommand.Execute(null);
+
+        sut.SendGeneratedPendingSqlToEditorCommand.Execute(null);
+
+        Assert.Equal(sourceDocumentId, receivedSourceId);
+        Assert.Equal(sut.GeneratedPendingSqlText, receivedSql);
+    }
+
+    [Fact]
+    public void GeneratePendingSqlCommand_WithMultipleRowEdits_GeneratesMultipleUpdateStatements()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[1], "name", "bob-updated", out _));
+
+        sut.GeneratePendingSqlCommand.Execute(null);
+
+        string generated = sut.GeneratedPendingSqlText;
+        Assert.Contains("\"id\" = 1", generated, StringComparison.Ordinal);
+        Assert.Contains("\"id\" = 2", generated, StringComparison.Ordinal);
+        Assert.Equal(2, generated.Split("UPDATE", StringSplitOptions.RemoveEmptyEntries).Length);
+    }
+
+    [Fact]
+    public void RequestExecutePendingChangesCommand_WhenPendingEditsExist_SetsConfirmationWithoutExecuting()
+    {
+        int executeCalls = 0;
+        SqlResultPageViewModel sut = BuildSqlResultPageViewModelForExecutionTests(
+            analyzeGuard: _ => MutationGuardResult.Safe(),
+            executeStatement: (sql, _, _, _) =>
+            {
+                executeCalls++;
+                return Task.FromResult(BuildSuccessResult(sql ?? string.Empty));
+            });
+
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.ConfigureConnectionResolver(_ => BuildConnectionConfig());
+
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+
+        sut.RequestExecutePendingChangesCommand.Execute(null);
+
+        Assert.True(sut.IsPendingExecutionConfirmationVisible);
+        Assert.Contains("requires explicit confirmation", sut.PendingExecutionStatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, executeCalls);
+    }
+
+    [Fact]
+    public async Task ConfirmExecutePendingChangesAsync_WhenExecutionSucceeds_ClearsPendingEdits()
+    {
+        int executeCalls = 0;
+        SqlResultPageViewModel sut = BuildSqlResultPageViewModelForExecutionTests(
+            analyzeGuard: _ => MutationGuardResult.Safe(),
+            executeStatement: (sql, _, _, _) =>
+            {
+                executeCalls++;
+                if ((sql ?? string.Empty).StartsWith("select", StringComparison.OrdinalIgnoreCase))
+                    return Task.FromResult(BuildSelectResult(sql ?? string.Empty, (1, "alice-updated")));
+
+                return Task.FromResult(BuildSuccessResult(sql ?? string.Empty));
+            });
+
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.ConfigureConnectionResolver(_ => BuildConnectionConfig());
+
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+        sut.RequestExecutePendingChangesCommand.Execute(null);
+
+        bool confirmed = await sut.ConfirmExecutePendingChangesAsync();
+
+        Assert.True(confirmed);
+        Assert.False(sut.HasPendingEdits);
+        Assert.False(sut.IsPendingExecutionConfirmationVisible);
+        Assert.Contains("and refreshed result set", sut.PendingExecutionStatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, executeCalls);
+        DataView refreshedRows = Assert.IsType<DataView>(sut.RowsView);
+        Assert.Equal("alice-updated", Convert.ToString(refreshedRows[0]["name"]));
+    }
+
+    [Fact]
+    public async Task ConfirmExecutePendingChangesAsync_WhenGuardBlocks_KeepsPendingEditsAndReturnsFalse()
+    {
+        MutationGuardResult blockingGuard = new()
+        {
+            IsSafe = false,
+            RequiresConfirmation = true,
+            Issues = [new MutationGuardIssue(MutationGuardSeverity.Critical, "NO_WHERE", "blocked-by-guard", "fix-where")],
+            CountQuery = null,
+            SupportsDiff = false,
+        };
+
+        SqlResultPageViewModel sut = BuildSqlResultPageViewModelForExecutionTests(
+            analyzeGuard: _ => blockingGuard,
+            executeStatement: (sql, _, _, _) => Task.FromResult(BuildSuccessResult(sql ?? string.Empty)));
+
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.ConfigureConnectionResolver(_ => BuildConnectionConfig());
+
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+        sut.RequestExecutePendingChangesCommand.Execute(null);
+
+        bool confirmed = await sut.ConfirmExecutePendingChangesAsync();
+
+        Assert.False(confirmed);
+        Assert.True(sut.HasPendingEdits);
+        Assert.True(sut.IsPendingExecutionConfirmationVisible);
+        Assert.True(sut.HasPendingExecutionError);
+        Assert.Contains("blocked-by-guard", sut.PendingExecutionStatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConfirmExecutePendingChangesAsync_WhenTransactionModeCommitSelected_UsesTransactionalExecutor()
+    {
+        int refreshExecuteCalls = 0;
+        int transactionExecuteCalls = 0;
+        bool? commitSelection = null;
+
+        SqlResultPageViewModel sut = BuildSqlResultPageViewModelForExecutionTests(
+            analyzeGuard: _ => MutationGuardResult.Safe(),
+            executeStatement: (sql, _, _, _) =>
+            {
+                refreshExecuteCalls++;
+                return Task.FromResult(BuildSelectResult(sql ?? string.Empty, (1, "alice-updated")));
+            },
+            executeTransactionalStatement: (_, statements, commitChanges, _) =>
+            {
+                transactionExecuteCalls++;
+                commitSelection = commitChanges;
+                return Task.FromResult(new SqlResultTransactionExecutionResult(
+                    Success: true,
+                    ExecutedStatements: statements.Count,
+                    WasCommitted: commitChanges,
+                    WasRolledBack: !commitChanges));
+            });
+
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.ConfigureConnectionResolver(_ => BuildConnectionConfig());
+
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+        sut.UseTransactionalExecution = true;
+        sut.RequestExecutePendingChangesCommand.Execute(null);
+
+        bool confirmed = await sut.ConfirmExecutePendingChangesAsync();
+
+        Assert.True(confirmed);
+        Assert.Equal(1, transactionExecuteCalls);
+        Assert.Equal(true, commitSelection);
+        Assert.Equal(1, refreshExecuteCalls);
+        Assert.False(sut.HasPendingEdits);
+        Assert.Contains("Committed", sut.PendingExecutionStatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ConfirmExecutePendingChangesWithRollbackAsync_WhenTransactionModeSelected_KeepsPendingEdits()
+    {
+        int refreshExecuteCalls = 0;
+        int transactionExecuteCalls = 0;
+        bool? commitSelection = null;
+
+        SqlResultPageViewModel sut = BuildSqlResultPageViewModelForExecutionTests(
+            analyzeGuard: _ => MutationGuardResult.Safe(),
+            executeStatement: (sql, _, _, _) =>
+            {
+                refreshExecuteCalls++;
+                return Task.FromResult(BuildSelectResult(sql ?? string.Empty, (1, "alice-updated")));
+            },
+            executeTransactionalStatement: (_, statements, commitChanges, _) =>
+            {
+                transactionExecuteCalls++;
+                commitSelection = commitChanges;
+                return Task.FromResult(new SqlResultTransactionExecutionResult(
+                    Success: true,
+                    ExecutedStatements: statements.Count,
+                    WasCommitted: commitChanges,
+                    WasRolledBack: !commitChanges));
+            });
+
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.ConfigureConnectionResolver(_ => BuildConnectionConfig());
+
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+        sut.UseTransactionalExecution = true;
+        sut.RequestExecutePendingChangesCommand.Execute(null);
+
+        bool confirmed = await sut.ConfirmExecutePendingChangesWithRollbackAsync();
+
+        Assert.True(confirmed);
+        Assert.Equal(1, transactionExecuteCalls);
+        Assert.Equal(false, commitSelection);
+        Assert.Equal(0, refreshExecuteCalls);
+        Assert.True(sut.HasPendingEdits);
+        Assert.Contains("rolled back", sut.PendingExecutionStatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ConfirmExecutePendingChangesAsync_WhenTransactionExecutionFails_ReturnsFalseAndKeepsPendingEdits()
+    {
+        int transactionExecuteCalls = 0;
+        SqlResultPageViewModel sut = BuildSqlResultPageViewModelForExecutionTests(
+            analyzeGuard: _ => MutationGuardResult.Safe(),
+            executeStatement: (sql, _, _, _) => Task.FromResult(BuildSuccessResult(sql ?? string.Empty)),
+            executeTransactionalStatement: (_, _, _, _) =>
+            {
+                transactionExecuteCalls++;
+                return Task.FromResult(new SqlResultTransactionExecutionResult(
+                    Success: false,
+                    ExecutedStatements: 0,
+                    WasCommitted: false,
+                    WasRolledBack: true,
+                    ErrorMessage: "tx-failure"));
+            });
+
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.ConfigureConnectionResolver(_ => BuildConnectionConfig());
+
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+        sut.UseTransactionalExecution = true;
+        sut.RequestExecutePendingChangesCommand.Execute(null);
+
+        bool confirmed = await sut.ConfirmExecutePendingChangesAsync();
+
+        Assert.False(confirmed);
+        Assert.Equal(1, transactionExecuteCalls);
+        Assert.True(sut.HasPendingEdits);
+        Assert.True(sut.IsPendingExecutionConfirmationVisible);
+        Assert.True(sut.HasPendingExecutionError);
+        Assert.Contains("tx-failure", sut.PendingExecutionStatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SetSession_WhenProviderDoesNotSupportTransaction_ExposesUnavailableState()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]),
+            provider: (DatabaseProvider)999);
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.UseTransactionalExecution = true;
+
+        Assert.False(sut.IsTransactionModeAvailable);
+        Assert.False(sut.UseTransactionalExecution);
+        Assert.True(sut.HasTransactionModeStatusText);
+        Assert.Contains("unavailable", sut.TransactionModeStatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RequestExecutePendingChangesCommand_WhenProductionLikeContext_BlocksExecution()
+    {
+        SqlResultPageViewModel sut = BuildSqlResultPageViewModelForExecutionTests(
+            analyzeGuard: _ => MutationGuardResult.Safe(),
+            executeStatement: (sql, _, _, _) => Task.FromResult(BuildSuccessResult(sql ?? string.Empty)));
+
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.ConfigureConnectionResolver(_ => BuildConnectionConfig(database: "production_main"));
+
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        Assert.True(sut.TryApplyInlineCellEdit(rowsView[0], "name", "alice-updated", out _));
+
+        sut.RequestExecutePendingChangesCommand.Execute(null);
+
+        Assert.False(sut.IsPendingExecutionConfirmationVisible);
+        Assert.True(sut.HasPendingExecutionError);
+        Assert.Contains("blocked for production-like", sut.PendingExecutionStatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.False(sut.CanRequestExecutePendingChanges);
+    }
+
+    [Fact]
+    public async Task RefreshCurrentSessionAsync_WhenSuccessful_ReexecutesOriginalSqlAndUpdatesRows()
+    {
+        int executeCalls = 0;
+        string? executedSql = null;
+        SqlResultPageViewModel sut = BuildSqlResultPageViewModelForExecutionTests(
+            analyzeGuard: _ => MutationGuardResult.Safe(),
+            executeStatement: (sql, _, _, _) =>
+            {
+                executeCalls++;
+                executedSql = sql;
+                return Task.FromResult(BuildSelectResult(sql ?? string.Empty, (1, "after-refresh")));
+            });
+
+        SqlResultSession session = BuildSession(
+            "select id, name from customers where id = 1;",
+            rows:
+            [
+                (1, "before-refresh"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.ConfigureConnectionResolver(_ => BuildConnectionConfig());
+
+        bool refreshed = await sut.RefreshCurrentSessionAsync();
+
+        Assert.True(refreshed);
+        Assert.Equal(1, executeCalls);
+        Assert.Equal(session.SqlText, executedSql);
+        Assert.Contains("refreshed successfully", sut.PendingExecutionStatusText, StringComparison.OrdinalIgnoreCase);
+        DataView rows = Assert.IsType<DataView>(sut.RowsView);
+        Assert.Equal("after-refresh", Convert.ToString(rows[0]["name"]));
+    }
+
     private static int[] ReadColumnAsIntArray(DataView? rowsView, string columnName)
     {
         DataView view = Assert.IsType<DataView>(rowsView);
@@ -697,7 +1532,9 @@ public sealed class SqlResultPageViewModelTests
     private static SqlResultSession BuildSession(
         string sql,
         DateTimeOffset? executedAtOverride = null,
-        IReadOnlyList<(int Id, string Name)>? rows = null)
+        IReadOnlyList<(int Id, string Name)>? rows = null,
+        SqlInlineEditEligibility? inlineEditEligibility = null,
+        DatabaseProvider provider = DatabaseProvider.Postgres)
     {
         DateTimeOffset executedAt = executedAtOverride ?? new DateTimeOffset(2026, 05, 12, 12, 0, 0, TimeSpan.Zero);
         var table = new DataTable();
@@ -715,6 +1552,7 @@ public sealed class SqlResultPageViewModelTests
             ConnectionId = "conn-1",
             DatabaseName = "app_db",
             SchemaName = "public",
+            Provider = provider,
             ExecutedAt = executedAt,
             ExecutionTime = TimeSpan.FromMilliseconds(20),
             Status = SqlResultSessionStatus.Success,
@@ -728,7 +1566,125 @@ public sealed class SqlResultPageViewModelTests
                 ExecutionTime = TimeSpan.FromMilliseconds(20),
                 ExecutedAt = executedAt,
             },
+            InlineEditEligibility = inlineEditEligibility ?? SqlInlineEditEligibility.NotEligible,
             ViewState = new SqlResultViewState(),
+        };
+    }
+
+    private static SqlResultSession BuildNumericEditableSession()
+    {
+        DateTimeOffset executedAt = new(2026, 05, 12, 12, 0, 0, TimeSpan.Zero);
+        var table = new DataTable();
+        table.Columns.Add("id", typeof(int));
+        table.Columns.Add("qty", typeof(int));
+        table.Rows.Add(1, 10);
+
+        return new SqlResultSession
+        {
+            Id = Guid.NewGuid(),
+            SqlText = "select id, qty from inventory;",
+            ConnectionId = "conn-1",
+            DatabaseName = "app_db",
+            SchemaName = "public",
+            ExecutedAt = executedAt,
+            ExecutionTime = TimeSpan.FromMilliseconds(20),
+            Status = SqlResultSessionStatus.Success,
+            ResultSet = new SqlEditorResultSet
+            {
+                StatementSql = "select id, qty from inventory;",
+                Success = true,
+                Data = table,
+                ErrorMessage = null,
+                RowsAffected = 1,
+                ExecutionTime = TimeSpan.FromMilliseconds(20),
+                ExecutedAt = executedAt,
+            },
+            InlineEditEligibility = new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.inventory",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["qty"]),
+            ViewState = new SqlResultViewState(),
+        };
+    }
+
+    private static SqlResultPageViewModel BuildSqlResultPageViewModelForExecutionTests(
+        Func<string?, MutationGuardResult> analyzeGuard,
+        Func<string?, ConnectionConfig?, int, CancellationToken, Task<SqlEditorResultSet>> executeStatement,
+        Func<ConnectionConfig, IReadOnlyList<string>, bool, CancellationToken, Task<SqlResultTransactionExecutionResult>>? executeTransactionalStatement = null)
+    {
+        var guardService = new MutationGuardService();
+        var diffService = new SqlMutationDiffService((sql, _, _, _) =>
+        {
+            var table = new DataTable();
+            table.Columns.Add("count", typeof(long));
+            table.Rows.Add(1L);
+            return Task.FromResult(new SqlEditorResultSet
+            {
+                StatementSql = sql,
+                Success = true,
+                Data = table,
+                ExecutionTime = TimeSpan.FromMilliseconds(1),
+                ExecutedAt = DateTimeOffset.UtcNow,
+            });
+        });
+        var orchestrator = new SqlEditorMutationExecutionOrchestrator(
+            executeStatement,
+            analyzeGuard,
+            (_, _, _, _, _) => Task.FromResult(SqlMutationDiffPreview.Unavailable("none")));
+        executeTransactionalStatement ??= (_, statements, commitChanges, _) =>
+            Task.FromResult(new SqlResultTransactionExecutionResult(
+                Success: true,
+                ExecutedStatements: statements.Count,
+                WasCommitted: commitChanges,
+                WasRolledBack: !commitChanges));
+        return new SqlResultPageViewModel(
+            guardService,
+            diffService,
+            orchestrator,
+            executeStatement,
+            executeTransactionalStatement);
+    }
+
+    private static ConnectionConfig BuildConnectionConfig(string database = "app_db")
+    {
+        return new ConnectionConfig(
+            Provider: DatabaseProvider.Postgres,
+            Host: "localhost",
+            Port: 5432,
+            Database: database,
+            Username: "postgres",
+            Password: "postgres");
+    }
+
+    private static SqlEditorResultSet BuildSuccessResult(string sql)
+    {
+        return new SqlEditorResultSet
+        {
+            StatementSql = sql,
+            Success = true,
+            RowsAffected = 1,
+            ExecutionTime = TimeSpan.FromMilliseconds(1),
+            ExecutedAt = DateTimeOffset.UtcNow,
+        };
+    }
+
+    private static SqlEditorResultSet BuildSelectResult(string sql, params (int Id, string Name)[] rows)
+    {
+        var table = new DataTable();
+        table.Columns.Add("id", typeof(int));
+        table.Columns.Add("name", typeof(string));
+        foreach ((int id, string name) in rows)
+            table.Rows.Add(id, name);
+
+        return new SqlEditorResultSet
+        {
+            StatementSql = sql,
+            Success = true,
+            Data = table,
+            RowsAffected = null,
+            ExecutionTime = TimeSpan.FromMilliseconds(3),
+            ExecutedAt = DateTimeOffset.UtcNow,
         };
     }
 }

@@ -1,4 +1,6 @@
 using System.Data;
+using AkkornStudio.Core;
+using AkkornStudio.UI.Services.SqlEditor;
 using AkkornStudio.UI.Services.SqlEditor.Results;
 using AkkornStudio.UI.ViewModels;
 
@@ -56,6 +58,56 @@ public sealed class SqlResultSessionServiceTests
         Assert.True(annotationUpdated);
         Assert.True(session.IsPinned);
         Assert.Equal("revisar linhas duplicadas", session.Annotation);
+    }
+
+    [Fact]
+    public void Add_PreservesInlineEditEligibilityMetadata()
+    {
+        var sut = new SqlResultSessionService();
+        SqlEditorResultSet resultSet = BuildResultSet(
+            sql: "select id, name from customers;",
+            success: true,
+            executedAt: new DateTimeOffset(2026, 05, 12, 9, 0, 0, TimeSpan.Zero),
+            columnNames: ["id", "name"]);
+
+        var eligibility = new SqlInlineEditEligibility(
+            IsEligible: true,
+            TableFullName: "public.customers",
+            PrimaryKeyColumns: ["id"],
+            EditableColumns: ["name"]);
+
+        SqlResultSession session = sut.Add(new SqlResultSessionCreateRequest(
+            SqlText: resultSet.StatementSql,
+            ConnectionId: "conn-1",
+            DatabaseName: "app_db",
+            SchemaName: "public",
+            ResultSet: resultSet,
+            InlineEditEligibility: eligibility));
+
+        Assert.True(session.InlineEditEligibility.IsEligible);
+        Assert.Equal("public.customers", session.InlineEditEligibility.TableFullName);
+        Assert.Equal(["id"], session.InlineEditEligibility.PrimaryKeyColumns);
+    }
+
+    [Fact]
+    public void Add_PreservesProviderMetadata()
+    {
+        var sut = new SqlResultSessionService();
+        SqlEditorResultSet resultSet = BuildResultSet(
+            sql: "select id from customers;",
+            success: true,
+            executedAt: new DateTimeOffset(2026, 05, 12, 9, 0, 0, TimeSpan.Zero),
+            columnNames: ["id"]);
+
+        SqlResultSession session = sut.Add(new SqlResultSessionCreateRequest(
+            SqlText: resultSet.StatementSql,
+            ConnectionId: "conn-1",
+            DatabaseName: "app_db",
+            SchemaName: "public",
+            ResultSet: resultSet,
+            Provider: DatabaseProvider.SqlServer));
+
+        Assert.Equal(DatabaseProvider.SqlServer, session.Provider);
     }
 
     private static SqlResultSessionCreateRequest BuildRequest(string sql, DateTimeOffset executedAt)

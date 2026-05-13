@@ -1,4 +1,5 @@
 using System.Data;
+using AkkornStudio.UI.Services.SqlEditor;
 
 namespace AkkornStudio.UI.Services.SqlEditor.Results;
 
@@ -28,10 +29,12 @@ public sealed class SqlResultSessionService
             ConnectionId = request.ConnectionId,
             DatabaseName = request.DatabaseName,
             SchemaName = request.SchemaName,
+            Provider = request.Provider,
             ExecutedAt = request.ResultSet.ExecutedAt,
             ExecutionTime = request.ResultSet.ExecutionTime,
             Status = request.ResultSet.Success ? SqlResultSessionStatus.Success : SqlResultSessionStatus.Error,
             ResultSet = request.ResultSet,
+            InlineEditEligibility = request.InlineEditEligibility ?? SqlInlineEditEligibility.NotEligible,
             ViewState = BuildDefaultViewState(request.ResultSet.Data),
         };
 

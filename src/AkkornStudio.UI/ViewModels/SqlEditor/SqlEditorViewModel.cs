@@ -2611,6 +2611,13 @@ public sealed class SqlEditorViewModel : ViewModelBase
             return false;
 
         ConnectionConfig? config = ResolveConnectionConfigForActiveTab();
+        DbMetadata? metadata = _metadataResolver();
+        SqlInlineEditEligibility inlineEditEligibility = _resultEligibilityDetector.Evaluate(
+            result.StatementSql,
+            result.Data,
+            metadata,
+            config);
+
         string connectionId = ActiveTabConnectionProfileId
             ?? config?.Database
             ?? "unknown-connection";
@@ -2620,7 +2627,9 @@ public sealed class SqlEditorViewModel : ViewModelBase
             ConnectionId: connectionId,
             DatabaseName: config?.Database,
             SchemaName: null,
-            ResultSet: result);
+            ResultSet: result,
+            Provider: config?.Provider ?? ActiveTabProvider,
+            InlineEditEligibility: inlineEditEligibility);
 
         SqlResultPageRequested.Invoke(this, new SqlResultPageRequestedEventArgs(request));
         return true;

@@ -1467,6 +1467,27 @@ public sealed class ShellViewModel : ViewModelBase
     {
         _sqlResultPage ??= new SqlResultPageViewModel();
         _sqlResultPage.ConfigureSessionService(_sqlResultSessionService);
+        _sqlResultPage.ConfigureConnectionResolver(ResolveSqlEditorConnectionByProfileId);
+        _sqlResultPage.ConfigureSqlAppendToEditor((sourceDocumentId, sql) =>
+        {
+            if (string.IsNullOrWhiteSpace(sql))
+                return;
+
+            SqlEditorViewModel? targetEditor = null;
+            if (sourceDocumentId.HasValue)
+            {
+                targetEditor = _workspaceRouter.OpenDocuments
+                    .FirstOrDefault(document => document.Descriptor.DocumentId == sourceDocumentId.Value)
+                    ?.DocumentViewModel as SqlEditorViewModel;
+            }
+
+            targetEditor ??= ActiveSqlEditorDocument;
+            targetEditor ??= _workspaceRouter.OpenDocuments
+                .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.SqlEditor)
+                ?.DocumentViewModel as SqlEditorViewModel;
+
+            targetEditor?.AppendTextToEditor(sql);
+        });
         _sqlResultPage.ConfigureBackNavigation(sourceDocumentId =>
         {
             if (sourceDocumentId.HasValue && TryActivateWorkspaceDocument(sourceDocumentId.Value))

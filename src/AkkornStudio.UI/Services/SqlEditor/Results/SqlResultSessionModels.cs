@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using AkkornStudio.Core;
+using AkkornStudio.UI.Services.SqlEditor;
 using AkkornStudio.UI.ViewModels;
 
 namespace AkkornStudio.UI.Services.SqlEditor.Results;
@@ -14,12 +16,14 @@ public sealed class SqlResultSession
     public required Guid Id { get; init; }
     public required string SqlText { get; init; }
     public required string ConnectionId { get; init; }
-    public string? DatabaseName { get; init; }
-    public string? SchemaName { get; init; }
-    public required DateTimeOffset ExecutedAt { get; init; }
-    public required TimeSpan ExecutionTime { get; init; }
-    public required SqlResultSessionStatus Status { get; init; }
-    public required SqlEditorResultSet ResultSet { get; init; }
+    public string? DatabaseName { get; set; }
+    public string? SchemaName { get; set; }
+    public DatabaseProvider Provider { get; set; } = DatabaseProvider.Postgres;
+    public required DateTimeOffset ExecutedAt { get; set; }
+    public required TimeSpan ExecutionTime { get; set; }
+    public required SqlResultSessionStatus Status { get; set; }
+    public required SqlEditorResultSet ResultSet { get; set; }
+    public SqlInlineEditEligibility InlineEditEligibility { get; set; } = SqlInlineEditEligibility.NotEligible;
     public required SqlResultViewState ViewState { get; init; }
     public bool IsPinned { get; set; }
     public string? Annotation { get; set; }
@@ -38,6 +42,7 @@ public sealed class SqlResultViewState
     public CellSelection? SelectedCell { get; set; }
     public int? SelectedRowIndex { get; set; }
     public ObservableCollection<PendingCellEdit> PendingEdits { get; set; } = [];
+    public bool UseTransactionalExecution { get; set; }
 }
 
 public sealed record SqlColumnFilter(string ColumnName, string Operation, string? Value);
@@ -60,7 +65,9 @@ public sealed record SqlResultSessionCreateRequest(
     string ConnectionId,
     string? DatabaseName,
     string? SchemaName,
-    SqlEditorResultSet ResultSet
+    SqlEditorResultSet ResultSet,
+    DatabaseProvider Provider = DatabaseProvider.Postgres,
+    SqlInlineEditEligibility? InlineEditEligibility = null
 );
 
 public sealed class SqlResultPageRequestedEventArgs(SqlResultSessionCreateRequest request) : EventArgs

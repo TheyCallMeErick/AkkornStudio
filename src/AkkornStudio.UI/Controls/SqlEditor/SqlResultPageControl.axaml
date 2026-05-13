@@ -8,14 +8,14 @@
              x:Name="Root"
              x:DataType="vm:SqlResultPageViewModel">
   <Grid Margin="8"
-        RowDefinitions="Auto,Auto,*"
+        RowDefinitions="Auto,Auto,Auto,*"
         ColumnDefinitions="280,*"
         IsVisible="{Binding HasSession}">
     <Border Grid.Row="0"
             Grid.ColumnSpan="2"
             Classes="surface-card"
             Padding="10">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto"
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
             ColumnSpacing="8">
         <Button Grid.Column="0"
                 Classes="secondary compact"
@@ -50,12 +50,64 @@
           <TextBlock Text="{Binding ColumnCountText, StringFormat='Columns: {0}'}"/>
         </Border>
 
-        <Button Grid.Column="5"
+        <Border Grid.Column="5"
+                Classes="chip"
+                Padding="8,2">
+          <TextBlock Text="{Binding EditabilityStatusText}"/>
+        </Border>
+
+        <Border Grid.Column="6"
+                Classes="chip"
+                Padding="8,2">
+          <TextBlock Text="{Binding PendingEditsCount, StringFormat='Pending: {0}'}"/>
+        </Border>
+
+        <Button Grid.Column="7"
+                Classes="secondary compact"
+                Command="{Binding CancelPendingEditsCommand}"
+                Content="Discard Pending"/>
+
+        <Button Grid.Column="8"
+                Classes="secondary compact"
+                Command="{Binding PreparePendingChangesPreviewCommand}"
+                Content="Preview Pending"/>
+
+        <Button Grid.Column="9"
+                Classes="secondary compact"
+                Command="{Binding GeneratePendingSqlCommand}"
+                Content="Generate SQL"/>
+
+        <Button Grid.Column="10"
+                Classes="secondary compact"
+                Command="{Binding CopyGeneratedPendingSqlCommand}"
+                Content="Copy SQL"/>
+
+        <Button Grid.Column="11"
+                Classes="secondary compact"
+                Command="{Binding SendGeneratedPendingSqlToEditorCommand}"
+                Content="Send to Editor"/>
+
+        <Button Grid.Column="12"
+                Classes="secondary compact"
+                Command="{Binding RefreshSessionCommand}"
+                Content="Refresh"/>
+
+        <CheckBox Grid.Column="13"
+                IsEnabled="{Binding IsTransactionModeAvailable}"
+                IsChecked="{Binding UseTransactionalExecution, Mode=TwoWay}"
+                Content="Tx Mode"/>
+
+        <Button Grid.Column="14"
+                Classes="danger compact"
+                Command="{Binding RequestExecutePendingChangesCommand}"
+                Content="Execute Pending"/>
+
+        <Button Grid.Column="15"
                 Classes="secondary compact"
                 Command="{Binding TogglePinCommand}"
                 Content="{Binding TogglePinText}"/>
 
-        <Button Grid.Column="6"
+        <Button Grid.Column="16"
                 Classes="danger compact"
                 Command="{Binding CloseSessionCommand}">
           <StackPanel Orientation="Horizontal" Spacing="6">
@@ -67,6 +119,80 @@
     </Border>
 
     <Border Grid.Row="1"
+            Grid.ColumnSpan="2"
+            Margin="0,8,0,0"
+            Classes="surface-card"
+            Padding="10"
+            IsVisible="{Binding HasPendingPreviewPanel}">
+      <StackPanel Spacing="6">
+        <TextBlock Text="Pending ChangeSet Preview"
+                   FontWeight="{StaticResource FontWeightStrong}"/>
+        <TextBlock Text="Production-like connection detected: direct execution is blocked."
+                   Foreground="{StaticResource StatusWarningBrush}"
+                   IsVisible="{Binding IsProductionLikeConnectionContext}"/>
+        <TextBlock Text="{Binding TransactionModeStatusText}"
+                   Foreground="{StaticResource StatusWarningBrush}"
+                   IsVisible="{Binding HasTransactionModeStatusText}"/>
+        <TextBlock Text="{Binding PendingChangeSetSummaryText}"
+                   TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding PendingDiffPreviewText}"
+                   TextWrapping="Wrap"
+                   Foreground="{StaticResource TextSecondaryBrush}"/>
+        <TextBox Text="{Binding GeneratedPendingSqlText}"
+                 IsReadOnly="True"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 MinHeight="74"
+                 FontFamily="{StaticResource MonoFont}"/>
+        <StackPanel Orientation="Horizontal"
+                    Spacing="8">
+          <Button Classes="secondary compact"
+                  Command="{Binding ClearPendingChangesPreviewCommand}"
+                  Content="Clear Preview"/>
+          <Button Classes="secondary compact"
+                  Command="{Binding CopyGeneratedPendingSqlCommand}"
+                  Content="Copy SQL"/>
+          <Button Classes="secondary compact"
+                  Command="{Binding SendGeneratedPendingSqlToEditorCommand}"
+                  Content="Send to Editor"/>
+          <Button Classes="danger compact"
+                  Command="{Binding RequestExecutePendingChangesCommand}"
+                  Content="Execute Pending"/>
+        </StackPanel>
+
+        <Border Classes="surface-card"
+                Padding="8"
+                IsVisible="{Binding IsPendingExecutionConfirmationVisible}">
+          <StackPanel Spacing="6">
+            <TextBlock Text="Direct execution confirmation required."
+                       FontWeight="{StaticResource FontWeightStrong}"/>
+            <TextBlock Text="The generated UPDATE statements will be validated with mutation guard and then executed."
+                       TextWrapping="Wrap"
+                       Foreground="{StaticResource TextSecondaryBrush}"/>
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8">
+              <Button Classes="danger compact"
+                      Command="{Binding ConfirmExecutePendingChangesCommand}"
+                      Content="{Binding ConfirmExecutePendingChangesText}"/>
+              <Button Classes="secondary compact"
+                      Command="{Binding ConfirmExecutePendingChangesRollbackCommand}"
+                      Content="Confirm Rollback"
+                      IsVisible="{Binding HasTransactionRollbackOption}"/>
+              <Button Classes="secondary compact"
+                      Command="{Binding CancelExecutePendingChangesCommand}"
+                      Content="Cancel"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <TextBlock Text="{Binding PendingExecutionStatusText}"
+                   IsVisible="{Binding HasPendingExecutionStatusText}"
+                   TextWrapping="Wrap"
+                   Foreground="{StaticResource TextSecondaryBrush}"/>
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="2"
             Grid.ColumnSpan="2"
             Margin="0,8,0,8"
             Classes="surface-card"
@@ -133,7 +259,7 @@
       </Grid>
     </Border>
 
-    <Border Grid.Row="2"
+    <Border Grid.Row="3"
             Grid.Column="0"
             Margin="0,0,8,0"
             Classes="surface-card"
@@ -372,19 +498,50 @@
       </Grid>
     </Border>
 
-    <Border Grid.Row="2"
+    <Border Grid.Row="3"
             Grid.Column="1"
             Classes="surface-card"
             Padding="8">
-      <Grid RowDefinitions="*,Auto,Auto">
+      <Grid RowDefinitions="*,Auto,Auto,Auto,Auto">
         <DataGrid Grid.Row="0"
+                  x:Name="ResultGrid"
                   ItemsSource="{Binding RowsView}"
                   SelectedItem="{Binding SelectedRowItem, Mode=TwoWay}"
-                  IsReadOnly="True"
+                  IsReadOnly="False"
                   GridLinesVisibility="Horizontal"
                   AutoGenerateColumns="True"
                   FrozenColumnCount="{Binding FrozenColumnCount}"
-                  SelectionMode="Extended"/>
+                  SelectionMode="Extended"
+                  CellPointerPressed="ResultGrid_OnCellPointerPressed"
+                  AutoGeneratingColumn="ResultGrid_OnAutoGeneratingColumn"
+                  CellEditEnding="ResultGrid_OnCellEditEnding">
+          <DataGrid.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Copy Cell"
+                        Command="{Binding CopySelectedCellCommand}"/>
+              <MenuItem Header="Copy Row JSON"
+                        Command="{Binding CopySelectedRowAsJsonCommand}"/>
+              <MenuItem Header="Copy Row CSV"
+                        Command="{Binding CopySelectedRowAsCsvCommand}"/>
+              <MenuItem Header="Copy Row Markdown"
+                        Command="{Binding CopySelectedRowAsMarkdownCommand}"/>
+              <MenuItem Header="Copy Column as SQL IN"
+                        Command="{Binding CopySelectedColumnAsSqlInCommand}"/>
+              <Separator/>
+              <MenuItem Header="Filter by Cell Value"
+                        Command="{Binding FilterBySelectedCellValueCommand}"/>
+              <MenuItem Header="Sort Asc"
+                        Command="{Binding SortSelectedColumnAscendingCommand}"/>
+              <MenuItem Header="Sort Desc"
+                        Command="{Binding SortSelectedColumnDescendingCommand}"/>
+              <MenuItem Header="Hide Column"
+                        Command="{Binding HideSelectedCellColumnCommand}"/>
+              <Separator/>
+              <MenuItem Header="Generate WHERE"
+                        Command="{Binding GenerateWhereClauseCommand}"/>
+            </ContextMenu>
+          </DataGrid.ContextMenu>
+        </DataGrid>
 
         <Grid Grid.Row="1"
               Margin="0,8,0,0"
@@ -416,7 +573,45 @@
                      Foreground="{StaticResource TextSecondaryBrush}"/>
         </Grid>
 
-        <Border Grid.Row="2"
+        <Grid Grid.Row="2"
+              Margin="0,8,0,0"
+              ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*"
+              ColumnSpacing="8">
+          <Border Grid.Column="0"
+                  Classes="chip"
+                  Padding="8,2">
+            <TextBlock Text="{Binding SelectedCellSummary, StringFormat='Cell: {0}'}"/>
+          </Border>
+          <Button Grid.Column="1"
+                  Classes="secondary compact"
+                  Command="{Binding CopySelectedCellCommand}"
+                  Content="Copy Cell"/>
+          <Button Grid.Column="2"
+                  Classes="secondary compact"
+                  Command="{Binding CopySelectedRowAsJsonCommand}"
+                  Content="Copy Row JSON"/>
+          <Button Grid.Column="3"
+                  Classes="secondary compact"
+                  Command="{Binding CopySelectedRowAsCsvCommand}"
+                  Content="Copy Row CSV"/>
+          <Button Grid.Column="4"
+                  Classes="secondary compact"
+                  Command="{Binding CopySelectedRowAsMarkdownCommand}"
+                  Content="Copy Row MD"/>
+          <StackPanel Grid.Column="5"
+                      Orientation="Horizontal"
+                      HorizontalAlignment="Right"
+                      Spacing="8">
+            <Button Classes="secondary compact"
+                    Command="{Binding CopySelectedColumnAsSqlInCommand}"
+                    Content="Copy SQL IN"/>
+            <Button Classes="secondary compact"
+                    Command="{Binding GenerateWhereClauseCommand}"
+                    Content="Generate WHERE"/>
+          </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="3"
                 Margin="0,8,0,0"
                 Padding="8"
                 Classes="surface-card"
@@ -470,8 +665,55 @@
             </Grid>
           </Grid>
         </Border>
+
+        <Border Grid.Row="4"
+                Margin="0,8,0,0"
+                Padding="8"
+                Classes="surface-card">
+          <StackPanel Spacing="6">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0"
+                         Text="Column Profiles"
+                         FontWeight="{StaticResource FontWeightStrong}"/>
+              <Button Grid.Column="1"
+                      Classes="secondary compact"
+                      Command="{Binding BuildColumnProfilesCommand}"
+                      Content="Analyze"/>
+            </Grid>
+
+            <TextBlock Text="{Binding ColumnProfileStatusText}"
+                       IsVisible="{Binding HasColumnProfileStatusText}"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       TextWrapping="Wrap"/>
+
+            <ScrollViewer MaxHeight="180"
+                          VerticalScrollBarVisibility="Auto"
+                          IsVisible="{Binding HasColumnProfiles}">
+              <ItemsControl ItemsSource="{Binding ColumnProfiles}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Classes="surface-card"
+                            Margin="0,0,0,6"
+                            Padding="6">
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding ColumnName}"
+                                   FontWeight="{StaticResource FontWeightStrong}"/>
+                        <TextBlock Text="{Binding KindText}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding SummaryText}"
+                                   TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding TopValuesText, StringFormat='Top: {0}'}"
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </StackPanel>
+        </Border>
       </Grid>
     </Border>
   </Grid>
 </UserControl>
-
