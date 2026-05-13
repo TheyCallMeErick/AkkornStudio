@@ -1468,6 +1468,7 @@ public sealed class ShellViewModel : ViewModelBase
         _sqlResultPage ??= new SqlResultPageViewModel();
         _sqlResultPage.ConfigureSessionService(_sqlResultSessionService);
         _sqlResultPage.ConfigureConnectionResolver(ResolveSqlEditorConnectionByProfileId);
+        _sqlResultPage.ConfigureMetadataResolver(ResolveSqlEditorMetadata);
         _sqlResultPage.ConfigureSqlAppendToEditor((sourceDocumentId, sql) =>
         {
             if (string.IsNullOrWhiteSpace(sql))

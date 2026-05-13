@@ -1,6 +1,7 @@
 using System.Data;
 using System.Windows.Input;
 using AkkornStudio.Core;
+using AkkornStudio.Metadata;
 using AkkornStudio.UI.Services.SqlEditor;
 using AkkornStudio.UI.Services.SqlEditor.Results;
 using System.Collections.ObjectModel;
@@ -25,6 +26,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     private IReadOnlyList<DataRow> _filteredRows = [];
     private IReadOnlyList<DataRow> _pagedSourceRows = [];
     private object? _selectedRowItem;
+    private bool _isResultDetailVisible;
     private ObservableCollection<SqlResultSelectedRowFieldItemViewModel> _selectedRowFields = [];
     private string _selectedRowJson = "{}";
     private string _generatedWhereClause = string.Empty;
@@ -66,9 +68,20 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     private bool _useTransactionalExecution;
     private bool _isBuildingColumnProfiles;
     private string _columnProfileStatusText = string.Empty;
+    private string _sessionAnnotationText = string.Empty;
     private Action<Guid?, string>? _appendSqlToEditor;
     private Func<string?, ConnectionConfig?>? _connectionConfigBySessionResolver;
+    private Func<DbMetadata?>? _metadataResolver;
     private readonly SqlResultColumnProfilingService _columnProfilingService;
+    private readonly ISqlResultSnippetStore _snippetStore;
+    private ObservableCollection<SqlSavedQuerySnippet> _savedSnippets = [];
+    private SqlSavedQuerySnippet? _selectedSnippet;
+    private string _snippetNameInput = string.Empty;
+    private string _snippetDescriptionInput = string.Empty;
+    private string _snippetTagsInput = string.Empty;
+    private IReadOnlyList<SqlQuickTemplateOption> _availableSqlTemplates = [];
+    private SqlQuickTemplateOption? _selectedSqlTemplate;
+    private IReadOnlyList<SqlTableQuickActionOption> _availableTableQuickActions = [];
 
     private const string FilterOperationContains = "contains";
     private const string FilterOperationEquals = "equals";
@@ -110,6 +123,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             new SqlMutationDiffService(new SqlEditorExecutionService()),
             null,
             null,
+            null,
             null)
     {
     }
@@ -119,7 +133,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         SqlMutationDiffService mutationDiffService,
         SqlEditorMutationExecutionOrchestrator? mutationExecutionOrchestrator,
         Func<string?, ConnectionConfig?, int, CancellationToken, Task<SqlEditorResultSet>>? executeSqlAsync,
-        Func<ConnectionConfig, IReadOnlyList<string>, bool, CancellationToken, Task<SqlResultTransactionExecutionResult>>? executeTransactionalPendingChangesAsync = null)
+        Func<ConnectionConfig, IReadOnlyList<string>, bool, CancellationToken, Task<SqlResultTransactionExecutionResult>>? executeTransactionalPendingChangesAsync = null,
+        ISqlResultSnippetStore? snippetStore = null)
     {
         _mutationGuardService = mutationGuardService ?? throw new ArgumentNullException(nameof(mutationGuardService));
         _mutationDiffService = mutationDiffService ?? throw new ArgumentNullException(nameof(mutationDiffService));
@@ -130,6 +145,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
                 _mutationDiffService);
         _transactionExecutionService = new SqlResultTransactionExecutionService();
         _columnProfilingService = new SqlResultColumnProfilingService();
+        _snippetStore = snippetStore ?? new FileSqlResultSnippetStore();
         _executeSqlAsync = executeSqlAsync ?? new SqlEditorExecutionService().ExecuteAsync;
         _executeTransactionalPendingChangesAsync = executeTransactionalPendingChangesAsync
             ?? _transactionExecutionService.ExecuteAsync;
@@ -145,6 +161,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         CloseSessionCommand = new RelayCommand(
             CloseCurrentSession,
             () => Session is not null && _sessionService is not null);
+        CloseSessionTabCommand = new RelayCommand<SqlResultSession>(CloseSessionTab);
         NextPageCommand = new RelayCommand(
             MoveNextPage,
             () => HasNextPage);
@@ -176,10 +193,17 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         MoveColumnDownCommand = new RelayCommand<SqlResultColumnVisibilityItemViewModel>(MoveColumnDown, CanMoveColumnDown);
         ToggleColumnFrozenCommand = new RelayCommand<SqlResultColumnVisibilityItemViewModel>(ToggleColumnFrozen);
         ClearSelectedRowCommand = new RelayCommand(ClearSelectedRow, () => HasSelectedRow);
+        ShowSelectedRowDetailsCommand = new RelayCommand(ShowSelectedRowDetails, () => CanShowSelectedRowDetails);
+        HideSelectedRowDetailsCommand = new RelayCommand(HideSelectedRowDetails, () => IsResultDetailVisible);
         CopySelectedCellCommand = new RelayCommand(CopySelectedCell, () => HasSelectedCell);
         CopySelectedRowAsJsonCommand = new RelayCommand(CopySelectedRowAsJson, () => HasSelectedRow);
         CopySelectedRowAsCsvCommand = new RelayCommand(CopySelectedRowAsCsv, () => HasSelectedRow);
         CopySelectedRowAsMarkdownCommand = new RelayCommand(CopySelectedRowAsMarkdown, () => HasSelectedRow);
+        CopyVisibleRowsAsJsonCommand = new RelayCommand(CopyVisibleRowsAsJson, () => HasVisibleRows);
+        CopyVisibleRowsAsCsvCommand = new RelayCommand(CopyVisibleRowsAsCsv, () => HasVisibleRows);
+        CopyVisibleRowsAsMarkdownCommand = new RelayCommand(CopyVisibleRowsAsMarkdown, () => HasVisibleRows);
+        ExportVisibleRowsAsJsonCommand = new RelayCommand(ExportVisibleRowsAsJson, () => HasVisibleRows);
+        ExportVisibleRowsAsCsvCommand = new RelayCommand(ExportVisibleRowsAsCsv, () => HasVisibleRows);
         CopySelectedColumnAsSqlInCommand = new RelayCommand(CopySelectedColumnAsSqlIn, () => HasSelectedCell);
         GenerateWhereClauseCommand = new RelayCommand(GenerateWhereClause, () => CanGenerateWhereClause);
         FilterBySelectedCellValueCommand = new RelayCommand(FilterBySelectedCellValue, () => HasSelectedCell);
@@ -217,12 +241,46 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         CancelExecutePendingChangesCommand = new RelayCommand(
             CancelExecutePendingChanges,
             () => CanCancelExecutePendingChanges);
+        SaveSessionAnnotationCommand = new RelayCommand(
+            SaveSessionAnnotation,
+            () => CanSaveSessionAnnotation);
+        ClearSessionAnnotationCommand = new RelayCommand(
+            ClearSessionAnnotation,
+            () => CanClearSessionAnnotation);
+        SaveCurrentSqlAsSnippetCommand = new RelayCommand(
+            SaveCurrentSqlAsSnippet,
+            () => CanSaveCurrentSqlAsSnippet);
+        ToggleCurrentSqlFavoriteCommand = new RelayCommand(
+            ToggleCurrentSqlFavorite,
+            () => CanToggleCurrentSqlFavorite);
+        OpenSelectedSnippetInEditorCommand = new RelayCommand(
+            OpenSelectedSnippetInEditor,
+            () => CanOpenSelectedSnippetInEditor);
+        OpenSnippetInEditorCommand = new RelayCommand<SqlSavedQuerySnippet>(
+            OpenSnippetInEditor,
+            CanOpenSnippetInEditor);
+        DeleteSelectedSnippetCommand = new RelayCommand(
+            DeleteSelectedSnippet,
+            () => CanDeleteSelectedSnippet);
+        DeleteSnippetCommand = new RelayCommand<SqlSavedQuerySnippet>(DeleteSnippet);
+        SendSelectedSqlTemplateToEditorCommand = new RelayCommand(
+            SendSelectedSqlTemplateToEditor,
+            () => CanSendSelectedSqlTemplateToEditor);
+        SendTableQuickActionToEditorCommand = new RelayCommand<SqlTableQuickActionOption>(
+            SendTableQuickActionToEditor,
+            CanSendTableQuickActionToEditor);
+        NavigateSelectedForeignKeyCommand = new RelayCommand(
+            NavigateSelectedForeignKey,
+            () => CanNavigateSelectedForeignKey);
+
+        ReloadSavedSnippets();
     }
 
     public ICommand BackToEditorCommand { get; }
     public ICommand SelectSessionCommand { get; }
     public ICommand TogglePinCommand { get; }
     public ICommand CloseSessionCommand { get; }
+    public ICommand CloseSessionTabCommand { get; }
     public ICommand NextPageCommand { get; }
     public ICommand PreviousPageCommand { get; }
     public ICommand FirstPageCommand { get; }
@@ -244,10 +302,17 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     public ICommand MoveColumnDownCommand { get; }
     public ICommand ToggleColumnFrozenCommand { get; }
     public ICommand ClearSelectedRowCommand { get; }
+    public ICommand ShowSelectedRowDetailsCommand { get; }
+    public ICommand HideSelectedRowDetailsCommand { get; }
     public ICommand CopySelectedCellCommand { get; }
     public ICommand CopySelectedRowAsJsonCommand { get; }
     public ICommand CopySelectedRowAsCsvCommand { get; }
     public ICommand CopySelectedRowAsMarkdownCommand { get; }
+    public ICommand CopyVisibleRowsAsJsonCommand { get; }
+    public ICommand CopyVisibleRowsAsCsvCommand { get; }
+    public ICommand CopyVisibleRowsAsMarkdownCommand { get; }
+    public ICommand ExportVisibleRowsAsJsonCommand { get; }
+    public ICommand ExportVisibleRowsAsCsvCommand { get; }
     public ICommand CopySelectedColumnAsSqlInCommand { get; }
     public ICommand GenerateWhereClauseCommand { get; }
     public ICommand FilterBySelectedCellValueCommand { get; }
@@ -265,7 +330,19 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     public ICommand ConfirmExecutePendingChangesCommand { get; }
     public ICommand ConfirmExecutePendingChangesRollbackCommand { get; }
     public ICommand CancelExecutePendingChangesCommand { get; }
+    public ICommand SaveSessionAnnotationCommand { get; }
+    public ICommand ClearSessionAnnotationCommand { get; }
+    public ICommand SaveCurrentSqlAsSnippetCommand { get; }
+    public ICommand ToggleCurrentSqlFavoriteCommand { get; }
+    public ICommand OpenSelectedSnippetInEditorCommand { get; }
+    public ICommand OpenSnippetInEditorCommand { get; }
+    public ICommand DeleteSelectedSnippetCommand { get; }
+    public ICommand DeleteSnippetCommand { get; }
+    public ICommand SendSelectedSqlTemplateToEditorCommand { get; }
+    public ICommand SendTableQuickActionToEditorCommand { get; }
+    public ICommand NavigateSelectedForeignKeyCommand { get; }
     public event Action<string>? ClipboardCopyRequested;
+    public event Action<SqlResultExportRequest>? ExportRequested;
 
     public SqlResultSession? Session
     {
@@ -277,12 +354,14 @@ public sealed class SqlResultPageViewModel : ViewModelBase
 
             ResetPendingChangeArtifacts();
             ResetColumnProfiles();
+            IsResultDetailVisible = false;
             ApplySessionTransactionModePreference(value);
             UpdatePendingExecutionStatus(string.Empty, hasError: false);
             RaisePropertyChanged(nameof(HasSession));
             RaisePropertyChanged(nameof(SqlText));
             RaisePropertyChanged(nameof(ConnectionId));
             RaisePropertyChanged(nameof(DatabaseName));
+            RaisePropertyChanged(nameof(ResultBreadcrumbText));
             RaisePropertyChanged(nameof(ExecutedAtText));
             RaisePropertyChanged(nameof(DurationText));
             RaisePropertyChanged(nameof(StatusText));
@@ -315,9 +394,19 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             RaisePropertyChanged(nameof(CanConfirmExecutePendingChanges));
             RaisePropertyChanged(nameof(CanConfirmExecutePendingChangesWithRollback));
             RaisePropertyChanged(nameof(CanCancelExecutePendingChanges));
+            RaisePropertyChanged(nameof(SessionAnnotationText));
+            RaisePropertyChanged(nameof(HasSessionAnnotation));
+            RaisePropertyChanged(nameof(CanSaveSessionAnnotation));
+            RaisePropertyChanged(nameof(CanClearSessionAnnotation));
+            RaisePropertyChanged(nameof(IsCurrentSqlFavorite));
+            RaisePropertyChanged(nameof(ToggleCurrentSqlFavoriteText));
+            RaisePropertyChanged(nameof(CanSaveCurrentSqlAsSnippet));
+            RaisePropertyChanged(nameof(CanToggleCurrentSqlFavorite));
+            RaisePropertyChanged(nameof(HasVisibleRows));
             RaisePropertyChanged(nameof(HasSelectedCell));
             RaisePropertyChanged(nameof(SelectedCellSummary));
             RaisePropertyChanged(nameof(CanGenerateWhereClause));
+            RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
             RebuildRowsProjection();
             NotifyCommands();
         }
@@ -346,6 +435,19 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     public string SqlText => Session?.SqlText ?? string.Empty;
     public string ConnectionId => Session?.ConnectionId ?? string.Empty;
     public string DatabaseName => Session?.DatabaseName ?? "-";
+    public string ResultBreadcrumbText
+    {
+        get
+        {
+            if (Session is null)
+                return "Home > Editor SQL > Resultado";
+
+            string connection = string.IsNullOrWhiteSpace(Session.ConnectionId) ? "-" : Session.ConnectionId;
+            string database = string.IsNullOrWhiteSpace(Session.DatabaseName) ? "-" : Session.DatabaseName!;
+            string schema = string.IsNullOrWhiteSpace(Session.SchemaName) ? "-" : Session.SchemaName!;
+            return $"{connection} > {database} > {schema} > Resultado";
+        }
+    }
     public string ExecutedAtText => Session?.ExecutedAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm:ss") ?? "-";
     public string DurationText => Session is null ? "-" : $"{Session.ExecutionTime.TotalMilliseconds:0} ms";
     public string StatusText => Session?.Status == SqlResultSessionStatus.Success ? "Sucesso" : "Erro";
@@ -370,7 +472,9 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             _selectedRowFields = value;
             RaisePropertyChanged(nameof(SelectedRowFields));
             RaisePropertyChanged(nameof(HasSelectedRow));
+            RaisePropertyChanged(nameof(CanShowSelectedRowDetails));
             (ClearSelectedRowCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (ShowSelectedRowDetailsCommand as RelayCommand)?.NotifyCanExecuteChanged();
         }
     }
 
@@ -381,9 +485,23 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     }
 
     public bool HasSelectedRow => SelectedRowFields.Count > 0;
+    public bool IsResultDetailVisible
+    {
+        get => _isResultDetailVisible;
+        private set
+        {
+            if (!Set(ref _isResultDetailVisible, value))
+                return;
+
+            RaisePropertyChanged(nameof(CanShowSelectedRowDetails));
+            (HideSelectedRowDetailsCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        }
+    }
+    public bool CanShowSelectedRowDetails => HasSelectedRow && !IsResultDetailVisible;
     public string SelectedRowSummary => Session?.ViewState.SelectedRowIndex is int idx && idx >= 0
         ? $"Row {idx + 1}"
         : "-";
+    public bool HasVisibleRows => _pagedRowsTable?.Rows.Count > 0;
     public bool HasSelectedCell => Session?.ViewState.SelectedCell is not null;
     public string SelectedCellSummary
     {
@@ -487,6 +605,130 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         _isPendingExecutionConfirmationVisible
         && !_isExecutingPendingChanges;
     public bool CanRefreshSession => Session is not null && !_isRefreshingSession && !_isExecutingPendingChanges;
+    public string SessionAnnotationText
+    {
+        get => _sessionAnnotationText;
+        set
+        {
+            string normalized = value ?? string.Empty;
+            if (!Set(ref _sessionAnnotationText, normalized))
+                return;
+
+            RaisePropertyChanged(nameof(CanSaveSessionAnnotation));
+            (SaveSessionAnnotationCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        }
+    }
+    public bool HasSessionAnnotation => !string.IsNullOrWhiteSpace(Session?.Annotation);
+    public bool CanSaveSessionAnnotation =>
+        Session is not null
+        && _sessionService is not null
+        && !string.Equals(SessionAnnotationText.Trim(), Session.Annotation ?? string.Empty, StringComparison.Ordinal);
+    public bool CanClearSessionAnnotation =>
+        Session is not null
+        && _sessionService is not null
+        && !string.IsNullOrWhiteSpace(Session?.Annotation);
+    public ObservableCollection<SqlSavedQuerySnippet> SavedSnippets
+    {
+        get => _savedSnippets;
+        private set
+        {
+            _savedSnippets = value;
+            RaisePropertyChanged(nameof(SavedSnippets));
+            RaisePropertyChanged(nameof(HasSavedSnippets));
+            RaisePropertyChanged(nameof(FavoriteSnippetCountText));
+            RaisePropertyChanged(nameof(IsCurrentSqlFavorite));
+            RaisePropertyChanged(nameof(CanToggleCurrentSqlFavorite));
+            NotifyCommands();
+        }
+    }
+    public bool HasSavedSnippets => SavedSnippets.Count > 0;
+    public SqlSavedQuerySnippet? SelectedSnippet
+    {
+        get => _selectedSnippet;
+        set
+        {
+            if (!Set(ref _selectedSnippet, value))
+                return;
+
+            RaisePropertyChanged(nameof(CanOpenSelectedSnippetInEditor));
+            RaisePropertyChanged(nameof(CanDeleteSelectedSnippet));
+            NotifyCommands();
+        }
+    }
+    public string SnippetNameInput
+    {
+        get => _snippetNameInput;
+        set
+        {
+            string normalized = value ?? string.Empty;
+            if (!Set(ref _snippetNameInput, normalized))
+                return;
+
+            RaisePropertyChanged(nameof(CanSaveCurrentSqlAsSnippet));
+            NotifyCommands();
+        }
+    }
+    public string SnippetDescriptionInput
+    {
+        get => _snippetDescriptionInput;
+        set => Set(ref _snippetDescriptionInput, value ?? string.Empty);
+    }
+    public string SnippetTagsInput
+    {
+        get => _snippetTagsInput;
+        set => Set(ref _snippetTagsInput, value ?? string.Empty);
+    }
+    public bool IsCurrentSqlFavorite => TryFindSnippetBySql(SqlText, out SqlSavedQuerySnippet? snippet) && snippet?.IsFavorite == true;
+    public string ToggleCurrentSqlFavoriteText => IsCurrentSqlFavorite ? "Unfavorite SQL" : "Favorite SQL";
+    public string FavoriteSnippetCountText => $"Favorites: {SavedSnippets.Count(item => item.IsFavorite)}";
+    public bool CanSaveCurrentSqlAsSnippet => Session is not null && !string.IsNullOrWhiteSpace(SqlText);
+    public bool CanToggleCurrentSqlFavorite => Session is not null && !string.IsNullOrWhiteSpace(SqlText);
+    public bool CanOpenSelectedSnippetInEditor => SelectedSnippet is not null && _appendSqlToEditor is not null;
+    public bool CanDeleteSelectedSnippet => SelectedSnippet is not null;
+    public IReadOnlyList<SqlQuickTemplateOption> AvailableSqlTemplates
+    {
+        get => _availableSqlTemplates;
+        private set
+        {
+            _availableSqlTemplates = value;
+            RaisePropertyChanged(nameof(AvailableSqlTemplates));
+            RaisePropertyChanged(nameof(HasAvailableSqlTemplates));
+            RaisePropertyChanged(nameof(CanSendSelectedSqlTemplateToEditor));
+            NotifyCommands();
+        }
+    }
+    public bool HasAvailableSqlTemplates => AvailableSqlTemplates.Count > 0;
+    public SqlQuickTemplateOption? SelectedSqlTemplate
+    {
+        get => _selectedSqlTemplate;
+        set
+        {
+            if (!Set(ref _selectedSqlTemplate, value))
+                return;
+
+            RaisePropertyChanged(nameof(CanSendSelectedSqlTemplateToEditor));
+            NotifyCommands();
+        }
+    }
+    public bool CanSendSelectedSqlTemplateToEditor =>
+        _appendSqlToEditor is not null
+        && Session is not null
+        && SelectedSqlTemplate is not null;
+    public IReadOnlyList<SqlTableQuickActionOption> AvailableTableQuickActions
+    {
+        get => _availableTableQuickActions;
+        private set
+        {
+            _availableTableQuickActions = value;
+            RaisePropertyChanged(nameof(AvailableTableQuickActions));
+            RaisePropertyChanged(nameof(HasAvailableTableQuickActions));
+            NotifyCommands();
+        }
+    }
+    public bool HasAvailableTableQuickActions => AvailableTableQuickActions.Count > 0;
+    public bool CanNavigateSelectedForeignKey =>
+        _appendSqlToEditor is not null
+        && TryResolveForeignKeyNavigationContext(out _, out _);
     public string EditabilityStatusText
     {
         get
@@ -773,6 +1015,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     public void ConfigureSqlAppendToEditor(Action<Guid?, string> appendSqlToEditor)
     {
         _appendSqlToEditor = appendSqlToEditor ?? throw new ArgumentNullException(nameof(appendSqlToEditor));
+        RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
         NotifyCommands();
     }
 
@@ -782,7 +1025,68 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         RaisePropertyChanged(nameof(IsProductionLikeConnectionContext));
         RaisePropertyChanged(nameof(CanRefreshSession));
         RaisePropertyChanged(nameof(CanRequestExecutePendingChanges));
+        RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
         NotifyCommands();
+    }
+
+    public void ConfigureMetadataResolver(Func<DbMetadata?> metadataResolver)
+    {
+        _metadataResolver = metadataResolver ?? throw new ArgumentNullException(nameof(metadataResolver));
+        RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
+        NotifyCommands();
+    }
+
+    public bool TryBuildReportExportContext(out SqlEditorReportExportContext? context)
+    {
+        if (Session is null)
+        {
+            context = null;
+            return false;
+        }
+
+        SqlEditorResultSet result = Session.ResultSet;
+        var columns = new List<string>();
+        var resultRows = new List<IReadOnlyDictionary<string, object?>>();
+        if (result.Data is not null)
+        {
+            foreach (DataColumn column in result.Data.Columns)
+                columns.Add(column.ColumnName);
+
+            foreach (DataRow row in result.Data.Rows)
+            {
+                var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                foreach (DataColumn column in result.Data.Columns)
+                    values[column.ColumnName] = NormalizeReportCellValue(row[column]);
+
+                resultRows.Add(values);
+            }
+        }
+
+        string status = result.Success ? "success" : "error";
+        if (result.Success && !string.IsNullOrWhiteSpace(result.ErrorMessage))
+            status = "warning";
+
+        long? executionMs = (long)Math.Round(result.ExecutionTime.TotalMilliseconds);
+        long? rowCount = result.RowsAffected;
+        if (!rowCount.HasValue && result.Data is not null)
+            rowCount = result.Data.Rows.Count;
+
+        ConnectionConfig? connection = _connectionConfigBySessionResolver?.Invoke(Session.ConnectionId);
+        context = new SqlEditorReportExportContext(
+            Sql: result.StatementSql,
+            SchemaColumns: columns,
+            SchemaDetails: BuildReportSchemaDetails(columns, resultRows),
+            ResultRows: resultRows,
+            ExecutionResult: new SqlEditorReportExecutionResult(
+                RowCount: rowCount,
+                ExecutionTimeMs: executionMs,
+                Status: status,
+                ErrorMessage: result.ErrorMessage),
+            Connection: connection,
+            ActiveFilePath: null,
+            TabTitle: BuildReportTabTitle(result.StatementSql));
+
+        return true;
     }
 
     public void SetSession(SqlResultSession session, Guid? sourceSqlEditorDocumentId)
@@ -812,6 +1116,15 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         _searchText = string.Empty;
         GeneratedWhereClause = string.Empty;
         RaisePropertyChanged(nameof(SearchText));
+        SnippetNameInput = BuildDefaultSnippetName(session);
+        SnippetDescriptionInput = string.Empty;
+        SnippetTagsInput = string.Empty;
+        AvailableSqlTemplates = BuildSqlQuickTemplates(session);
+        SelectedSqlTemplate = AvailableSqlTemplates.FirstOrDefault();
+        AvailableTableQuickActions = BuildTableQuickActions(session);
+        SessionAnnotationText = session.Annotation ?? string.Empty;
+        RaisePropertyChanged(nameof(HasSessionAnnotation));
+        RaisePropertyChanged(nameof(CanClearSessionAnnotation));
 
         ActiveGroupColumns = new ObservableCollection<SqlResultGroupColumnItemViewModel>(
             session.ViewState.GroupedColumns.Select(column => new SqlResultGroupColumnItemViewModel(column)));
@@ -867,14 +1180,28 @@ public sealed class SqlResultPageViewModel : ViewModelBase
 
     private void CloseCurrentSession()
     {
-        if (Session is null || _sessionService is null)
+        CloseSessionCore(Session);
+    }
+
+    private void CloseSessionTab(SqlResultSession? session)
+    {
+        CloseSessionCore(session);
+    }
+
+    private void CloseSessionCore(SqlResultSession? session)
+    {
+        if (session is null || _sessionService is null)
             return;
 
-        Guid closingId = Session.Id;
+        bool wasActive = Session?.Id == session.Id;
+        Guid closingId = session.Id;
         _sessionService.Remove(closingId);
         _sessionSourceEditorDocumentMap.Remove(closingId);
         _sessionCollapsedGroupKeys.Remove(closingId);
         RefreshSessions();
+
+        if (!wasActive)
+            return;
 
         SqlResultSession? next = Sessions.FirstOrDefault();
         if (next is null)
@@ -886,6 +1213,485 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         }
 
         SelectSession(next);
+    }
+
+    private void SaveSessionAnnotation()
+    {
+        if (Session is null || _sessionService is null)
+            return;
+
+        string? normalized = string.IsNullOrWhiteSpace(SessionAnnotationText)
+            ? null
+            : SessionAnnotationText.Trim();
+
+        if (!_sessionService.SetAnnotation(Session.Id, normalized))
+            return;
+
+        Session.Annotation = normalized;
+        SessionAnnotationText = normalized ?? string.Empty;
+        RaisePropertyChanged(nameof(HasSessionAnnotation));
+        RaisePropertyChanged(nameof(CanSaveSessionAnnotation));
+        RaisePropertyChanged(nameof(CanClearSessionAnnotation));
+        NotifyCommands();
+    }
+
+    private void ClearSessionAnnotation()
+    {
+        if (Session is null || _sessionService is null)
+            return;
+
+        if (!_sessionService.SetAnnotation(Session.Id, null))
+            return;
+
+        Session.Annotation = null;
+        SessionAnnotationText = string.Empty;
+        RaisePropertyChanged(nameof(HasSessionAnnotation));
+        RaisePropertyChanged(nameof(CanSaveSessionAnnotation));
+        RaisePropertyChanged(nameof(CanClearSessionAnnotation));
+        NotifyCommands();
+    }
+
+    private void SaveCurrentSqlAsSnippet()
+    {
+        if (Session is null || string.IsNullOrWhiteSpace(SqlText))
+            return;
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (TryFindSnippetBySql(SqlText, out SqlSavedQuerySnippet? existing) && existing is not null)
+        {
+            var updated = existing with
+            {
+                Name = string.IsNullOrWhiteSpace(SnippetNameInput) ? existing.Name : SnippetNameInput.Trim(),
+                Description = string.IsNullOrWhiteSpace(SnippetDescriptionInput)
+                    ? existing.Description
+                    : SnippetDescriptionInput.Trim(),
+                Tags = string.IsNullOrWhiteSpace(SnippetTagsInput) ? existing.Tags : SnippetTagsInput.Trim(),
+                ConnectionId = Session.ConnectionId,
+                DatabaseName = Session.DatabaseName,
+                UpdatedAtUtc = now,
+            };
+            _snippetStore.Upsert(updated);
+            ReloadSavedSnippets(selectSnippetId: updated.Id);
+            return;
+        }
+
+        string name = string.IsNullOrWhiteSpace(SnippetNameInput)
+            ? BuildDefaultSnippetName(Session)
+            : SnippetNameInput.Trim();
+        string description = string.IsNullOrWhiteSpace(SnippetDescriptionInput)
+            ? $"Saved from SQL result session at {Session.ExecutedAt.LocalDateTime:dd/MM/yyyy HH:mm:ss}."
+            : SnippetDescriptionInput.Trim();
+        string tags = string.IsNullOrWhiteSpace(SnippetTagsInput) ? "sql result saved" : SnippetTagsInput.Trim();
+
+        var snippet = new SqlSavedQuerySnippet(
+            Id: Guid.NewGuid().ToString("N"),
+            Name: name,
+            Description: description,
+            Tags: tags,
+            SqlText: SqlText.Trim(),
+            ConnectionId: Session.ConnectionId,
+            DatabaseName: Session.DatabaseName,
+            CreatedAtUtc: now,
+            UpdatedAtUtc: now,
+            IsFavorite: false);
+        _snippetStore.Upsert(snippet);
+        ReloadSavedSnippets(selectSnippetId: snippet.Id);
+    }
+
+    private void ToggleCurrentSqlFavorite()
+    {
+        if (Session is null || string.IsNullOrWhiteSpace(SqlText))
+            return;
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (TryFindSnippetBySql(SqlText, out SqlSavedQuerySnippet? existing) && existing is not null)
+        {
+            _snippetStore.Upsert(existing with
+            {
+                IsFavorite = !existing.IsFavorite,
+                UpdatedAtUtc = now,
+            });
+            ReloadSavedSnippets(selectSnippetId: existing.Id);
+            return;
+        }
+
+        var snippet = new SqlSavedQuerySnippet(
+            Id: Guid.NewGuid().ToString("N"),
+            Name: BuildDefaultSnippetName(Session),
+            Description: $"Favorited from SQL result session at {Session.ExecutedAt.LocalDateTime:dd/MM/yyyy HH:mm:ss}.",
+            Tags: "sql favorite",
+            SqlText: SqlText.Trim(),
+            ConnectionId: Session.ConnectionId,
+            DatabaseName: Session.DatabaseName,
+            CreatedAtUtc: now,
+            UpdatedAtUtc: now,
+            IsFavorite: true);
+        _snippetStore.Upsert(snippet);
+        ReloadSavedSnippets(selectSnippetId: snippet.Id);
+    }
+
+    private void OpenSelectedSnippetInEditor()
+    {
+        OpenSnippetInEditor(SelectedSnippet);
+    }
+
+    private void OpenSnippetInEditor(SqlSavedQuerySnippet? snippet)
+    {
+        if (!CanOpenSnippetInEditor(snippet))
+            return;
+
+        _appendSqlToEditor?.Invoke(_sourceSqlEditorDocumentId, snippet!.SqlText);
+    }
+
+    private bool CanOpenSnippetInEditor(SqlSavedQuerySnippet? snippet)
+    {
+        return snippet is not null
+            && _appendSqlToEditor is not null
+            && !string.IsNullOrWhiteSpace(snippet.SqlText);
+    }
+
+    private void DeleteSelectedSnippet()
+    {
+        DeleteSnippet(SelectedSnippet);
+    }
+
+    private void DeleteSnippet(SqlSavedQuerySnippet? snippet)
+    {
+        if (snippet is null)
+            return;
+
+        if (!_snippetStore.Delete(snippet.Id))
+            return;
+
+        ReloadSavedSnippets();
+    }
+
+    private void ReloadSavedSnippets(string? selectSnippetId = null)
+    {
+        IReadOnlyList<SqlSavedQuerySnippet> snippets = _snippetStore.Load();
+        SavedSnippets = new ObservableCollection<SqlSavedQuerySnippet>(snippets);
+        if (!string.IsNullOrWhiteSpace(selectSnippetId))
+        {
+            SelectedSnippet = SavedSnippets.FirstOrDefault(item =>
+                string.Equals(item.Id, selectSnippetId, StringComparison.OrdinalIgnoreCase));
+        }
+        else if (SelectedSnippet is not null)
+        {
+            string existingId = SelectedSnippet.Id;
+            SelectedSnippet = SavedSnippets.FirstOrDefault(item =>
+                string.Equals(item.Id, existingId, StringComparison.OrdinalIgnoreCase));
+        }
+        else
+        {
+            SelectedSnippet = SavedSnippets.FirstOrDefault();
+        }
+
+        RaisePropertyChanged(nameof(IsCurrentSqlFavorite));
+        RaisePropertyChanged(nameof(ToggleCurrentSqlFavoriteText));
+    }
+
+    private bool TryFindSnippetBySql(string? sqlText, out SqlSavedQuerySnippet? snippet)
+    {
+        snippet = null;
+        if (string.IsNullOrWhiteSpace(sqlText))
+            return false;
+
+        string normalizedSql = NormalizeSqlForSnippetIdentity(sqlText);
+        snippet = SavedSnippets.FirstOrDefault(item =>
+            string.Equals(NormalizeSqlForSnippetIdentity(item.SqlText), normalizedSql, StringComparison.Ordinal));
+        return snippet is not null;
+    }
+
+    private static string NormalizeSqlForSnippetIdentity(string sqlText)
+    {
+        return (sqlText ?? string.Empty).Trim();
+    }
+
+    private static string BuildDefaultSnippetName(SqlResultSession session)
+    {
+        string database = string.IsNullOrWhiteSpace(session.DatabaseName) ? "sql" : session.DatabaseName!;
+        return $"{database}-snippet-{session.ExecutedAt.LocalDateTime:yyyyMMdd-HHmmss}";
+    }
+
+    private void SendSelectedSqlTemplateToEditor()
+    {
+        if (!CanSendSelectedSqlTemplateToEditor || Session is null || SelectedSqlTemplate is null)
+            return;
+
+        string sql = BuildSqlFromTemplate(Session, SelectedSqlTemplate.Key);
+        if (string.IsNullOrWhiteSpace(sql))
+            return;
+
+        _appendSqlToEditor?.Invoke(_sourceSqlEditorDocumentId, sql);
+    }
+
+    private static IReadOnlyList<SqlQuickTemplateOption> BuildSqlQuickTemplates(SqlResultSession session)
+    {
+        string table = ResolveTemplateTableName(session);
+        if (string.IsNullOrWhiteSpace(table))
+            return [];
+
+        return
+        [
+            new SqlQuickTemplateOption("select_top_100", "SELECT TOP/LIMIT 100", $"Preview first 100 rows from {table}."),
+            new SqlQuickTemplateOption("find_by_pk", "Find by PK", $"Find a row by primary key in {table}."),
+            new SqlQuickTemplateOption("count_by_column", "Count by Column", $"Aggregate counts by one column in {table}."),
+            new SqlQuickTemplateOption("find_duplicates", "Find Duplicates", $"Detect duplicate values in {table}."),
+            new SqlQuickTemplateOption("find_nulls", "Find Nulls", $"Find rows with null values in {table}."),
+            new SqlQuickTemplateOption("recent_records", "Recent Records", $"List latest records in {table}."),
+            new SqlQuickTemplateOption("recently_modified", "Recently Modified", $"List recently modified rows in {table}."),
+        ];
+    }
+
+    private static string BuildSqlFromTemplate(SqlResultSession session, string templateKey)
+    {
+        string table = ResolveTemplateTableName(session);
+        if (string.IsNullOrWhiteSpace(table))
+            return string.Empty;
+
+        string idColumn = session.InlineEditEligibility.PrimaryKeyColumns.FirstOrDefault() ?? "id";
+        string limitClause = session.Provider == DatabaseProvider.SqlServer ? "TOP 100 " : string.Empty;
+        string limitTail = session.Provider == DatabaseProvider.SqlServer ? string.Empty : " LIMIT 100";
+        string recentOrder = "created_at";
+        string modifiedOrder = "updated_at";
+
+        return templateKey switch
+        {
+            "select_top_100" => $"SELECT {limitClause}*\nFROM {table}\nORDER BY {idColumn} DESC{limitTail};",
+            "find_by_pk" => $"SELECT *\nFROM {table}\nWHERE {idColumn} = :{idColumn};",
+            "count_by_column" => $"SELECT {idColumn}, COUNT(*) AS total\nFROM {table}\nGROUP BY {idColumn}\nORDER BY total DESC;",
+            "find_duplicates" => $"SELECT {idColumn}, COUNT(*) AS total\nFROM {table}\nGROUP BY {idColumn}\nHAVING COUNT(*) > 1\nORDER BY total DESC;",
+            "find_nulls" => $"SELECT *\nFROM {table}\nWHERE {idColumn} IS NULL;",
+            "recent_records" => $"SELECT {limitClause}*\nFROM {table}\nORDER BY {recentOrder} DESC{limitTail};",
+            "recently_modified" => $"SELECT {limitClause}*\nFROM {table}\nORDER BY {modifiedOrder} DESC{limitTail};",
+            _ => string.Empty,
+        };
+    }
+
+    private static string ResolveTemplateTableName(SqlResultSession session)
+    {
+        string? tableName = session.InlineEditEligibility.TableFullName;
+        if (!string.IsNullOrWhiteSpace(tableName))
+            return tableName!;
+
+        if (!string.IsNullOrWhiteSpace(session.SchemaName) && !string.IsNullOrWhiteSpace(session.DatabaseName))
+            return $"{session.SchemaName}.table_name";
+
+        return "table_name";
+    }
+
+    private void SendTableQuickActionToEditor(SqlTableQuickActionOption? action)
+    {
+        if (!CanSendTableQuickActionToEditor(action) || Session is null)
+            return;
+
+        string sql = BuildTableQuickActionSql(Session, action!.Key);
+        if (string.IsNullOrWhiteSpace(sql))
+            return;
+
+        _appendSqlToEditor?.Invoke(_sourceSqlEditorDocumentId, sql);
+    }
+
+    private bool CanSendTableQuickActionToEditor(SqlTableQuickActionOption? action)
+    {
+        return _appendSqlToEditor is not null
+            && Session is not null
+            && action is not null
+            && !string.IsNullOrWhiteSpace(action.Key);
+    }
+
+    private static IReadOnlyList<SqlTableQuickActionOption> BuildTableQuickActions(SqlResultSession session)
+    {
+        string table = ResolveTemplateTableName(session);
+        if (string.IsNullOrWhiteSpace(table) || string.Equals(table, "table_name", StringComparison.Ordinal))
+            return [];
+
+        return
+        [
+            new SqlTableQuickActionOption("table_structure", "Table Structure", "Generate SQL to inspect columns."),
+            new SqlTableQuickActionOption("table_indexes", "Table Indexes", "Generate SQL to inspect indexes."),
+            new SqlTableQuickActionOption("table_constraints", "Table Constraints", "Generate SQL to inspect constraints."),
+            new SqlTableQuickActionOption("table_foreign_keys", "Table Foreign Keys", "Generate SQL to inspect foreign keys."),
+            new SqlTableQuickActionOption("table_select_basic", "Generate SELECT", "Generate a basic SELECT preview SQL."),
+            new SqlTableQuickActionOption("table_insert_template", "Generate INSERT", "Generate an INSERT template."),
+            new SqlTableQuickActionOption("table_update_pk", "Generate UPDATE by PK", "Generate an UPDATE template with PK WHERE."),
+        ];
+    }
+
+    private static string BuildTableQuickActionSql(SqlResultSession session, string actionKey)
+    {
+        string tableFullName = ResolveTemplateTableName(session);
+        ParseSchemaAndTable(tableFullName, out string? schemaName, out string tableName);
+        string schema = string.IsNullOrWhiteSpace(schemaName)
+            ? GetDefaultSchema(session.Provider)
+            : schemaName!;
+        string fullTable = string.IsNullOrWhiteSpace(schema) ? tableName : $"{schema}.{tableName}";
+        string quotedFullTable = QuoteCompositeIdentifier(session.Provider, fullTable);
+        string[] resultColumns = session.ResultSet.Data?.Columns
+            .Cast<DataColumn>()
+            .Select(column => column.ColumnName)
+            .ToArray()
+            ?? [];
+        string firstColumn = resultColumns.FirstOrDefault() ?? "id";
+        string insertColumns = resultColumns.Length == 0 ? firstColumn : string.Join(", ", resultColumns.Select(column => QuoteIdentifier(session.Provider, column)));
+        string insertValues = resultColumns.Length == 0 ? ":id" : string.Join(", ", resultColumns.Select(column => $":{column}"));
+        string pkColumn = session.InlineEditEligibility.PrimaryKeyColumns.FirstOrDefault() ?? firstColumn;
+        string limitClause = session.Provider == DatabaseProvider.SqlServer ? "TOP 100 " : string.Empty;
+        string limitTail = session.Provider == DatabaseProvider.SqlServer ? string.Empty : " LIMIT 100";
+
+        return actionKey switch
+        {
+            "table_structure" => session.Provider switch
+            {
+                DatabaseProvider.SqlServer =>
+                    $"SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH\nFROM INFORMATION_SCHEMA.COLUMNS\nWHERE TABLE_SCHEMA = '{EscapeSqlLiteral(schema)}' AND TABLE_NAME = '{EscapeSqlLiteral(tableName)}'\nORDER BY ORDINAL_POSITION;",
+                DatabaseProvider.MySql =>
+                    $"SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH\nFROM INFORMATION_SCHEMA.COLUMNS\nWHERE TABLE_SCHEMA = '{EscapeSqlLiteral(session.DatabaseName ?? string.Empty)}' AND TABLE_NAME = '{EscapeSqlLiteral(tableName)}'\nORDER BY ORDINAL_POSITION;",
+                DatabaseProvider.SQLite =>
+                    $"PRAGMA table_info('{EscapeSqlLiteral(tableName)}');",
+                _ =>
+                    $"SELECT column_name, data_type, is_nullable, character_maximum_length\nFROM information_schema.columns\nWHERE table_schema = '{EscapeSqlLiteral(schema)}' AND table_name = '{EscapeSqlLiteral(tableName)}'\nORDER BY ordinal_position;",
+            },
+            "table_indexes" => session.Provider switch
+            {
+                DatabaseProvider.SqlServer =>
+                    $"SELECT i.name AS index_name, i.type_desc, i.is_unique\nFROM sys.indexes i\nINNER JOIN sys.tables t ON i.object_id = t.object_id\nINNER JOIN sys.schemas s ON t.schema_id = s.schema_id\nWHERE s.name = '{EscapeSqlLiteral(schema)}' AND t.name = '{EscapeSqlLiteral(tableName)}' AND i.is_hypothetical = 0;",
+                DatabaseProvider.MySql =>
+                    $"SHOW INDEX FROM `{tableName}`;",
+                DatabaseProvider.SQLite =>
+                    $"PRAGMA index_list('{EscapeSqlLiteral(tableName)}');",
+                _ =>
+                    $"SELECT indexname, indexdef\nFROM pg_indexes\nWHERE schemaname = '{EscapeSqlLiteral(schema)}' AND tablename = '{EscapeSqlLiteral(tableName)}';",
+            },
+            "table_constraints" => session.Provider switch
+            {
+                DatabaseProvider.SqlServer =>
+                    $"SELECT tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE\nFROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc\nWHERE tc.TABLE_SCHEMA = '{EscapeSqlLiteral(schema)}' AND tc.TABLE_NAME = '{EscapeSqlLiteral(tableName)}';",
+                DatabaseProvider.MySql =>
+                    $"SELECT CONSTRAINT_NAME, CONSTRAINT_TYPE\nFROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS\nWHERE TABLE_SCHEMA = '{EscapeSqlLiteral(session.DatabaseName ?? string.Empty)}' AND TABLE_NAME = '{EscapeSqlLiteral(tableName)}';",
+                DatabaseProvider.SQLite =>
+                    $"PRAGMA table_info('{EscapeSqlLiteral(tableName)}'); -- SQLite exposes constraints primarily via table definition",
+                _ =>
+                    $"SELECT tc.constraint_name, tc.constraint_type\nFROM information_schema.table_constraints tc\nWHERE tc.table_schema = '{EscapeSqlLiteral(schema)}' AND tc.table_name = '{EscapeSqlLiteral(tableName)}';",
+            },
+            "table_foreign_keys" => session.Provider switch
+            {
+                DatabaseProvider.SqlServer =>
+                    $"SELECT fk.name AS foreign_key_name, OBJECT_NAME(fk.parent_object_id) AS table_name\nFROM sys.foreign_keys fk\nINNER JOIN sys.tables t ON fk.parent_object_id = t.object_id\nINNER JOIN sys.schemas s ON t.schema_id = s.schema_id\nWHERE s.name = '{EscapeSqlLiteral(schema)}' AND t.name = '{EscapeSqlLiteral(tableName)}';",
+                DatabaseProvider.MySql =>
+                    $"SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME\nFROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE\nWHERE TABLE_SCHEMA = '{EscapeSqlLiteral(session.DatabaseName ?? string.Empty)}' AND TABLE_NAME = '{EscapeSqlLiteral(tableName)}' AND REFERENCED_TABLE_NAME IS NOT NULL;",
+                DatabaseProvider.SQLite =>
+                    $"PRAGMA foreign_key_list('{EscapeSqlLiteral(tableName)}');",
+                _ =>
+                    $"SELECT tc.constraint_name, kcu.column_name, ccu.table_name AS referenced_table, ccu.column_name AS referenced_column\nFROM information_schema.table_constraints tc\nJOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema\nJOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema\nWHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = '{EscapeSqlLiteral(schema)}' AND tc.table_name = '{EscapeSqlLiteral(tableName)}';",
+            },
+            "table_select_basic" =>
+                $"SELECT {limitClause}*\nFROM {quotedFullTable}\nORDER BY {QuoteIdentifier(session.Provider, pkColumn)} DESC{limitTail};",
+            "table_insert_template" =>
+                $"INSERT INTO {quotedFullTable} ({insertColumns})\nVALUES ({insertValues});",
+            "table_update_pk" =>
+                $"UPDATE {quotedFullTable}\nSET {QuoteIdentifier(session.Provider, firstColumn)} = :{firstColumn}\nWHERE {QuoteIdentifier(session.Provider, pkColumn)} = :{pkColumn};",
+            _ => string.Empty,
+        };
+    }
+
+    private static void ParseSchemaAndTable(string fullName, out string? schema, out string table)
+    {
+        schema = null;
+        table = "table_name";
+
+        if (string.IsNullOrWhiteSpace(fullName))
+            return;
+
+        string[] parts = fullName.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1)
+        {
+            table = parts[0];
+            return;
+        }
+
+        schema = parts[^2];
+        table = parts[^1];
+    }
+
+    private static string GetDefaultSchema(DatabaseProvider provider)
+    {
+        return provider switch
+        {
+            DatabaseProvider.SqlServer => "dbo",
+            DatabaseProvider.SQLite => "main",
+            DatabaseProvider.MySql => string.Empty,
+            _ => "public",
+        };
+    }
+
+    private static string QuoteCompositeIdentifier(DatabaseProvider provider, string fullName)
+    {
+        string[] parts = fullName.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return string.Join('.', parts.Select(part => QuoteIdentifier(provider, part)));
+    }
+
+    private static string QuoteIdentifier(DatabaseProvider provider, string identifier)
+    {
+        string clean = (identifier ?? string.Empty).Trim().Trim('"', '`', '[', ']');
+        return provider switch
+        {
+            DatabaseProvider.MySql => $"`{clean}`",
+            DatabaseProvider.SqlServer => $"[{clean}]",
+            _ => $"\"{clean}\"",
+        };
+    }
+
+    private static string EscapeSqlLiteral(string value)
+    {
+        return (value ?? string.Empty).Replace("'", "''", StringComparison.Ordinal);
+    }
+
+    private void NavigateSelectedForeignKey()
+    {
+        if (!TryResolveForeignKeyNavigationContext(out ForeignKeyRelation? relation, out object? value) || relation is null)
+            return;
+
+        string parentTable = relation.ParentFullTable;
+        string where = value is null
+            ? $"{QuoteIdentifier(Session!.Provider, relation.ParentColumn)} IS NULL"
+            : $"{QuoteIdentifier(Session!.Provider, relation.ParentColumn)} = {ToSqlLiteral(value)}";
+
+        string limitClause = Session!.Provider == DatabaseProvider.SqlServer ? "TOP 100 " : string.Empty;
+        string limitTail = Session.Provider == DatabaseProvider.SqlServer ? string.Empty : " LIMIT 100";
+        string sql = $"SELECT {limitClause}*\nFROM {QuoteCompositeIdentifier(Session.Provider, parentTable)}\nWHERE {where}{limitTail};";
+        _appendSqlToEditor?.Invoke(_sourceSqlEditorDocumentId, sql);
+    }
+
+    private bool TryResolveForeignKeyNavigationContext(out ForeignKeyRelation? relation, out object? value)
+    {
+        relation = null;
+        value = null;
+        if (Session is null || _metadataResolver is null)
+            return false;
+
+        DbMetadata? metadata = _metadataResolver.Invoke();
+        if (metadata is null)
+            return false;
+
+        if (!TryGetSelectedCellValue(out string? columnName, out object? selectedValue) || string.IsNullOrWhiteSpace(columnName))
+            return false;
+
+        string table = ResolveTemplateTableName(Session);
+        if (string.IsNullOrWhiteSpace(table) || string.Equals(table, "table_name", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        List<ForeignKeyRelation> candidates = metadata.AllForeignKeys
+            .Where(item =>
+                string.Equals(item.ChildFullTable, table, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.ChildColumn, columnName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (candidates.Count != 1)
+            return false;
+
+        relation = candidates[0];
+        value = selectedValue;
+        return true;
     }
 
     private void MoveFirstPage()
@@ -997,6 +1803,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         Session.ViewState.SelectedCell = null;
         SelectedRowFields = [];
         SelectedRowJson = "{}";
+        IsResultDetailVisible = false;
         GeneratedWhereClause = string.Empty;
         _selectedRowItem = null;
         RaisePropertyChanged(nameof(SelectedRowItem));
@@ -1004,6 +1811,25 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         RaisePropertyChanged(nameof(HasSelectedCell));
         RaisePropertyChanged(nameof(SelectedCellSummary));
         RaisePropertyChanged(nameof(CanGenerateWhereClause));
+        RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
+    }
+
+    private void ShowSelectedRowDetails()
+    {
+        if (!CanShowSelectedRowDetails)
+            return;
+
+        IsResultDetailVisible = true;
+        NotifyCommands();
+    }
+
+    private void HideSelectedRowDetails()
+    {
+        if (!IsResultDetailVisible)
+            return;
+
+        IsResultDetailVisible = false;
+        NotifyCommands();
     }
 
     public void SelectCell(DataRowView rowView, string columnName)
@@ -1022,6 +1848,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         SelectedRowItem = rowView;
         RaisePropertyChanged(nameof(HasSelectedCell));
         RaisePropertyChanged(nameof(SelectedCellSummary));
+        RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
         NotifyCommands();
     }
 
@@ -1139,6 +1966,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
                 Session.ViewState.SelectedRowIndex = null;
             SelectedRowFields = [];
             SelectedRowJson = "{}";
+            IsResultDetailVisible = false;
             _selectedRowItem = null;
             RaisePropertyChanged(nameof(SelectedRowItem));
             RaisePropertyChanged(nameof(SelectedRowSummary));
@@ -1157,6 +1985,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
                 Session.ViewState.SelectedCell = null;
             RaisePropertyChanged(nameof(HasSelectedCell));
             RaisePropertyChanged(nameof(SelectedCellSummary));
+            RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
             return;
         }
 
@@ -1166,12 +1995,14 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         {
             RaisePropertyChanged(nameof(HasSelectedCell));
             RaisePropertyChanged(nameof(SelectedCellSummary));
+            RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
             return;
         }
 
         Session.ViewState.SelectedCell = null;
         RaisePropertyChanged(nameof(HasSelectedCell));
         RaisePropertyChanged(nameof(SelectedCellSummary));
+        RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
     }
 
     private void UpdateSelectedRowState(object? selectedItem)
@@ -1182,6 +2013,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
                 Session.ViewState.SelectedRowIndex = null;
             SelectedRowFields = [];
             SelectedRowJson = "{}";
+            IsResultDetailVisible = false;
             GeneratedWhereClause = string.Empty;
             RaisePropertyChanged(nameof(SelectedRowSummary));
             RaisePropertyChanged(nameof(CanGenerateWhereClause));
@@ -1354,6 +2186,58 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         RaiseClipboardCopyRequested($"{header}\n{separator}\n{values}");
     }
 
+    private void CopyVisibleRowsAsJson()
+    {
+        if (!TryBuildVisibleRowsJsonPayload(out string? payload) || string.IsNullOrWhiteSpace(payload))
+            return;
+
+        RaiseClipboardCopyRequested(payload);
+    }
+
+    private void CopyVisibleRowsAsCsv()
+    {
+        if (!TryBuildVisibleRowsCsvPayload(out string? payload) || string.IsNullOrWhiteSpace(payload))
+            return;
+
+        RaiseClipboardCopyRequested(payload);
+    }
+
+    private void CopyVisibleRowsAsMarkdown()
+    {
+        if (!TryBuildVisibleRowsMarkdownPayload(out string? payload) || string.IsNullOrWhiteSpace(payload))
+            return;
+
+        RaiseClipboardCopyRequested(payload);
+    }
+
+    private void ExportVisibleRowsAsJson()
+    {
+        if (!TryBuildVisibleRowsJsonPayload(out string? payload) || string.IsNullOrWhiteSpace(payload))
+            return;
+
+        RaiseExportRequested(new SqlResultExportRequest(
+            SuggestedFileName: BuildSuggestedExportFileName("json"),
+            DefaultExtension: "json",
+            FileTypeTitle: "JSON",
+            Patterns: ["*.json"],
+            MimeTypes: ["application/json"],
+            Content: payload));
+    }
+
+    private void ExportVisibleRowsAsCsv()
+    {
+        if (!TryBuildVisibleRowsCsvPayload(out string? payload) || string.IsNullOrWhiteSpace(payload))
+            return;
+
+        RaiseExportRequested(new SqlResultExportRequest(
+            SuggestedFileName: BuildSuggestedExportFileName("csv"),
+            DefaultExtension: "csv",
+            FileTypeTitle: "CSV",
+            Patterns: ["*.csv"],
+            MimeTypes: ["text/csv"],
+            Content: payload));
+    }
+
     private void CopySelectedColumnAsSqlIn()
     {
         if (!TryGetSelectedCellValue(out string? columnName, out _)
@@ -1498,6 +2382,70 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         return true;
     }
 
+    private bool TryGetVisibleRows(out List<Dictionary<string, object?>>? rows)
+    {
+        rows = null;
+        if (_pagedRowsTable is null || _pagedRowsTable.Rows.Count == 0)
+            return false;
+
+        var collection = new List<Dictionary<string, object?>>(_pagedRowsTable.Rows.Count);
+        foreach (DataRow row in _pagedRowsTable.Rows)
+        {
+            var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (DataColumn column in _pagedRowsTable.Columns)
+            {
+                object? rawValue = row[column];
+                values[column.ColumnName] = rawValue == DBNull.Value ? null : rawValue;
+            }
+
+            collection.Add(values);
+        }
+
+        rows = collection;
+        return true;
+    }
+
+    private bool TryBuildVisibleRowsJsonPayload(out string? payload)
+    {
+        payload = null;
+        if (!TryGetVisibleRows(out List<Dictionary<string, object?>>? rows) || rows is null || rows.Count == 0)
+            return false;
+
+        payload = JsonSerializer.Serialize(rows, RowJsonSerializerOptions);
+        return !string.IsNullOrWhiteSpace(payload);
+    }
+
+    private bool TryBuildVisibleRowsCsvPayload(out string? payload)
+    {
+        payload = null;
+        if (!TryGetVisibleRows(out List<Dictionary<string, object?>>? rows) || rows is null || rows.Count == 0)
+            return false;
+
+        string[] columns = rows[0].Keys.ToArray();
+        string header = string.Join(",", columns.Select(EscapeCsv));
+        string body = string.Join(
+            "\r\n",
+            rows.Select(row => string.Join(",", columns.Select(column => EscapeCsv(FormatDisplayValue(row[column]))))));
+        payload = $"{header}\r\n{body}";
+        return !string.IsNullOrWhiteSpace(payload);
+    }
+
+    private bool TryBuildVisibleRowsMarkdownPayload(out string? payload)
+    {
+        payload = null;
+        if (!TryGetVisibleRows(out List<Dictionary<string, object?>>? rows) || rows is null || rows.Count == 0)
+            return false;
+
+        string[] columns = rows[0].Keys.ToArray();
+        string header = $"| {string.Join(" | ", columns.Select(EscapeMarkdown))} |";
+        string separator = $"| {string.Join(" | ", columns.Select(_ => "---"))} |";
+        string body = string.Join(
+            "\n",
+            rows.Select(row => $"| {string.Join(" | ", columns.Select(column => EscapeMarkdown(FormatDisplayValue(row[column]))))} |"));
+        payload = $"{header}\n{separator}\n{body}";
+        return !string.IsNullOrWhiteSpace(payload);
+    }
+
     private bool TryGetSelectedCellValue(out string? columnName, out object? value)
     {
         columnName = null;
@@ -1528,6 +2476,33 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             return;
 
         ClipboardCopyRequested?.Invoke(text);
+    }
+
+    private void RaiseExportRequested(SqlResultExportRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return;
+
+        ExportRequested?.Invoke(request);
+    }
+
+    private string BuildSuggestedExportFileName(string extension)
+    {
+        string? baseName = Session?.InlineEditEligibility.TableFullName;
+        if (string.IsNullOrWhiteSpace(baseName))
+            baseName = "sql-result";
+
+        string normalized = new string(
+            baseName
+                .Trim()
+                .Select(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == '_' ? ch : '-')
+                .ToArray())
+            .Trim('-');
+        if (string.IsNullOrWhiteSpace(normalized))
+            normalized = "sql-result";
+
+        return $"{normalized}.{extension.TrimStart('.')}";
     }
 
     private static string FormatDisplayValue(object? value)
@@ -1562,6 +2537,103 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             .Replace("|", "\\|", StringComparison.Ordinal)
             .Replace("\r", " ", StringComparison.Ordinal)
             .Replace("\n", "<br/>", StringComparison.Ordinal);
+    }
+
+    private static IReadOnlyList<SqlEditorReportSchemaDetail> BuildReportSchemaDetails(
+        IReadOnlyList<string> columns,
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows)
+    {
+        var details = new List<SqlEditorReportSchemaDetail>(columns.Count);
+
+        foreach (string column in columns)
+        {
+            long nullCount = 0;
+            var distinct = new HashSet<string>(StringComparer.Ordinal);
+            string? example = null;
+            string? minValue = null;
+            string? maxValue = null;
+            string kind = "null";
+
+            foreach (IReadOnlyDictionary<string, object?> row in rows)
+            {
+                row.TryGetValue(column, out object? value);
+                if (value is null)
+                {
+                    nullCount += 1;
+                    continue;
+                }
+
+                string text = value.ToString() ?? string.Empty;
+                distinct.Add(text);
+                example ??= text;
+
+                if (minValue is null || string.CompareOrdinal(text, minValue) < 0)
+                    minValue = text;
+
+                if (maxValue is null || string.CompareOrdinal(text, maxValue) > 0)
+                    maxValue = text;
+
+                string detectedKind = DetectReportValueKind(value);
+                if (kind is "null" or "text")
+                {
+                    kind = detectedKind;
+                }
+                else if (!string.Equals(kind, detectedKind, StringComparison.Ordinal))
+                {
+                    kind = "text";
+                }
+            }
+
+            details.Add(new SqlEditorReportSchemaDetail(
+                Name: column,
+                Kind: kind,
+                NullCount: nullCount,
+                DistinctCount: distinct.Count,
+                Example: example,
+                MinValue: minValue,
+                MaxValue: maxValue));
+        }
+
+        return details;
+    }
+
+    private static object? NormalizeReportCellValue(object? value)
+    {
+        if (value is null || value is DBNull)
+            return null;
+
+        return value switch
+        {
+            DateTimeOffset dto => dto.ToString("O"),
+            DateTime dt => dt.ToString("O"),
+            TimeSpan ts => ts.ToString(),
+            Guid guid => guid.ToString("D"),
+            byte[] bytes => Convert.ToBase64String(bytes),
+            _ => value,
+        };
+    }
+
+    private static string DetectReportValueKind(object value)
+    {
+        return value switch
+        {
+            bool => "bool",
+            byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal => "number",
+            DateTime or DateTimeOffset => "date",
+            _ => "text",
+        };
+    }
+
+    private static string BuildReportTabTitle(string? sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+            return "SQL Result";
+
+        string trimmed = sql.Trim();
+        if (trimmed.Length <= 60)
+            return trimmed;
+
+        return $"{trimmed[..57]}...";
     }
 
     private static string ToSqlLiteral(object? value)
@@ -2791,6 +3863,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             FrozenColumnCount = 0;
             SelectedRowFields = [];
             SelectedRowJson = "{}";
+            IsResultDetailVisible = false;
             GeneratedWhereClause = string.Empty;
             if (Session is not null)
                 Session.ViewState.SelectedCell = null;
@@ -2800,6 +3873,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             RaisePropertyChanged(nameof(HasSelectedCell));
             RaisePropertyChanged(nameof(SelectedCellSummary));
             RaisePropertyChanged(nameof(CanGenerateWhereClause));
+            RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
             RaisePropertyChanged(nameof(HasPendingEdits));
             RaisePropertyChanged(nameof(PendingEditsCount));
             RaisePropertyChanged(nameof(CanCancelPendingEdits));
@@ -2808,6 +3882,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             RaisePropertyChanged(nameof(CanRefreshSession));
             RaisePropertyChanged(nameof(CanRequestExecutePendingChanges));
             RaisePropertyChanged(nameof(RowsView));
+            RaisePropertyChanged(nameof(HasVisibleRows));
             RaisePropertyChanged(nameof(RowCountText));
             NotifyCommands();
             return;
@@ -2913,10 +3988,12 @@ public sealed class SqlResultPageViewModel : ViewModelBase
 
         _pagedRowsTable = projected;
         RaisePropertyChanged(nameof(RowsView));
+        RaisePropertyChanged(nameof(HasVisibleRows));
         RaisePropertyChanged(nameof(RowCountText));
         RestoreSelectedRowFromSessionState();
         RestoreSelectedCellFromSessionState();
         RaisePropertyChanged(nameof(CanGenerateWhereClause));
+        RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
         RaisePropertyChanged(nameof(HasPendingEdits));
         RaisePropertyChanged(nameof(PendingEditsCount));
         RaisePropertyChanged(nameof(CanCancelPendingEdits));
@@ -3033,10 +4110,17 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         (MoveColumnUpCommand as RelayCommand<SqlResultColumnVisibilityItemViewModel>)?.NotifyCanExecuteChanged();
         (MoveColumnDownCommand as RelayCommand<SqlResultColumnVisibilityItemViewModel>)?.NotifyCanExecuteChanged();
         (ClearSelectedRowCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ShowSelectedRowDetailsCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (HideSelectedRowDetailsCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (CopySelectedCellCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (CopySelectedRowAsJsonCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (CopySelectedRowAsCsvCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (CopySelectedRowAsMarkdownCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (CopyVisibleRowsAsJsonCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (CopyVisibleRowsAsCsvCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (CopyVisibleRowsAsMarkdownCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ExportVisibleRowsAsJsonCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ExportVisibleRowsAsCsvCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (CopySelectedColumnAsSqlInCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (GenerateWhereClauseCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (FilterBySelectedCellValueCommand as RelayCommand)?.NotifyCanExecuteChanged();
@@ -3054,7 +4138,36 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         (ConfirmExecutePendingChangesCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ConfirmExecutePendingChangesRollbackCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (CancelExecutePendingChangesCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (SaveSessionAnnotationCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ClearSessionAnnotationCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (SaveCurrentSqlAsSnippetCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ToggleCurrentSqlFavoriteCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (OpenSelectedSnippetInEditorCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (OpenSnippetInEditorCommand as RelayCommand<SqlSavedQuerySnippet>)?.NotifyCanExecuteChanged();
+        (DeleteSelectedSnippetCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (DeleteSnippetCommand as RelayCommand<SqlSavedQuerySnippet>)?.NotifyCanExecuteChanged();
+        (SendSelectedSqlTemplateToEditorCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (SendTableQuickActionToEditorCommand as RelayCommand<SqlTableQuickActionOption>)?.NotifyCanExecuteChanged();
+        (NavigateSelectedForeignKeyCommand as RelayCommand)?.NotifyCanExecuteChanged();
     }
+
+    public sealed record SqlQuickTemplateOption(
+        string Key,
+        string Name,
+        string Description);
+
+    public sealed record SqlTableQuickActionOption(
+        string Key,
+        string Name,
+        string Description);
+
+    public sealed record SqlResultExportRequest(
+        string SuggestedFileName,
+        string DefaultExtension,
+        string FileTypeTitle,
+        IReadOnlyList<string> Patterns,
+        IReadOnlyList<string> MimeTypes,
+        string Content);
 
     public sealed class SqlResultColumnProfileItemViewModel
     {

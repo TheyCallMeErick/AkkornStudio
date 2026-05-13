@@ -449,6 +449,43 @@
 
     <Border Grid.Row="3"
             Classes="callout-subtle warning"
+            IsVisible="{Binding HasPendingQueryParameterPrompt}"
+            Margin="0,30,0,0"
+            Padding="10,8">
+      <StackPanel Spacing="8">
+        <TextBlock Text="{Binding PendingQueryParameterPromptMessage}"
+                   FontWeight="{StaticResource FontWeightTitle}"
+                   Foreground="{StaticResource TextPrimaryBrush}"/>
+        <ItemsControl ItemsSource="{Binding PendingQueryParameters}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="180,*"
+                    ColumnSpacing="8"
+                    Margin="0,0,0,4">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding Name}"
+                           VerticalAlignment="Center"
+                           FontFamily="{StaticResource MonoFont}"/>
+                <TextBox Grid.Column="1"
+                         Text="{Binding InputValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         Watermark="valor"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="primary compact"
+                  Command="{Binding ConfirmPendingQueryParametersCommand}"
+                  Content="Executar com parâmetros"/>
+          <Button Classes="secondary compact"
+                  Command="{Binding CancelPendingQueryParametersCommand}"
+                  Content="Cancelar"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="3"
+            Classes="callout-subtle warning"
             IsVisible="{Binding HasPendingCloseTabConfirmation}"
             Margin="0,30,0,0"
             Padding="10,8">

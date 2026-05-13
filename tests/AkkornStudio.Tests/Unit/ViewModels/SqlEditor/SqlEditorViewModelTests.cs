@@ -1304,6 +1304,105 @@ public sealed class SqlEditorViewModelTests
     }
 
     [Fact]
+    public async Task ExecuteSelectionOrCurrentAsync_WhenParametersAreMissing_ShowsPromptAndSkipsExecution()
+    {
+        ConnectionConfig config = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db",
+            "user",
+            "pass");
+        var factory = new SqlCapturingOrchestratorFactory();
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(factory),
+            connectionConfigResolver: () => config);
+        sut.ActiveTab.SqlText = "SELECT * FROM clientes WHERE cidade = :cidade AND idade >= :idade;";
+
+        SqlEditorResultSet result = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, factory.ExecuteCount);
+        Assert.True(sut.HasPendingQueryParameterPrompt);
+        Assert.Equal(2, sut.PendingQueryParameters.Count);
+        Assert.Contains(sut.PendingQueryParameters, item => string.Equals(item.Name, "cidade", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(sut.PendingQueryParameters, item => string.Equals(item.Name, "idade", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(sut.ExecutionHistory);
+    }
+
+    [Fact]
+    public async Task ConfirmPendingQueryParametersAsync_ExecutesWithSafeLiteralsAndPreservesValues()
+    {
+        ConnectionConfig config = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db",
+            "user",
+            "pass");
+        var factory = new SqlCapturingOrchestratorFactory();
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(factory),
+            connectionConfigResolver: () => config);
+        sut.ActiveTab.SqlText = "SELECT * FROM clientes WHERE cidade = :cidade AND idade >= :idade;";
+
+        _ = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+        Assert.True(sut.HasPendingQueryParameterPrompt);
+
+        SqlQueryParameterPromptItemViewModel cidade = sut.PendingQueryParameters
+            .First(item => string.Equals(item.Name, "cidade", StringComparison.OrdinalIgnoreCase));
+        SqlQueryParameterPromptItemViewModel idade = sut.PendingQueryParameters
+            .First(item => string.Equals(item.Name, "idade", StringComparison.OrdinalIgnoreCase));
+        cidade.InputValue = "O'Hara";
+        idade.InputValue = "21";
+
+        SqlEditorResultSet? confirmed = await sut.ConfirmPendingQueryParametersAsync();
+
+        Assert.NotNull(confirmed);
+        Assert.True(confirmed!.Success);
+        Assert.Equal(1, factory.ExecuteCount);
+        Assert.NotNull(factory.LastSql);
+        Assert.Contains("cidade = 'O''Hara'", factory.LastSql, StringComparison.Ordinal);
+        Assert.Contains("idade >= 21", factory.LastSql, StringComparison.Ordinal);
+        Assert.False(sut.HasPendingQueryParameterPrompt);
+        Assert.Single(sut.ExecutionHistory);
+
+        SqlEditorResultSet secondRun = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+        Assert.True(secondRun.Success);
+        Assert.False(sut.HasPendingQueryParameterPrompt);
+        Assert.Equal(2, factory.ExecuteCount);
+    }
+
+    [Fact]
+    public async Task ConfirmPendingQueryParametersAsync_RejectsMissingRequiredValue()
+    {
+        ConnectionConfig config = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db",
+            "user",
+            "pass");
+        var factory = new SqlCapturingOrchestratorFactory();
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(factory),
+            connectionConfigResolver: () => config);
+        sut.ActiveTab.SqlText = "SELECT * FROM clientes WHERE cidade = :cidade;";
+
+        _ = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+        Assert.True(sut.HasPendingQueryParameterPrompt);
+
+        SqlQueryParameterPromptItemViewModel cidade = Assert.Single(sut.PendingQueryParameters);
+        cidade.InputValue = string.Empty;
+        SqlEditorResultSet? confirmed = await sut.ConfirmPendingQueryParametersAsync();
+
+        Assert.Null(confirmed);
+        Assert.Equal(0, factory.ExecuteCount);
+        Assert.True(sut.HasPendingQueryParameterPrompt);
+        Assert.True(sut.HasExecutionError);
+    }
+
+    [Fact]
     public void Constructor_WhenDraftsExist_RestoresTabsAndClearsDraftStore()
     {
         var draftStore = new FakeSqlEditorSessionDraftStore(
@@ -1505,6 +1604,40 @@ public sealed class SqlEditorViewModelTests
             public Task<PreviewResult> ExecutePreviewAsync(string sql, int maxRows = PreviewExecutionOptions.UseConfiguredDefault, CancellationToken ct = default)
             {
                 owner.ExecuteCount++;
+                return Task.FromResult(new PreviewResult(true, BuildTable(rows: 1), null, TimeSpan.FromMilliseconds(2), 1));
+            }
+
+            public Task<DdlExecutionResult> ExecuteDdlAsync(string sql, bool stopOnError = true, CancellationToken ct = default) =>
+                Task.FromResult(new DdlExecutionResult(true, []));
+
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class SqlCapturingOrchestratorFactory : IDbOrchestratorFactory
+    {
+        public int ExecuteCount { get; private set; }
+        public string? LastSql { get; private set; }
+
+        public IDbOrchestrator Create(ConnectionConfig config) => new SqlCapturingOrchestrator(config, this);
+        public Func<ConnectionConfig, IDbOrchestrator>? Register(DatabaseProvider provider, Func<ConnectionConfig, IDbOrchestrator> factory) => null;
+        public bool IsRegistered(DatabaseProvider provider) => true;
+
+        private sealed class SqlCapturingOrchestrator(ConnectionConfig config, SqlCapturingOrchestratorFactory owner) : IDbOrchestrator
+        {
+            public DatabaseProvider Provider => config.Provider;
+            public ConnectionConfig Config => config;
+
+            public Task<ConnectionTestResult> TestConnectionAsync(CancellationToken ct = default) =>
+                Task.FromResult(new ConnectionTestResult(true));
+
+            public Task<DatabaseSchema> GetSchemaAsync(CancellationToken ct = default) =>
+                Task.FromResult(new DatabaseSchema("db", config.Provider, []));
+
+            public Task<PreviewResult> ExecutePreviewAsync(string sql, int maxRows = PreviewExecutionOptions.UseConfiguredDefault, CancellationToken ct = default)
+            {
+                owner.ExecuteCount++;
+                owner.LastSql = sql;
                 return Task.FromResult(new PreviewResult(true, BuildTable(rows: 1), null, TimeSpan.FromMilliseconds(2), 1));
             }
 

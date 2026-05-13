@@ -1,5 +1,6 @@
 using System.Data;
 using AkkornStudio.Core;
+using AkkornStudio.Metadata;
 using AkkornStudio.UI.Services.SqlEditor;
 using AkkornStudio.UI.Services.SqlEditor.Results;
 using AkkornStudio.UI.ViewModels;
@@ -24,6 +25,17 @@ public sealed class SqlResultPageViewModelTests
     }
 
     [Fact]
+    public void SetSession_UpdatesResultBreadcrumbText()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession("select * from customers;");
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        Assert.Equal("conn-1 > app_db > public > Resultado", sut.ResultBreadcrumbText);
+    }
+
+    [Fact]
     public void BackToEditorCommand_InvokesConfiguredNavigation()
     {
         var sut = new SqlResultPageViewModel();
@@ -35,6 +47,346 @@ public sealed class SqlResultPageViewModelTests
         sut.BackToEditorCommand.Execute(null);
 
         Assert.Equal(expectedSourceId, receivedId);
+    }
+
+    [Fact]
+    public void SessionAnnotationCommands_SaveAndClearAnnotation()
+    {
+        var service = new SqlResultSessionService();
+        SqlResultSession session = service.Add(new SqlResultSessionCreateRequest(
+            SqlText: "select * from customers;",
+            ConnectionId: "conn-1",
+            DatabaseName: "app_db",
+            SchemaName: "public",
+            ResultSet: BuildSession("select * from customers;").ResultSet));
+
+        var sut = new SqlResultPageViewModel();
+        sut.ConfigureSessionService(service);
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.SessionAnnotationText = "  Investigar outliers de nome  ";
+
+        sut.SaveSessionAnnotationCommand.Execute(null);
+
+        SqlResultSession? saved = service.Get(session.Id);
+        Assert.NotNull(saved);
+        Assert.Equal("Investigar outliers de nome", saved!.Annotation);
+        Assert.Equal("Investigar outliers de nome", sut.SessionAnnotationText);
+        Assert.True(sut.HasSessionAnnotation);
+
+        sut.ClearSessionAnnotationCommand.Execute(null);
+
+        SqlResultSession? cleared = service.Get(session.Id);
+        Assert.NotNull(cleared);
+        Assert.Null(cleared!.Annotation);
+        Assert.Equal(string.Empty, sut.SessionAnnotationText);
+        Assert.False(sut.HasSessionAnnotation);
+    }
+
+    [Fact]
+    public void SaveCurrentSqlAsSnippetCommand_PersistsSnippetAndSelectsIt()
+    {
+        var snippetStore = new InMemorySqlResultSnippetStore();
+        var sut = new SqlResultPageViewModel(
+            new MutationGuardService(),
+            new SqlMutationDiffService(new SqlEditorExecutionService()),
+            null,
+            null,
+            null,
+            snippetStore);
+        SqlResultSession session = BuildSession("select * from customers;");
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.SnippetNameInput = "clientes-base";
+        sut.SnippetDescriptionInput = "consulta principal";
+        sut.SnippetTagsInput = "cliente base";
+
+        sut.SaveCurrentSqlAsSnippetCommand.Execute(null);
+
+        Assert.Single(sut.SavedSnippets);
+        SqlSavedQuerySnippet snippet = sut.SavedSnippets[0];
+        Assert.Equal("clientes-base", snippet.Name);
+        Assert.Equal("consulta principal", snippet.Description);
+        Assert.Equal("cliente base", snippet.Tags);
+        Assert.Equal("select * from customers;", snippet.SqlText);
+        Assert.Equal(snippet.Id, sut.SelectedSnippet?.Id);
+    }
+
+    [Fact]
+    public void ToggleCurrentSqlFavoriteCommand_TogglesFavoriteState()
+    {
+        var snippetStore = new InMemorySqlResultSnippetStore();
+        var sut = new SqlResultPageViewModel(
+            new MutationGuardService(),
+            new SqlMutationDiffService(new SqlEditorExecutionService()),
+            null,
+            null,
+            null,
+            snippetStore);
+        SqlResultSession session = BuildSession("select * from customers;");
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        sut.ToggleCurrentSqlFavoriteCommand.Execute(null);
+        Assert.True(sut.IsCurrentSqlFavorite);
+        Assert.Single(sut.SavedSnippets);
+        Assert.True(sut.SavedSnippets[0].IsFavorite);
+
+        sut.ToggleCurrentSqlFavoriteCommand.Execute(null);
+        Assert.False(sut.IsCurrentSqlFavorite);
+        Assert.Single(sut.SavedSnippets);
+        Assert.False(sut.SavedSnippets[0].IsFavorite);
+    }
+
+    [Fact]
+    public void OpenSelectedSnippetInEditorCommand_AppendsSnippetSqlToEditor()
+    {
+        var snippetStore = new InMemorySqlResultSnippetStore();
+        DateTimeOffset now = new(2026, 05, 13, 12, 0, 0, TimeSpan.Zero);
+        snippetStore.Upsert(new SqlSavedQuerySnippet(
+            Id: Guid.NewGuid().ToString("N"),
+            Name: "saved-query",
+            Description: "desc",
+            Tags: "tag",
+            SqlText: "select 42;",
+            ConnectionId: "conn-1",
+            DatabaseName: "app_db",
+            CreatedAtUtc: now,
+            UpdatedAtUtc: now,
+            IsFavorite: false));
+
+        var sut = new SqlResultPageViewModel(
+            new MutationGuardService(),
+            new SqlMutationDiffService(new SqlEditorExecutionService()),
+            null,
+            null,
+            null,
+            snippetStore);
+        SqlResultSession session = BuildSession("select * from customers;");
+        string? appendedSql = null;
+        sut.ConfigureSqlAppendToEditor((_, sql) => appendedSql = sql);
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.SelectedSnippet = sut.SavedSnippets.First();
+
+        sut.OpenSelectedSnippetInEditorCommand.Execute(null);
+
+        Assert.Equal("select 42;", appendedSql);
+    }
+
+    [Fact]
+    public void SendSelectedSqlTemplateToEditorCommand_ForPostgres_UsesLimitSyntax()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]),
+            provider: DatabaseProvider.Postgres);
+
+        string? appendedSql = null;
+        sut.ConfigureSqlAppendToEditor((_, sql) => appendedSql = sql);
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.SelectedSqlTemplate = sut.AvailableSqlTemplates.First(template => template.Key == "select_top_100");
+
+        sut.SendSelectedSqlTemplateToEditorCommand.Execute(null);
+
+        Assert.NotNull(appendedSql);
+        Assert.Contains("LIMIT 100", appendedSql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("TOP 100", appendedSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("FROM public.customers", appendedSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SendSelectedSqlTemplateToEditorCommand_ForSqlServer_UsesTopSyntax()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "dbo.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]),
+            provider: DatabaseProvider.SqlServer);
+
+        string? appendedSql = null;
+        sut.ConfigureSqlAppendToEditor((_, sql) => appendedSql = sql);
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        sut.SelectedSqlTemplate = sut.AvailableSqlTemplates.First(template => template.Key == "select_top_100");
+
+        sut.SendSelectedSqlTemplateToEditorCommand.Execute(null);
+
+        Assert.NotNull(appendedSql);
+        Assert.Contains("TOP 100", appendedSql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("LIMIT 100", appendedSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("FROM dbo.customers", appendedSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SendTableQuickActionToEditorCommand_ForPostgresStructure_GeneratesInformationSchemaQuery()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]),
+            provider: DatabaseProvider.Postgres);
+
+        string? appendedSql = null;
+        sut.ConfigureSqlAppendToEditor((_, sql) => appendedSql = sql);
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        SqlResultPageViewModel.SqlTableQuickActionOption action = sut.AvailableTableQuickActions
+            .First(item => item.Key == "table_structure");
+
+        sut.SendTableQuickActionToEditorCommand.Execute(action);
+
+        Assert.NotNull(appendedSql);
+        Assert.Contains("information_schema.columns", appendedSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("table_schema = 'public'", appendedSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("table_name = 'customers'", appendedSql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SendTableQuickActionToEditorCommand_ForSqlServerSelect_GeneratesTopQuery()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "dbo.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]),
+            provider: DatabaseProvider.SqlServer);
+
+        string? appendedSql = null;
+        sut.ConfigureSqlAppendToEditor((_, sql) => appendedSql = sql);
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        SqlResultPageViewModel.SqlTableQuickActionOption action = sut.AvailableTableQuickActions
+            .First(item => item.Key == "table_select_basic");
+
+        sut.SendTableQuickActionToEditorCommand.Execute(action);
+
+        Assert.NotNull(appendedSql);
+        Assert.Contains("SELECT TOP 100", appendedSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("FROM [dbo].[customers]", appendedSql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("LIMIT 100", appendedSql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void NavigateSelectedForeignKeyCommand_WhenUniqueForeignKey_AppendsParentLookupSql()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]),
+            provider: DatabaseProvider.Postgres);
+
+        string? appendedSql = null;
+        sut.ConfigureSqlAppendToEditor((_, sql) => appendedSql = sql);
+        sut.ConfigureMetadataResolver(() => BuildMetadata(
+            DatabaseProvider.Postgres,
+            new ForeignKeyRelation(
+                ConstraintName: "fk_customers_account",
+                ChildSchema: "public",
+                ChildTable: "customers",
+                ChildColumn: "id",
+                ParentSchema: "public",
+                ParentTable: "accounts",
+                ParentColumn: "id",
+                OnDelete: ReferentialAction.NoAction,
+                OnUpdate: ReferentialAction.NoAction)));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        sut.SelectCell(rowsView[0], "id");
+
+        Assert.True(sut.CanNavigateSelectedForeignKey);
+        sut.NavigateSelectedForeignKeyCommand.Execute(null);
+
+        Assert.NotNull(appendedSql);
+        Assert.Contains("FROM \"public\".\"accounts\"", appendedSql, StringComparison.Ordinal);
+        Assert.Contains("WHERE \"id\" = 1", appendedSql, StringComparison.Ordinal);
+        Assert.Contains("LIMIT 100", appendedSql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void NavigateSelectedForeignKeyCommand_WhenFkIsAmbiguous_DoesNotAppendSql()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]),
+            provider: DatabaseProvider.Postgres);
+
+        string? appendedSql = null;
+        sut.ConfigureSqlAppendToEditor((_, sql) => appendedSql = sql);
+        sut.ConfigureMetadataResolver(() => BuildMetadata(
+            DatabaseProvider.Postgres,
+            new ForeignKeyRelation(
+                ConstraintName: "fk_customers_account",
+                ChildSchema: "public",
+                ChildTable: "customers",
+                ChildColumn: "id",
+                ParentSchema: "public",
+                ParentTable: "accounts",
+                ParentColumn: "id",
+                OnDelete: ReferentialAction.NoAction,
+                OnUpdate: ReferentialAction.NoAction),
+            new ForeignKeyRelation(
+                ConstraintName: "fk_customers_archive",
+                ChildSchema: "public",
+                ChildTable: "customers",
+                ChildColumn: "id",
+                ParentSchema: "public",
+                ParentTable: "customers_archive",
+                ParentColumn: "legacy_id",
+                OnDelete: ReferentialAction.NoAction,
+                OnUpdate: ReferentialAction.NoAction)));
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        sut.SelectCell(rowsView[0], "id");
+
+        Assert.False(sut.CanNavigateSelectedForeignKey);
+        sut.NavigateSelectedForeignKeyCommand.Execute(null);
+
+        Assert.Null(appendedSql);
+    }
+
+    [Fact]
+    public void NavigateSelectedForeignKeyCommand_WithoutMetadataResolver_DoesNotAppendSql()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]),
+            provider: DatabaseProvider.Postgres);
+
+        string? appendedSql = null;
+        sut.ConfigureSqlAppendToEditor((_, sql) => appendedSql = sql);
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        sut.SelectCell(rowsView[0], "id");
+
+        Assert.False(sut.CanNavigateSelectedForeignKey);
+        sut.NavigateSelectedForeignKeyCommand.Execute(null);
+
+        Assert.Null(appendedSql);
     }
 
     [Fact]
@@ -85,6 +437,35 @@ public sealed class SqlResultPageViewModelTests
         Assert.Null(service.Get(second.Id));
         Assert.True(sut.HasSession);
         Assert.Equal(first.Id, sut.SelectedSession?.Id);
+    }
+
+    [Fact]
+    public void CloseSessionTabCommand_WhenClosingInactiveSession_KeepsActiveSession()
+    {
+        var service = new SqlResultSessionService();
+        SqlResultSession first = service.Add(new SqlResultSessionCreateRequest(
+            SqlText: "select 1;",
+            ConnectionId: "conn-1",
+            DatabaseName: "app_db",
+            SchemaName: "public",
+            ResultSet: BuildSession("select 1;", new DateTimeOffset(2026, 05, 12, 12, 0, 0, TimeSpan.Zero)).ResultSet));
+        SqlResultSession second = service.Add(new SqlResultSessionCreateRequest(
+            SqlText: "select 2;",
+            ConnectionId: "conn-1",
+            DatabaseName: "app_db",
+            SchemaName: "public",
+            ResultSet: BuildSession("select 2;", new DateTimeOffset(2026, 05, 12, 12, 1, 0, TimeSpan.Zero)).ResultSet));
+
+        var sut = new SqlResultPageViewModel();
+        sut.ConfigureSessionService(service);
+        sut.SetSession(second, Guid.NewGuid());
+
+        sut.CloseSessionTabCommand.Execute(first);
+
+        Assert.Null(service.Get(first.Id));
+        Assert.NotNull(service.Get(second.Id));
+        Assert.Equal(second.Id, sut.SelectedSession?.Id);
+        Assert.True(sut.HasSession);
     }
 
     [Fact]
@@ -406,6 +787,34 @@ public sealed class SqlResultPageViewModelTests
     }
 
     [Fact]
+    public void ShowSelectedRowDetailsCommand_DisplaysDetailsOnDemandAndAllowsClose()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ]);
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+        DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
+        sut.SelectedRowItem = rowsView[0];
+
+        Assert.False(sut.IsResultDetailVisible);
+        Assert.True(sut.CanShowSelectedRowDetails);
+
+        sut.ShowSelectedRowDetailsCommand.Execute(null);
+        Assert.True(sut.IsResultDetailVisible);
+        Assert.False(sut.CanShowSelectedRowDetails);
+
+        sut.HideSelectedRowDetailsCommand.Execute(null);
+        Assert.False(sut.IsResultDetailVisible);
+        Assert.True(sut.CanShowSelectedRowDetails);
+    }
+
+    [Fact]
     public void ClearSelectedRowCommand_ClearsSelectionAndSessionState()
     {
         var sut = new SqlResultPageViewModel();
@@ -421,10 +830,13 @@ public sealed class SqlResultPageViewModelTests
         DataView rowsView = Assert.IsType<DataView>(sut.RowsView);
         sut.SelectedRowItem = rowsView[0];
         Assert.True(sut.HasSelectedRow);
+        sut.ShowSelectedRowDetailsCommand.Execute(null);
+        Assert.True(sut.IsResultDetailVisible);
 
         sut.ClearSelectedRowCommand.Execute(null);
 
         Assert.False(sut.HasSelectedRow);
+        Assert.False(sut.IsResultDetailVisible);
         Assert.Null(session.ViewState.SelectedRowIndex);
         Assert.Equal("{}", sut.SelectedRowJson);
     }
@@ -762,6 +1174,133 @@ public sealed class SqlResultPageViewModelTests
         Assert.NotNull(clipboardPayload);
         Assert.Contains("| id | name |", clipboardPayload, StringComparison.Ordinal);
         Assert.Contains("| 1 | alice |", clipboardPayload, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CopyVisibleRowsAsCsvCommand_FormatsVisiblePageAsCsv()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ]);
+
+        string? clipboardPayload = null;
+        sut.ClipboardCopyRequested += payload => clipboardPayload = payload;
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        sut.CopyVisibleRowsAsCsvCommand.Execute(null);
+
+        Assert.NotNull(clipboardPayload);
+        Assert.Equal("id,name\r\n1,alice\r\n2,bob", clipboardPayload);
+    }
+
+    [Fact]
+    public void CopyVisibleRowsAsJsonCommand_FormatsVisiblePageAsJsonArray()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ]);
+
+        string? clipboardPayload = null;
+        sut.ClipboardCopyRequested += payload => clipboardPayload = payload;
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        sut.CopyVisibleRowsAsJsonCommand.Execute(null);
+
+        Assert.NotNull(clipboardPayload);
+        Assert.Contains("\"id\": 1", clipboardPayload, StringComparison.Ordinal);
+        Assert.Contains("\"name\": \"alice\"", clipboardPayload, StringComparison.Ordinal);
+        Assert.Contains("\"id\": 2", clipboardPayload, StringComparison.Ordinal);
+        Assert.Contains("\"name\": \"bob\"", clipboardPayload, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TryBuildReportExportContext_BuildsExpectedContext()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ]);
+        sut.ConfigureConnectionResolver(_ => BuildConnectionConfig());
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        bool built = sut.TryBuildReportExportContext(out SqlEditorReportExportContext? context);
+
+        Assert.True(built);
+        Assert.NotNull(context);
+        Assert.Equal("select * from customers;", context!.Sql);
+        Assert.Equal(["id", "name"], context.SchemaColumns);
+        Assert.Equal(2, context.ResultRows.Count);
+        Assert.Equal("success", context.ExecutionResult.Status);
+        Assert.Equal(1, context.ExecutionResult.RowCount);
+        Assert.NotNull(context.Connection);
+    }
+
+    [Fact]
+    public void ExportVisibleRowsAsCsvCommand_RaisesExportRequestWithCsvPayload()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ],
+            inlineEditEligibility: new SqlInlineEditEligibility(
+                IsEligible: true,
+                TableFullName: "public.customers",
+                PrimaryKeyColumns: ["id"],
+                EditableColumns: ["name"]));
+
+        SqlResultPageViewModel.SqlResultExportRequest? exportRequest = null;
+        sut.ExportRequested += request => exportRequest = request;
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        sut.ExportVisibleRowsAsCsvCommand.Execute(null);
+
+        Assert.NotNull(exportRequest);
+        Assert.Equal("csv", exportRequest!.DefaultExtension);
+        Assert.Equal("public-customers.csv", exportRequest.SuggestedFileName);
+        Assert.Equal("id,name\r\n1,alice\r\n2,bob", exportRequest.Content);
+    }
+
+    [Fact]
+    public void ExportVisibleRowsAsJsonCommand_RaisesExportRequestWithJsonPayload()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "bob"),
+            ]);
+
+        SqlResultPageViewModel.SqlResultExportRequest? exportRequest = null;
+        sut.ExportRequested += request => exportRequest = request;
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        sut.ExportVisibleRowsAsJsonCommand.Execute(null);
+
+        Assert.NotNull(exportRequest);
+        Assert.Equal("json", exportRequest!.DefaultExtension);
+        Assert.Equal("JSON", exportRequest.FileTypeTitle);
+        Assert.Contains("\"id\": 1", exportRequest.Content, StringComparison.Ordinal);
+        Assert.Contains("\"name\": \"alice\"", exportRequest.Content, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1529,6 +2068,17 @@ public sealed class SqlResultPageViewModelTests
         return table.Rows.Cast<DataRow>().Select(row => Convert.ToString(row[columnName]) ?? string.Empty).ToArray();
     }
 
+    private static DbMetadata BuildMetadata(DatabaseProvider provider, params ForeignKeyRelation[] foreignKeys)
+    {
+        return new DbMetadata(
+            DatabaseName: "app_db",
+            Provider: provider,
+            ServerVersion: "test",
+            CapturedAt: new DateTimeOffset(2026, 05, 12, 12, 0, 0, TimeSpan.Zero),
+            Schemas: [],
+            AllForeignKeys: foreignKeys);
+    }
+
     private static SqlResultSession BuildSession(
         string sql,
         DateTimeOffset? executedAtOverride = null,
@@ -1644,6 +2194,31 @@ public sealed class SqlResultPageViewModelTests
             orchestrator,
             executeStatement,
             executeTransactionalStatement);
+    }
+
+    private sealed class InMemorySqlResultSnippetStore : ISqlResultSnippetStore
+    {
+        private readonly List<SqlSavedQuerySnippet> _items = [];
+
+        public IReadOnlyList<SqlSavedQuerySnippet> Load() =>
+            _items
+                .OrderByDescending(item => item.UpdatedAtUtc)
+                .ToList();
+
+        public void Upsert(SqlSavedQuerySnippet snippet)
+        {
+            int index = _items.FindIndex(item => string.Equals(item.Id, snippet.Id, StringComparison.OrdinalIgnoreCase));
+            if (index >= 0)
+                _items[index] = snippet;
+            else
+                _items.Add(snippet);
+        }
+
+        public bool Delete(string snippetId)
+        {
+            int removed = _items.RemoveAll(item => string.Equals(item.Id, snippetId, StringComparison.OrdinalIgnoreCase));
+            return removed > 0;
+        }
     }
 
     private static ConnectionConfig BuildConnectionConfig(string database = "app_db")

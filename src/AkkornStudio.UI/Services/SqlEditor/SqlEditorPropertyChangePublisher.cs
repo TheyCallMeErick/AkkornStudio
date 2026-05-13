@@ -112,6 +112,9 @@ public sealed class SqlEditorPropertyChangePublisher
         "PendingMutationDiff",
         "HasPendingMutationDiff",
         "PendingMutationDiffText",
+        "HasPendingQueryParameterPrompt",
+        "PendingQueryParameterPromptMessage",
+        "PendingQueryParameters",
     ];
 
     private static readonly string[] TabStateProperties =

@@ -8,7 +8,7 @@
              x:Name="Root"
              x:DataType="vm:SqlResultPageViewModel">
   <Grid Margin="8"
-        RowDefinitions="Auto,Auto,Auto,*"
+        RowDefinitions="Auto,Auto,Auto,Auto,*"
         ColumnDefinitions="280,*"
         IsVisible="{Binding HasSession}">
     <Border Grid.Row="0"
@@ -122,6 +122,49 @@
             Grid.ColumnSpan="2"
             Margin="0,8,0,0"
             Classes="surface-card"
+            Padding="8"
+            IsVisible="{Binding HasSessions}">
+      <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                    VerticalScrollBarVisibility="Disabled">
+        <ItemsControl ItemsSource="{Binding Sessions}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal" Spacing="8"/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="result:SqlResultSession">
+              <Border Classes="surface-card"
+                      Padding="6">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Button Classes="secondary compact"
+                          Command="{Binding DataContext.SelectSessionCommand, ElementName=Root}"
+                          CommandParameter="{Binding .}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="{Binding SqlText}"
+                                 MaxWidth="220"
+                                 TextTrimming="CharacterEllipsis"/>
+                      <TextBlock Text="Pinned"
+                                 IsVisible="{Binding IsPinned}"
+                                 Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </StackPanel>
+                  </Button>
+                  <Button Classes="danger compact"
+                          Command="{Binding DataContext.CloseSessionTabCommand, ElementName=Root}"
+                          CommandParameter="{Binding .}"
+                          Content="x"/>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Border>
+
+    <Border Grid.Row="2"
+            Grid.ColumnSpan="2"
+            Margin="0,8,0,0"
+            Classes="surface-card"
             Padding="10"
             IsVisible="{Binding HasPendingPreviewPanel}">
       <StackPanel Spacing="6">
@@ -192,61 +235,87 @@
       </StackPanel>
     </Border>
 
-    <Border Grid.Row="2"
+    <Border Grid.Row="3"
             Grid.ColumnSpan="2"
             Margin="0,8,0,8"
             Classes="surface-card"
             Padding="10">
-      <Grid ColumnDefinitions="*,*,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+      <Grid RowDefinitions="Auto,Auto"
+            ColumnDefinitions="*,*,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
             ColumnSpacing="12">
-        <TextBlock Grid.Column="0" Text="{Binding ConnectionId, StringFormat='Connection: {0}'}"/>
-        <TextBlock Grid.Column="1" Text="{Binding DatabaseName, StringFormat='Database: {0}'}"/>
-        <TextBlock Grid.Column="2" Text="{Binding ExecutedAtText, StringFormat='Executed At: {0}'}"/>
-        <TextBox Grid.Column="3"
+        <TextBlock Grid.Row="0"
+                   Grid.Column="0"
+                   Grid.ColumnSpan="18"
+                   Text="{Binding ResultBreadcrumbText}"
+                   Foreground="{StaticResource TextSecondaryBrush}"
+                   TextTrimming="CharacterEllipsis"/>
+
+        <TextBlock Grid.Row="1"
+                   Grid.Column="0"
+                   Text="{Binding ConnectionId, StringFormat='Connection: {0}'}"/>
+        <TextBlock Grid.Row="1"
+                   Grid.Column="1"
+                   Text="{Binding DatabaseName, StringFormat='Database: {0}'}"/>
+        <TextBlock Grid.Row="1"
+                   Grid.Column="2"
+                   Text="{Binding ExecutedAtText, StringFormat='Executed At: {0}'}"/>
+        <TextBox Grid.Row="1"
+                 Grid.Column="3"
                  Width="220"
                  Watermark="Search all columns"
                  Text="{Binding SearchText}"/>
-        <ComboBox Grid.Column="4"
+        <ComboBox Grid.Row="1"
+                  Grid.Column="4"
                   Width="180"
                   ItemsSource="{Binding AvailableSortColumns}"
                   SelectedItem="{Binding SelectedSortColumn, Mode=TwoWay}"/>
-        <Button Grid.Column="5"
+        <Button Grid.Row="1"
+                Grid.Column="5"
                 Classes="secondary compact"
                 Command="{Binding ToggleSortDirectionCommand}"
                 Content="{Binding SortDirectionText}"/>
-        <Button Grid.Column="6"
+        <Button Grid.Row="1"
+                Grid.Column="6"
                 Classes="secondary compact"
                 Command="{Binding AddSortCriterionCommand}"
                 Content="Add sort"/>
-        <Button Grid.Column="7"
+        <Button Grid.Row="1"
+                Grid.Column="7"
                 Classes="secondary compact"
                 Command="{Binding ClearSortCriteriaCommand}"
                 Content="Clear sorts"/>
-        <ComboBox Grid.Column="8"
+        <ComboBox Grid.Row="1"
+                  Grid.Column="8"
                   Width="170"
                   ItemsSource="{Binding AvailableSortColumns}"
                   SelectedItem="{Binding SelectedGroupColumn, Mode=TwoWay}"/>
-        <Button Grid.Column="9"
+        <Button Grid.Row="1"
+                Grid.Column="9"
                 Classes="secondary compact"
                 Command="{Binding AddGroupColumnCommand}"
                 Content="Add group"/>
-        <Button Grid.Column="10"
+        <Button Grid.Row="1"
+                Grid.Column="10"
                 Classes="secondary compact"
                 Command="{Binding ClearGroupColumnsCommand}"
                 Content="Clear groups"/>
-        <ComboBox Grid.Column="11"
+        <ComboBox Grid.Row="1"
+                  Grid.Column="11"
                   Width="170"
                   ItemsSource="{Binding AvailableSortColumns}"
                   SelectedItem="{Binding SelectedFilterColumn, Mode=TwoWay}"/>
-        <ComboBox Grid.Column="12"
+        <ComboBox Grid.Row="1"
+                  Grid.Column="12"
                   Width="130"
                   ItemsSource="{Binding AvailableFilterOperations}"
                   SelectedItem="{Binding SelectedFilterOperation, Mode=TwoWay}"/>
-        <TextBox Grid.Column="13"
+        <TextBox Grid.Row="1"
+                 Grid.Column="13"
                  Width="170"
                  Watermark="Column filter"
                  Text="{Binding ColumnFilterValue}"/>
-        <StackPanel Grid.Column="14"
+        <StackPanel Grid.Row="1"
+                    Grid.Column="14"
                     Orientation="Horizontal"
                     Spacing="6">
           <Button Classes="secondary compact"
@@ -256,10 +325,25 @@
                   Command="{Binding ClearColumnFilterCommand}"
                   Content="Clear filters"/>
         </StackPanel>
+        <TextBox Grid.Row="1"
+                 Grid.Column="15"
+                 Width="220"
+                 Watermark="Session annotation"
+                 Text="{Binding SessionAnnotationText, Mode=TwoWay}"/>
+        <Button Grid.Row="1"
+                Grid.Column="16"
+                Classes="secondary compact"
+                Command="{Binding SaveSessionAnnotationCommand}"
+                Content="Save note"/>
+        <Button Grid.Row="1"
+                Grid.Column="17"
+                Classes="secondary compact"
+                Command="{Binding ClearSessionAnnotationCommand}"
+                Content="Clear note"/>
       </Grid>
     </Border>
 
-    <Border Grid.Row="3"
+    <Border Grid.Row="4"
             Grid.Column="0"
             Margin="0,0,8,0"
             Classes="surface-card"
@@ -279,7 +363,7 @@
               <Border Classes="surface-card"
                       Margin="0,0,0,6"
                       Padding="8">
-                <Grid RowDefinitions="Auto,Auto"
+                <Grid RowDefinitions="Auto,Auto,Auto"
                       ColumnDefinitions="*,Auto">
                   <TextBlock Grid.Row="0"
                              Grid.Column="0"
@@ -291,9 +375,16 @@
                              Margin="0,4,0,0"
                              Text="{Binding ExecutedAt.LocalDateTime, StringFormat='dd/MM HH:mm:ss'}"
                              Foreground="{StaticResource TextSecondaryBrush}"/>
+                  <TextBlock Grid.Row="2"
+                             Grid.Column="0"
+                             Margin="0,4,0,0"
+                             Text="{Binding Annotation, StringFormat='Note: {0}'}"
+                             TextWrapping="Wrap"
+                             IsVisible="{Binding Annotation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                             Foreground="{StaticResource TextSecondaryBrush}"/>
                   <Border Grid.Row="0"
                           Grid.Column="1"
-                          Grid.RowSpan="2"
+                          Grid.RowSpan="3"
                           Classes="chip"
                           IsVisible="{Binding IsPinned}"
                           Padding="6,2">
@@ -464,41 +555,180 @@
 
         <ScrollViewer Grid.Row="11"
                       Margin="0,8,0,0"
-                      MaxHeight="220"
+                      MaxHeight="520"
                       VerticalScrollBarVisibility="Auto">
-          <ItemsControl ItemsSource="{Binding ColumnVisibilityItems}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate>
-                <Grid Margin="0,0,0,4"
-                      ColumnDefinitions="*,Auto,Auto,Auto"
-                      ColumnSpacing="4">
-                  <CheckBox Grid.Column="0"
-                            Content="{Binding ColumnName}"
-                            IsChecked="{Binding IsVisible, Mode=TwoWay}"/>
+          <StackPanel Spacing="10">
+            <ItemsControl ItemsSource="{Binding ColumnVisibilityItems}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Grid Margin="0,0,0,4"
+                        ColumnDefinitions="*,Auto,Auto,Auto"
+                        ColumnSpacing="4">
+                    <CheckBox Grid.Column="0"
+                              Content="{Binding ColumnName}"
+                              IsChecked="{Binding IsVisible, Mode=TwoWay}"/>
+                    <Button Grid.Column="1"
+                            Classes="secondary compact"
+                            Command="{Binding DataContext.MoveColumnUpCommand, ElementName=Root}"
+                            CommandParameter="{Binding .}"
+                            Content="Up"/>
+                    <Button Grid.Column="2"
+                            Classes="secondary compact"
+                            Command="{Binding DataContext.MoveColumnDownCommand, ElementName=Root}"
+                            CommandParameter="{Binding .}"
+                            Content="Down"/>
+                    <Button Grid.Column="3"
+                            Classes="secondary compact"
+                            Command="{Binding DataContext.ToggleColumnFrozenCommand, ElementName=Root}"
+                            CommandParameter="{Binding .}"
+                            Content="{Binding FrozenActionText}"/>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Border Classes="surface-card" Padding="8">
+              <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                  <TextBlock Grid.Column="0"
+                             Text="Snippets"
+                             FontWeight="{StaticResource FontWeightStrong}"/>
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding FavoriteSnippetCountText}"
+                             Foreground="{StaticResource TextSecondaryBrush}"/>
+                </Grid>
+
+                <TextBox Watermark="Snippet name"
+                         Text="{Binding SnippetNameInput, Mode=TwoWay}"/>
+                <TextBox Watermark="Snippet description"
+                         Text="{Binding SnippetDescriptionInput, Mode=TwoWay}"/>
+                <TextBox Watermark="Tags"
+                         Text="{Binding SnippetTagsInput, Mode=TwoWay}"/>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                  <Button Grid.Column="0"
+                          Classes="secondary compact"
+                          Command="{Binding SaveCurrentSqlAsSnippetCommand}"
+                          Content="Save Snippet"/>
                   <Button Grid.Column="1"
                           Classes="secondary compact"
-                          Command="{Binding DataContext.MoveColumnUpCommand, ElementName=Root}"
-                          CommandParameter="{Binding .}"
-                          Content="Up"/>
-                  <Button Grid.Column="2"
-                          Classes="secondary compact"
-                          Command="{Binding DataContext.MoveColumnDownCommand, ElementName=Root}"
-                          CommandParameter="{Binding .}"
-                          Content="Down"/>
-                  <Button Grid.Column="3"
-                          Classes="secondary compact"
-                          Command="{Binding DataContext.ToggleColumnFrozenCommand, ElementName=Root}"
-                          CommandParameter="{Binding .}"
-                          Content="{Binding FrozenActionText}"/>
+                          Command="{Binding ToggleCurrentSqlFavoriteCommand}"
+                          Content="{Binding ToggleCurrentSqlFavoriteText}"/>
                 </Grid>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                  <Button Grid.Column="0"
+                          Classes="secondary compact"
+                          Command="{Binding OpenSelectedSnippetInEditorCommand}"
+                          Content="Open Selected"/>
+                  <Button Grid.Column="1"
+                          Classes="secondary compact"
+                          Command="{Binding DeleteSelectedSnippetCommand}"
+                          Content="Delete Selected"/>
+                </Grid>
+
+                <ListBox ItemsSource="{Binding SavedSnippets}"
+                         SelectedItem="{Binding SelectedSnippet, Mode=TwoWay}"
+                         MaxHeight="180">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="result:SqlSavedQuerySnippet">
+                      <Border Classes="surface-card" Margin="0,0,0,6" Padding="6">
+                        <Grid RowDefinitions="Auto,Auto,Auto"
+                              ColumnDefinitions="*,Auto,Auto"
+                              ColumnSpacing="6">
+                          <TextBlock Grid.Row="0"
+                                     Grid.Column="0"
+                                     Text="{Binding Name}"
+                                     FontWeight="{StaticResource FontWeightStrong}"
+                                     TextTrimming="CharacterEllipsis"/>
+                          <TextBlock Grid.Row="1"
+                                     Grid.Column="0"
+                                     Text="{Binding Description}"
+                                     Foreground="{StaticResource TextSecondaryBrush}"
+                                     TextWrapping="Wrap"/>
+                          <TextBlock Grid.Row="2"
+                                     Grid.Column="0"
+                                     Text="{Binding Tags}"
+                                     Foreground="{StaticResource TextSecondaryBrush}"
+                                     TextTrimming="CharacterEllipsis"/>
+                          <TextBlock Grid.Row="0"
+                                     Grid.Column="1"
+                                     Text="Fav"
+                                     IsVisible="{Binding IsFavorite}"
+                                     Foreground="{StaticResource TextSecondaryBrush}"/>
+                          <Button Grid.Row="0"
+                                  Grid.Column="2"
+                                  Classes="secondary compact"
+                                  Command="{Binding DataContext.OpenSnippetInEditorCommand, ElementName=Root}"
+                                  CommandParameter="{Binding .}"
+                                  Content="Open"/>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+
+                <Border Classes="surface-card" Padding="6">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="Quick Templates"
+                               FontWeight="{StaticResource FontWeightStrong}"/>
+                    <ComboBox ItemsSource="{Binding AvailableSqlTemplates}"
+                              SelectedItem="{Binding SelectedSqlTemplate, Mode=TwoWay}">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Text="{Binding SelectedSqlTemplate.Description}"
+                               TextWrapping="Wrap"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <Button Classes="secondary compact"
+                            Command="{Binding SendSelectedSqlTemplateToEditorCommand}"
+                            Content="Send Template to Editor"/>
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="surface-card" Padding="6"
+                        IsVisible="{Binding HasAvailableTableQuickActions}">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="Table Quick Actions"
+                               FontWeight="{StaticResource FontWeightStrong}"/>
+                    <ItemsControl ItemsSource="{Binding AvailableTableQuickActions}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Border Classes="surface-card" Margin="0,0,0,6" Padding="6">
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="6">
+                              <TextBlock Grid.Row="0"
+                                         Grid.Column="0"
+                                         Text="{Binding Name}"
+                                         FontWeight="{StaticResource FontWeightStrong}"/>
+                              <TextBlock Grid.Row="1"
+                                         Grid.Column="0"
+                                         Text="{Binding Description}"
+                                         Foreground="{StaticResource TextSecondaryBrush}"
+                                         TextWrapping="Wrap"/>
+                              <Button Grid.RowSpan="2"
+                                      Grid.Column="1"
+                                      Classes="secondary compact"
+                                      Command="{Binding DataContext.SendTableQuickActionToEditorCommand, ElementName=Root}"
+                                      CommandParameter="{Binding .}"
+                                      Content="Send"/>
+                            </Grid>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Border>
+          </StackPanel>
         </ScrollViewer>
       </Grid>
     </Border>
 
-    <Border Grid.Row="3"
+    <Border Grid.Row="4"
             Grid.Column="1"
             Classes="surface-card"
             Padding="8">
@@ -509,11 +739,10 @@
                   SelectedItem="{Binding SelectedRowItem, Mode=TwoWay}"
                   IsReadOnly="False"
                   GridLinesVisibility="Horizontal"
-                  AutoGenerateColumns="True"
+                  AutoGenerateColumns="False"
                   FrozenColumnCount="{Binding FrozenColumnCount}"
                   SelectionMode="Extended"
                   CellPointerPressed="ResultGrid_OnCellPointerPressed"
-                  AutoGeneratingColumn="ResultGrid_OnAutoGeneratingColumn"
                   CellEditEnding="ResultGrid_OnCellEditEnding">
           <DataGrid.ContextMenu>
             <ContextMenu>
@@ -525,6 +754,20 @@
                         Command="{Binding CopySelectedRowAsCsvCommand}"/>
               <MenuItem Header="Copy Row Markdown"
                         Command="{Binding CopySelectedRowAsMarkdownCommand}"/>
+              <MenuItem Header="Show Row Details"
+                        Command="{Binding ShowSelectedRowDetailsCommand}"/>
+              <Separator/>
+              <MenuItem Header="Copy Visible Rows JSON"
+                        Command="{Binding CopyVisibleRowsAsJsonCommand}"/>
+              <MenuItem Header="Copy Visible Rows CSV"
+                        Command="{Binding CopyVisibleRowsAsCsvCommand}"/>
+              <MenuItem Header="Copy Visible Rows Markdown"
+                        Command="{Binding CopyVisibleRowsAsMarkdownCommand}"/>
+              <Separator/>
+              <MenuItem Header="Export Visible Rows CSV"
+                        Command="{Binding ExportVisibleRowsAsCsvCommand}"/>
+              <MenuItem Header="Export Visible Rows JSON"
+                        Command="{Binding ExportVisibleRowsAsJsonCommand}"/>
               <MenuItem Header="Copy Column as SQL IN"
                         Command="{Binding CopySelectedColumnAsSqlInCommand}"/>
               <Separator/>
@@ -539,6 +782,8 @@
               <Separator/>
               <MenuItem Header="Generate WHERE"
                         Command="{Binding GenerateWhereClauseCommand}"/>
+              <MenuItem Header="Open Related Record (FK)"
+                        Command="{Binding NavigateSelectedForeignKeyCommand}"/>
             </ContextMenu>
           </DataGrid.ContextMenu>
         </DataGrid>
@@ -603,11 +848,32 @@
                       HorizontalAlignment="Right"
                       Spacing="8">
             <Button Classes="secondary compact"
+                    Command="{Binding CopyVisibleRowsAsJsonCommand}"
+                    Content="Copy Page JSON"/>
+            <Button Classes="secondary compact"
+                    Command="{Binding CopyVisibleRowsAsCsvCommand}"
+                    Content="Copy Page CSV"/>
+            <Button Classes="secondary compact"
+                    Command="{Binding CopyVisibleRowsAsMarkdownCommand}"
+                    Content="Copy Page MD"/>
+            <Button Classes="secondary compact"
+                    Command="{Binding ExportVisibleRowsAsCsvCommand}"
+                    Content="Export CSV"/>
+            <Button Classes="secondary compact"
+                    Command="{Binding ExportVisibleRowsAsJsonCommand}"
+                    Content="Export JSON"/>
+            <Button Classes="secondary compact"
+                    Click="ExportReportButton_Click"
+                    Content="Export Report"/>
+            <Button Classes="secondary compact"
                     Command="{Binding CopySelectedColumnAsSqlInCommand}"
                     Content="Copy SQL IN"/>
             <Button Classes="secondary compact"
                     Command="{Binding GenerateWhereClauseCommand}"
                     Content="Generate WHERE"/>
+            <Button Classes="secondary compact"
+                    Command="{Binding NavigateSelectedForeignKeyCommand}"
+                    Content="Open Related FK"/>
           </StackPanel>
         </Grid>
 
@@ -615,17 +881,22 @@
                 Margin="0,8,0,0"
                 Padding="8"
                 Classes="surface-card"
-                IsVisible="{Binding HasSelectedRow}">
+                IsVisible="{Binding IsResultDetailVisible}">
           <Grid ColumnDefinitions="2*,3*"
                 ColumnSpacing="10">
             <Grid Grid.Column="0"
                   RowDefinitions="Auto,*">
               <Grid Grid.Row="0"
-                    ColumnDefinitions="*,Auto">
+                    ColumnDefinitions="*,Auto,Auto"
+                    ColumnSpacing="6">
                 <TextBlock Grid.Column="0"
                            Text="{Binding SelectedRowSummary, StringFormat='Selected {0}'}"
                            FontWeight="{StaticResource FontWeightStrong}"/>
                 <Button Grid.Column="1"
+                        Classes="secondary compact"
+                        Command="{Binding HideSelectedRowDetailsCommand}"
+                        Content="Close"/>
+                <Button Grid.Column="2"
                         Classes="secondary compact"
                         Command="{Binding ClearSelectedRowCommand}"
                         Content="Clear"/>

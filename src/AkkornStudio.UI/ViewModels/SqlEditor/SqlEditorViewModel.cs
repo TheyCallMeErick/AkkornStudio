@@ -43,6 +43,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private readonly SqlEditorResultStateService _resultStateService;
     private readonly SqlEditorTabCloseWorkflowService _tabCloseWorkflowService;
     private readonly SqlResultEligibilityDetector _resultEligibilityDetector;
+    private readonly SqlQueryParameterProcessor _queryParameterProcessor;
     private readonly ISqlEditorSessionDraftStore _sessionDraftStore;
     private readonly ILocalizationService _localization;
     private readonly Func<ConnectionConfig?> _connectionConfigResolver;
@@ -107,6 +108,10 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private string _filteredSchemaNeedleCache = string.Empty;
     private bool _isSchemaTablesCacheValid;
     private bool _isFilteredSchemaTablesCacheValid;
+    private string? _pendingQueryParameterSql;
+    private int _pendingQueryParameterMaxRows = 1000;
+    private bool _pendingQueryParameterEnforceMutationGuard = true;
+    private List<SqlQueryParameterPromptItemViewModel> _pendingQueryParameters = [];
 
     public SqlEditorViewModel(
         DatabaseProvider initialProvider = DatabaseProvider.Postgres,
@@ -126,7 +131,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
         SqlEditorExplainService? sqlEditorExplainService = null,
         SqlEditorBenchmarkService? sqlEditorBenchmarkService = null,
         SqlEditorCompletionController? completionController = null,
-        SqlEditorExecutionController? executionController = null)
+        SqlEditorExecutionController? executionController = null,
+        SqlQueryParameterProcessor? queryParameterProcessor = null)
     {
         _localization = localization ?? LocalizationService.Instance;
         _selectionExtractor = selectionExtractor ?? new SqlSelectionExtractor();
@@ -146,6 +152,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
         _propertyChangePublisher = new SqlEditorPropertyChangePublisher();
         _tabCloseWorkflowService = new SqlEditorTabCloseWorkflowService(_localization);
         _resultEligibilityDetector = new SqlResultEligibilityDetector();
+        _queryParameterProcessor = queryParameterProcessor ?? new SqlQueryParameterProcessor();
         _sessionDraftStore = sessionDraftStore ?? new SqlEditorSessionDraftStore();
         _connectionConfigResolver = connectionConfigResolver ?? (() => null);
         _connectionConfigByProfileIdResolver = connectionConfigByProfileIdResolver ?? (_ => _connectionConfigResolver());
@@ -187,6 +194,12 @@ public sealed class SqlEditorViewModel : ViewModelBase
         CancelPendingMutationCommand = new RelayCommand(
             CancelPendingMutation,
             () => HasPendingMutationConfirmation && !IsExecuting);
+        ConfirmPendingQueryParametersCommand = new RelayCommand(
+            () => _ = ConfirmPendingQueryParametersAsync(),
+            () => HasPendingQueryParameterPrompt && !IsExecuting);
+        CancelPendingQueryParametersCommand = new RelayCommand(
+            CancelPendingQueryParameters,
+            () => HasPendingQueryParameterPrompt && !IsExecuting);
         OpenConnectionSwitcherCommand = new RelayCommand(
             OpenConnectionSwitcher,
             () => AvailableConnectionProfiles.Count > 0);
@@ -244,6 +257,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
     public ICommand CancelPendingCloseTabCommand { get; }
     public ICommand ConfirmPendingMutationCommand { get; }
     public ICommand CancelPendingMutationCommand { get; }
+    public ICommand ConfirmPendingQueryParametersCommand { get; }
+    public ICommand CancelPendingQueryParametersCommand { get; }
     public ICommand OpenConnectionSwitcherCommand { get; }
     public ICommand CloseConnectionSwitcherCommand { get; }
     public ICommand ApplyConnectionSwitcherCommand { get; }
@@ -970,6 +985,12 @@ public sealed class SqlEditorViewModel : ViewModelBase
         PendingMutationGuard is null
             ? L("sqlEditor.mutation.pending.none", "Sem confirmacao de mutacao pendente.")
             : L("sqlEditor.mutation.pending.required", "A mutacao exige confirmacao antes da execucao.");
+    public bool HasPendingQueryParameterPrompt => _pendingQueryParameterSql is not null && _pendingQueryParameters.Count > 0;
+    public IReadOnlyList<SqlQueryParameterPromptItemViewModel> PendingQueryParameters => _pendingQueryParameters;
+    public string PendingQueryParameterPromptMessage =>
+        !HasPendingQueryParameterPrompt
+            ? L("sqlEditor.parameters.none", "Sem parametros pendentes.")
+            : L("sqlEditor.parameters.required", "Informe os valores dos parametros antes da execucao.");
     public string LastExecutionMessage =>
         CurrentResult is null
             ? L("sqlEditor.message.empty", "Execute uma instrucao para ver mensagens.")
@@ -1445,7 +1466,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
             UpdateActiveExecutionStatementRange(ResolveStatementLineRangeForCaret(caretOffset));
             SqlEditorResultSet result = await ExecuteSqlAsync(sql, maxRows, enforceMutationGuard: true);
 
-            if (!result.Success && string.Equals(result.ErrorMessage, MutationConfirmationRequiredError(), StringComparison.Ordinal))
+            if (IsExecutionDeferredResult(result))
                 return result;
 
             StoreResult(result);
@@ -1545,7 +1566,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
                 SqlEditorResultSet result = await ExecuteSqlAsync(statement.Sql, maxRows, enforceMutationGuard: true);
                 results.Add(result);
 
-                if (!result.Success && string.Equals(result.ErrorMessage, MutationConfirmationRequiredError(), StringComparison.Ordinal))
+                if (IsExecutionDeferredResult(result))
                     break;
 
                 StoreResult(result);
@@ -1757,7 +1778,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
             ResetActiveExecutionStatementRange();
             SqlEditorResultSet result = await ExecuteSqlAsync(entry.Sql, maxRows, enforceMutationGuard: true);
 
-            if (!result.Success && string.Equals(result.ErrorMessage, MutationConfirmationRequiredError(), StringComparison.Ordinal))
+            if (IsExecutionDeferredResult(result))
                 return result;
 
             StoreResult(result);
@@ -1882,6 +1903,77 @@ public sealed class SqlEditorViewModel : ViewModelBase
         HasExecutionError = false;
     }
 
+    public async Task<SqlEditorResultSet?> ConfirmPendingQueryParametersAsync()
+    {
+        if (!HasPendingQueryParameterPrompt || string.IsNullOrWhiteSpace(_pendingQueryParameterSql))
+            return null;
+
+        List<string> missing = _pendingQueryParameters
+            .Where(item => string.IsNullOrWhiteSpace(item.InputValue))
+            .Select(item => item.Name)
+            .ToList();
+        if (missing.Count > 0)
+        {
+            ExecutionStatusText = L("sqlEditor.status.parameterMissing", "Parametro obrigatorio ausente.");
+            ExecutionDetailText = string.Format(
+                L("sqlEditor.detail.parameterMissing", "Informe valores para: {0}."),
+                string.Join(", ", missing));
+            HasExecutionError = true;
+            return null;
+        }
+
+        foreach (SqlQueryParameterPromptItemViewModel item in _pendingQueryParameters)
+            ActiveTab.QueryParameterLastValues[item.Name] = item.InputValue.Trim();
+
+        string sqlTemplate = _pendingQueryParameterSql;
+        int maxRows = _pendingQueryParameterMaxRows;
+        bool enforceMutationGuard = _pendingQueryParameterEnforceMutationGuard;
+        ClearPendingQueryParameterPrompt();
+
+        _executionCts?.Cancel();
+        _executionCts?.Dispose();
+        _executionCts = new CancellationTokenSource();
+        IsExecuting = true;
+        IsCancellationPending = false;
+        NotifyCommands();
+        HasExecutionError = false;
+        ExecutionStatusText = L("sqlEditor.status.executingWithParameters", "Executando SQL com parametros...");
+        ExecutionDetailText = null;
+        BeginExecutionProgress(totalStatements: 1);
+
+        try
+        {
+            ResetActiveExecutionStatementRange();
+            SqlEditorResultSet result = await ExecuteSqlAsync(sqlTemplate, maxRows, enforceMutationGuard);
+            if (IsExecutionDeferredResult(result))
+                return result;
+
+            StoreResult(result);
+            ShowResultInPreferredSurface(result);
+            UpdateExecutionTelemetry([result]);
+            UpdateExecutionFeedback(result);
+            RaiseSqlPanelPropertiesChanged();
+            return result;
+        }
+        finally
+        {
+            EndExecutionProgress();
+            IsExecuting = false;
+            NotifyCommands();
+        }
+    }
+
+    public void CancelPendingQueryParameters()
+    {
+        if (!HasPendingQueryParameterPrompt)
+            return;
+
+        ClearPendingQueryParameterPrompt();
+        ExecutionStatusText = L("sqlEditor.status.parameterPromptCanceled", "Execucao cancelada: parametros nao informados.");
+        ExecutionDetailText = L("sqlEditor.detail.statementNotExecuted", "A instrucao nao foi executada.");
+        HasExecutionError = false;
+    }
+
     private void UpdateExecutionFeedback(SqlEditorResultSet result)
     {
         SqlEditorExecutionFeedback feedback = _executionFeedbackService.Build(result);
@@ -1892,15 +1984,18 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     private async Task<SqlEditorResultSet> ExecuteSqlAsync(string? sql, int maxRows, bool enforceMutationGuard)
     {
+        if (!TryResolveSqlParametersForExecution(sql, maxRows, enforceMutationGuard, out string resolvedSql, out SqlEditorResultSet? parameterResult))
+            return parameterResult!;
+
         ConnectionConfig? config = ResolveConnectionConfigForActiveTab();
-        int effectiveMaxRows = ResolveEffectiveMaxRows(sql, maxRows);
+        int effectiveMaxRows = ResolveEffectiveMaxRows(resolvedSql, maxRows);
         bool shouldEnforceMutationGuard = enforceMutationGuard && ProtectMutationWithoutWhereEnabled;
         SqlEditorMutationExecutionOutcome outcome = await _mutationExecutionOrchestrator.ExecuteAsync(
-            sql,
+            resolvedSql,
             config,
             effectiveMaxRows,
             shouldEnforceMutationGuard,
-            BuildEstimateCacheKey(sql),
+            BuildEstimateCacheKey(resolvedSql),
             _executionCts?.Token ?? CancellationToken.None);
 
         if (!outcome.RequiresConfirmation || outcome.ConfirmationState is null)
@@ -1923,6 +2018,102 @@ public sealed class SqlEditorViewModel : ViewModelBase
         PendingMutationDiff = null;
         _pendingMutationSql = null;
         _pendingMutationEstimatedRows = null;
+    }
+
+    private bool TryResolveSqlParametersForExecution(
+        string? sql,
+        int maxRows,
+        bool enforceMutationGuard,
+        out string resolvedSql,
+        out SqlEditorResultSet? parameterResult)
+    {
+        resolvedSql = sql ?? string.Empty;
+        parameterResult = null;
+
+        IReadOnlyList<string> names = _queryParameterProcessor.DetectNames(sql);
+        if (names.Count == 0)
+        {
+            ClearPendingQueryParameterPrompt();
+            return true;
+        }
+
+        if (!_queryParameterProcessor.TryApply(
+            sql,
+            ActiveTab.QueryParameterLastValues,
+            ActiveTabProvider,
+            out string materializedSql,
+            out IReadOnlyList<string> missingParameters,
+            out string? conversionError))
+        {
+            if (missingParameters.Count > 0)
+            {
+                PreparePendingQueryParameterPrompt(sql!, names, maxRows, enforceMutationGuard);
+                parameterResult = new SqlEditorResultSet
+                {
+                    StatementSql = sql?.Trim() ?? string.Empty,
+                    Success = false,
+                    ErrorMessage = QueryParameterPromptRequiredError(),
+                    ErrorCategory = SqlExecutionErrorCategory.Validation,
+                    ExecutedAt = DateTimeOffset.UtcNow,
+                };
+                ExecutionStatusText = L("sqlEditor.status.parametersRequired", "Parametros obrigatorios para executar a consulta.");
+                ExecutionDetailText = string.Format(
+                    L("sqlEditor.detail.parametersMissing", "Informe valores para: {0}."),
+                    string.Join(", ", missingParameters));
+                HasExecutionError = false;
+                RaiseSqlPanelPropertiesChanged();
+                return false;
+            }
+
+            parameterResult = new SqlEditorResultSet
+            {
+                StatementSql = sql?.Trim() ?? string.Empty,
+                Success = false,
+                ErrorMessage = conversionError ?? L("sqlEditor.error.parameterConversion", "Falha ao converter parametro."),
+                ErrorCategory = SqlExecutionErrorCategory.Validation,
+                ExecutedAt = DateTimeOffset.UtcNow,
+            };
+            ExecutionStatusText = L("sqlEditor.status.parameterError", "Falha na validacao de parametros.");
+            ExecutionDetailText = conversionError ?? L("sqlEditor.detail.parameterConversion", "Revise os valores informados para os parametros.");
+            HasExecutionError = true;
+            return false;
+        }
+
+        ClearPendingQueryParameterPrompt();
+        resolvedSql = materializedSql;
+        return true;
+    }
+
+    private void PreparePendingQueryParameterPrompt(
+        string sql,
+        IReadOnlyList<string> parameterNames,
+        int maxRows,
+        bool enforceMutationGuard)
+    {
+        _pendingQueryParameterSql = sql;
+        _pendingQueryParameterMaxRows = maxRows;
+        _pendingQueryParameterEnforceMutationGuard = enforceMutationGuard;
+        _pendingQueryParameters = parameterNames
+            .Select(name =>
+            {
+                ActiveTab.QueryParameterLastValues.TryGetValue(name, out string? existingValue);
+                return new SqlQueryParameterPromptItemViewModel(name, existingValue ?? string.Empty);
+            })
+            .ToList();
+        RaisePropertyChanged(nameof(HasPendingQueryParameterPrompt));
+        RaisePropertyChanged(nameof(PendingQueryParameters));
+        RaisePropertyChanged(nameof(PendingQueryParameterPromptMessage));
+        NotifyCommands();
+    }
+
+    private void ClearPendingQueryParameterPrompt()
+    {
+        _pendingQueryParameterSql = null;
+        _pendingQueryParameters = [];
+        RaisePropertyChanged(nameof(HasPendingQueryParameterPrompt));
+        RaisePropertyChanged(nameof(PendingQueryParameters));
+        RaisePropertyChanged(nameof(PendingQueryParameterPromptMessage));
+        NotifyCommands();
     }
 
     public void SetExecutionSafetyOptions(bool top1000WithoutWhereEnabled, bool protectMutationWithoutWhereEnabled)
@@ -1999,6 +2190,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
         (ExplainCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
         (BenchmarkCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
         (CancelBenchmarkCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ConfirmPendingQueryParametersCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (CancelPendingQueryParametersCommand as RelayCommand)?.NotifyCanExecuteChanged();
     }
 
     private void RaiseSqlPanelPropertiesChanged()
@@ -2362,6 +2555,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private void RaiseTabStateChanged()
     {
         _isHistoryClearConfirmationPending = false;
+        ClearPendingQueryParameterPrompt();
         SyncSidebarConnectionSelectionToActiveTab();
         TryHydrateResultFilterForTab(ActiveTab);
         TryHydrateExecutionHistoryForTab(ActiveTab);
@@ -2396,6 +2590,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     public void NotifyActiveTabEdited()
     {
+        ClearPendingQueryParameterPrompt();
         _hasPendingDraftAutoSave = true;
         EnsureDraftAutoSaveTimersStarted();
         _draftAutoSaveDebounceTimer?.Change(DraftAutoSaveDebounce, Timeout.InfiniteTimeSpan);
@@ -3048,6 +3243,18 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private string MutationConfirmationRequiredError() =>
         L("sqlEditor.error.mutationConfirmationRequired", "Confirmacao de mutacao necessaria.");
 
+    private string QueryParameterPromptRequiredError() =>
+        L("sqlEditor.error.queryParametersRequired", "Parametros obrigatorios para execucao.");
+
+    private bool IsExecutionDeferredResult(SqlEditorResultSet result)
+    {
+        if (result.Success)
+            return false;
+
+        return string.Equals(result.ErrorMessage, MutationConfirmationRequiredError(), StringComparison.Ordinal)
+            || string.Equals(result.ErrorMessage, QueryParameterPromptRequiredError(), StringComparison.Ordinal);
+    }
+
     private string BuildEstimateCacheKey(string? sql)
     {
         string statement = sql?.Trim() ?? string.Empty;
@@ -3224,6 +3431,9 @@ public sealed class SqlEditorViewModel : ViewModelBase
                 tab.FallbackTitle = draft.FallbackTitle;
             tab.Provider = draft.Provider;
             tab.ConnectionProfileId = draft.ConnectionProfileId;
+            tab.QueryParameterLastValues = draft.QueryParameterLastValues is { Count: > 0 }
+                ? new Dictionary<string, string>(draft.QueryParameterLastValues, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             tab.IsDirty = true;
 
             if (draft.IsActive)
@@ -3297,6 +3507,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
                 FilePath = item.tab.FilePath,
                 Provider = item.tab.Provider,
                 ConnectionProfileId = item.tab.ConnectionProfileId,
+                QueryParameterLastValues = new Dictionary<string, string>(item.tab.QueryParameterLastValues, StringComparer.OrdinalIgnoreCase),
                 TabOrder = item.index,
                 IsActive = item.index == Tabs.ActiveTabIndex,
                 SavedAtUtc = DateTimeOffset.UtcNow,
