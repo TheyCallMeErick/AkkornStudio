@@ -5,6 +5,7 @@ using Avalonia.Data;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AkkornStudio.UI.Services.SqlEditor.Reports;
@@ -18,6 +19,8 @@ namespace AkkornStudio.UI.Controls.SqlEditor;
 public partial class SqlResultPageControl : UserControl
 {
     private static readonly IValueConverter DbNullToTextConverter = new DbNullToTextValueConverter();
+    private static readonly IValueConverter DbNullToVisibilityConverter = new DbNullToVisibilityValueConverter();
+    private static readonly IValueConverter NonDbNullToVisibilityConverter = new NonDbNullToVisibilityValueConverter();
     private SqlResultPageViewModel? _subscribedViewModel;
     private readonly SqlEditorReportExportService _reportExportService = new();
     private readonly IBrush _pendingCellBackgroundBrush = ResolveBrush(
@@ -277,19 +280,59 @@ public partial class SqlResultPageControl : UserControl
                 Mode = BindingMode.OneWay,
                 Converter = DbNullToTextConverter,
             };
+            var isDbNullBinding = new Binding($"[{columnName}]")
+            {
+                Mode = BindingMode.OneWay,
+                Converter = DbNullToVisibilityConverter,
+            };
+            var isNonDbNullBinding = new Binding($"[{columnName}]")
+            {
+                Mode = BindingMode.OneWay,
+                Converter = NonDbNullToVisibilityConverter,
+            };
+            string columnType = ResolveColumnTypeLabel(column.DataType);
+
+            var headerPanel = new StackPanel
+            {
+                Spacing = 1,
+            };
+            headerPanel.Children.Add(new TextBlock
+            {
+                Text = $"▦ {columnName}",
+                FontWeight = FontWeight.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            headerPanel.Children.Add(new TextBlock
+            {
+                Text = columnType,
+                FontSize = 11,
+                Foreground = ResolveBrush("TextMutedBrush", new SolidColorBrush(Color.Parse("#9AA3B2"))),
+            });
+
             ResultGrid.Columns.Add(new DataGridTemplateColumn
             {
-                Header = columnName,
+                Header = headerPanel,
                 SortMemberPath = columnName,
                 IsReadOnly = !viewModel.IsColumnEditable(columnName),
                 CellTemplate = new FuncDataTemplate<DataRowView>((_, _) =>
                 {
-                    var textBlock = new TextBlock
+                    var cellRoot = new Grid();
+                    var valueText = new TextBlock
                     {
                         TextTrimming = TextTrimming.CharacterEllipsis,
                     };
-                    textBlock.Bind(TextBlock.TextProperty, displayBinding);
-                    return textBlock;
+                    valueText.Bind(TextBlock.TextProperty, displayBinding);
+                    valueText.Bind(Visual.IsVisibleProperty, isNonDbNullBinding);
+                    cellRoot.Children.Add(valueText);
+
+                    var nullText = new TextBlock
+                    {
+                        Text = "NULL",
+                        Classes = { "sql-null" },
+                    };
+                    nullText.Bind(Visual.IsVisibleProperty, isDbNullBinding);
+                    cellRoot.Children.Add(nullText);
+                    return cellRoot;
                 }),
                 CellEditingTemplate = new FuncDataTemplate<DataRowView>((_, _) =>
                 {
@@ -299,6 +342,66 @@ public partial class SqlResultPageControl : UserControl
                 }),
             });
         }
+    }
+
+    private static string ResolveColumnTypeLabel(Type columnType)
+    {
+        if (columnType == typeof(string))
+            return "text";
+        if (columnType == typeof(int) || columnType == typeof(long) || columnType == typeof(short))
+            return "int";
+        if (columnType == typeof(decimal) || columnType == typeof(double) || columnType == typeof(float))
+            return "number";
+        if (columnType == typeof(DateTime) || columnType == typeof(DateTimeOffset))
+            return "datetime";
+        if (columnType == typeof(bool))
+            return "bool";
+
+        return columnType.Name.ToLowerInvariant();
+    }
+
+    private void SearchBox_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        _ = sender;
+        if (e.Key != Key.Escape || DataContext is not SqlResultPageViewModel viewModel)
+            return;
+
+        viewModel.ClearSearchTextCommand.Execute(null);
+        e.Handled = true;
+    }
+
+    private void ColumnSearchBox_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        _ = sender;
+        if (e.Key != Key.Escape || DataContext is not SqlResultPageViewModel viewModel)
+            return;
+
+        viewModel.ClearColumnSearchTextCommand.Execute(null);
+        e.Handled = true;
+    }
+
+    private void DensityCompact_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        ResultGrid.RowHeight = 32;
+        ResultGrid.ColumnHeaderHeight = 40;
+    }
+
+    private void DensityComfortable_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        ResultGrid.RowHeight = 40;
+        ResultGrid.ColumnHeaderHeight = 44;
+    }
+
+    private void DensitySpacious_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        ResultGrid.RowHeight = 48;
+        ResultGrid.ColumnHeaderHeight = 48;
     }
 
     private sealed class DbNullToTextValueConverter : IValueConverter
@@ -319,6 +422,46 @@ public partial class SqlResultPageControl : UserControl
             _ = parameter;
             _ = culture;
             return value;
+        }
+    }
+
+    private sealed class DbNullToVisibilityValueConverter : IValueConverter
+    {
+        public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            _ = targetType;
+            _ = parameter;
+            _ = culture;
+            return value is null || value == DBNull.Value;
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            _ = value;
+            _ = targetType;
+            _ = parameter;
+            _ = culture;
+            return BindingOperations.DoNothing;
+        }
+    }
+
+    private sealed class NonDbNullToVisibilityValueConverter : IValueConverter
+    {
+        public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            _ = targetType;
+            _ = parameter;
+            _ = culture;
+            return value is not null && value != DBNull.Value;
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            _ = value;
+            _ = targetType;
+            _ = parameter;
+            _ = culture;
+            return BindingOperations.DoNothing;
         }
     }
 

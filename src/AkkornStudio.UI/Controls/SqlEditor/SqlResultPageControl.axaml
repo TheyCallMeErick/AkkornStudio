@@ -1,3 +1,4 @@
+﻿
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:AkkornStudio.UI.ViewModels"
@@ -7,17 +8,44 @@
              x:Class="AkkornStudio.UI.Controls.SqlEditor.SqlResultPageControl"
              x:Name="Root"
              x:DataType="vm:SqlResultPageViewModel">
+  <UserControl.Styles>
+    <Style Selector="DataGrid.sql-result-grid">
+      <Setter Property="RowHeight" Value="36"/>
+      <Setter Property="ColumnHeaderHeight" Value="42"/>
+      <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderSoftBrush}"/>
+      <Setter Property="VerticalGridLinesBrush" Value="Transparent"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridRow:selected">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.sql-null">
+      <Setter Property="FontStyle" Value="Italic"/>
+      <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+      <Setter Property="Opacity" Value="0.82"/>
+    </Style>
+    <Style Selector="Button.split-main">
+      <Setter Property="CornerRadius" Value="5,0,0,5"/>
+    </Style>
+    <Style Selector="Button.split-tail">
+      <Setter Property="CornerRadius" Value="0,5,5,0"/>
+      <Setter Property="Padding" Value="8,4"/>
+      <Setter Property="MinWidth" Value="28"/>
+    </Style>
+  </UserControl.Styles>
+
   <Grid Margin="8"
-        RowDefinitions="Auto,Auto,Auto,Auto,*"
-        ColumnDefinitions="280,*"
+        RowDefinitions="Auto,Auto,*"
         IsVisible="{Binding HasSession}">
     <Border Grid.Row="0"
-            Grid.ColumnSpan="2"
             Classes="surface-card"
             Padding="10">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
-            ColumnSpacing="8">
-        <Button Grid.Column="0"
+      <Grid RowDefinitions="Auto,Auto"
+            ColumnDefinitions="Auto,*,Auto"
+            RowSpacing="8"
+            ColumnSpacing="10">
+        <Button Grid.Row="0"
+                Grid.Column="0"
                 Classes="secondary compact"
                 Command="{Binding BackToEditorCommand}">
           <StackPanel Orientation="Horizontal" Spacing="6">
@@ -26,1062 +54,545 @@
           </StackPanel>
         </Button>
 
-        <TextBlock Grid.Column="1"
-                   VerticalAlignment="Center"
-                   Text="{Binding SqlText}"
-                   TextWrapping="NoWrap"
-                   TextTrimming="CharacterEllipsis"/>
-
-        <Border Grid.Column="2"
-                Classes="chip"
-                Padding="8,2">
-          <TextBlock Text="{Binding StatusText}"/>
-        </Border>
-
-        <Border Grid.Column="3"
-                Classes="chip"
-                Padding="8,2">
-          <TextBlock Text="{Binding RowCountText, StringFormat='Rows: {0}'}"/>
-        </Border>
-
-        <Border Grid.Column="4"
-                Classes="chip"
-                Padding="8,2">
-          <TextBlock Text="{Binding ColumnCountText, StringFormat='Columns: {0}'}"/>
-        </Border>
-
-        <Border Grid.Column="5"
-                Classes="chip"
-                Padding="8,2">
-          <TextBlock Text="{Binding EditabilityStatusText}"/>
-        </Border>
-
-        <Border Grid.Column="6"
-                Classes="chip"
-                Padding="8,2">
-          <TextBlock Text="{Binding PendingEditsCount, StringFormat='Pending: {0}'}"/>
-        </Border>
-
-        <Button Grid.Column="7"
-                Classes="secondary compact"
-                Command="{Binding CancelPendingEditsCommand}"
-                Content="Discard Pending"/>
-
-        <Button Grid.Column="8"
-                Classes="secondary compact"
-                Command="{Binding PreparePendingChangesPreviewCommand}"
-                Content="Preview Pending"/>
-
-        <Button Grid.Column="9"
-                Classes="secondary compact"
-                Command="{Binding GeneratePendingSqlCommand}"
-                Content="Generate SQL"/>
-
-        <Button Grid.Column="10"
-                Classes="secondary compact"
-                Command="{Binding CopyGeneratedPendingSqlCommand}"
-                Content="Copy SQL"/>
-
-        <Button Grid.Column="11"
-                Classes="secondary compact"
-                Command="{Binding SendGeneratedPendingSqlToEditorCommand}"
-                Content="Send to Editor"/>
-
-        <Button Grid.Column="12"
-                Classes="secondary compact"
-                Command="{Binding RefreshSessionCommand}"
-                Content="Refresh"/>
-
-        <CheckBox Grid.Column="13"
-                IsEnabled="{Binding IsTransactionModeAvailable}"
-                IsChecked="{Binding UseTransactionalExecution, Mode=TwoWay}"
-                Content="Tx Mode"/>
-
-        <Button Grid.Column="14"
-                Classes="danger compact"
-                Command="{Binding RequestExecutePendingChangesCommand}"
-                Content="Execute Pending"/>
-
-        <Button Grid.Column="15"
-                Classes="secondary compact"
-                Command="{Binding TogglePinCommand}"
-                Content="{Binding TogglePinText}"/>
-
-        <Button Grid.Column="16"
-                Classes="danger compact"
-                Command="{Binding CloseSessionCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
-            <TextBlock Text="Close Session"/>
-          </StackPanel>
-        </Button>
-
-        <Border Grid.Column="17"
-                Classes="chip"
-                Padding="8,2"
-                IsVisible="{Binding HasExecutionSafetyStatusText}">
-          <TextBlock Text="{Binding ExecutionSafetyStatusText}"
-                     Foreground="{StaticResource StatusWarningBrush}"
+        <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
+          <TextBlock Classes="txt-title"
+                     Text="Resultado da consulta"/>
+          <TextBlock Text="{Binding SqlText}"
+                     TextWrapping="NoWrap"
                      TextTrimming="CharacterEllipsis"
-                     MaxWidth="280"/>
-        </Border>
+                     FontFamily="{StaticResource MonoFont}"
+                     FontSize="12"/>
+          <TextBlock Text="{Binding ResultBreadcrumbText}"
+                     Foreground="{StaticResource TextSecondaryBrush}"
+                     TextTrimming="CharacterEllipsis"
+                     FontSize="11"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" Spacing="6">
+          <Border Classes="badge success"><TextBlock Text="{Binding StatusText}"/></Border>
+          <Border Classes="badge"><TextBlock Text="{Binding RowCountText, StringFormat='Rows: {0}'}"/></Border>
+          <Border Classes="badge"><TextBlock Text="{Binding ColumnCountText, StringFormat='Cols: {0}'}"/></Border>
+          <Border Classes="badge"><TextBlock Text="{Binding EditabilityStatusText}"/></Border>
+          <Border Classes="badge warning"><TextBlock Text="{Binding PendingEditsCount, StringFormat='Pending: {0}'}"/></Border>
+        </StackPanel>
+
+        <WrapPanel Grid.Row="1"
+                   Grid.Column="0"
+                   Grid.ColumnSpan="3"
+                   Orientation="Horizontal"
+                   VerticalAlignment="Center">
+          <Button Classes="secondary compact"
+                  Command="{Binding RefreshSessionCommand}"
+                  Content="Refresh"/>
+
+          <Grid ColumnDefinitions="Auto,Auto" Margin="8,0,0,0">
+            <Button Grid.Column="0"
+                    Classes="secondary compact split-main"
+                    Command="{Binding CopySelectedCellCommand}"
+                    Content="Copiar"/>
+            <Button Grid.Column="1"
+                    Classes="secondary compact split-tail"
+                    Content="?">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="220">
+                    <StackPanel Spacing="6">
+                      <Button Classes="secondary compact" Command="{Binding CopySelectedCellCommand}" Content="Copiar célula"/>
+                      <Button Classes="secondary compact" Command="{Binding CopySelectedRowAsJsonCommand}" Content="Copiar linha JSON"/>
+                      <Button Classes="secondary compact" Command="{Binding CopySelectedRowAsCsvCommand}" Content="Copiar linha CSV"/>
+                      <Button Classes="secondary compact" Command="{Binding CopySelectedRowAsMarkdownCommand}" Content="Copiar linha Markdown"/>
+                      <Separator/>
+                      <Button Classes="secondary compact" Command="{Binding CopyVisibleRowsAsJsonCommand}" Content="Copiar página JSON"/>
+                      <Button Classes="secondary compact" Command="{Binding CopyVisibleRowsAsCsvCommand}" Content="Copiar página CSV"/>
+                      <Button Classes="secondary compact" Command="{Binding CopySelectedColumnAsSqlInCommand}" Content="Copiar SQL IN"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+          </Grid>
+
+          <Grid ColumnDefinitions="Auto,Auto" Margin="8,0,0,0">
+            <Button Grid.Column="0"
+                    Classes="secondary compact split-main"
+                    Command="{Binding ExportVisibleRowsAsCsvCommand}"
+                    Content="Exportar"/>
+            <Button Grid.Column="1"
+                    Classes="secondary compact split-tail"
+                    Content="?">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="220">
+                    <StackPanel Spacing="6">
+                      <Button Classes="secondary compact" Command="{Binding ExportVisibleRowsAsCsvCommand}" Content="Exportar CSV"/>
+                      <Button Classes="secondary compact" Command="{Binding ExportVisibleRowsAsJsonCommand}" Content="Exportar JSON"/>
+                      <Button Classes="secondary compact" Click="ExportReportButton_Click" Content="Exportar relatório"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+          </Grid>
+
+          <Grid ColumnDefinitions="Auto,Auto" Margin="8,0,0,0">
+            <Button Grid.Column="0"
+                    Classes="secondary compact split-main"
+                    Command="{Binding PreparePendingChangesPreviewCommand}"
+                    Content="Pendências"/>
+            <Button Grid.Column="1"
+                    Classes="secondary compact split-tail"
+                    Content="?"
+                    IsEnabled="{Binding HasPendingEdits}">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="260">
+                    <StackPanel Spacing="6">
+                      <Button Classes="secondary compact" Command="{Binding PreparePendingChangesPreviewCommand}" Content="Preview pendências"/>
+                      <Button Classes="secondary compact" Command="{Binding GeneratePendingSqlCommand}" Content="Gerar SQL"/>
+                      <Button Classes="secondary compact" Command="{Binding CopyGeneratedPendingSqlCommand}" Content="Copiar SQL"/>
+                      <Button Classes="secondary compact" Command="{Binding SendGeneratedPendingSqlToEditorCommand}" Content="Enviar para editor"/>
+                      <Separator/>
+                      <Button Classes="secondary compact" Command="{Binding CancelPendingEditsCommand}" Content="Descartar pendências"/>
+                      <Button Classes="danger compact" Command="{Binding RequestExecutePendingChangesCommand}" Content="Executar pendências"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+          </Grid>
+
+          <ToggleButton Classes="secondary compact"
+                        Margin="8,0,0,0"
+                        IsChecked="{Binding UseTransactionalExecution, Mode=TwoWay}"
+                        IsEnabled="{Binding IsTransactionModeAvailable}">
+            <TextBlock Text="Tx Mode"/>
+          </ToggleButton>
+
+          <Button Classes="secondary compact"
+                  Margin="8,0,0,0"
+                  Command="{Binding TogglePinCommand}"
+                  Content="{Binding TogglePinText}"/>
+
+          <ToggleButton Classes="secondary compact"
+                        Margin="8,0,0,0"
+                        IsChecked="{Binding IsSidebarVisible, Mode=TwoWay}">
+            <TextBlock Text="Painel lateral"/>
+          </ToggleButton>
+
+          <ToggleButton Classes="secondary compact"
+                        Margin="8,0,0,0"
+                        IsChecked="{Binding IsBottomPanelVisible, Mode=TwoWay}">
+            <TextBlock Text="Painel inferior"/>
+          </ToggleButton>
+
+          <Button Classes="danger compact"
+                  Margin="8,0,0,0"
+                  Command="{Binding CloseSessionCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+              <TextBlock Text="Close Session"/>
+            </StackPanel>
+          </Button>
+        </WrapPanel>
       </Grid>
     </Border>
 
     <Border Grid.Row="1"
-            Grid.ColumnSpan="2"
-            Margin="0,8,0,0"
-            Classes="surface-card"
-            Padding="8"
-            IsVisible="{Binding HasSessions}">
-      <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                    VerticalScrollBarVisibility="Disabled">
-        <ItemsControl ItemsSource="{Binding Sessions}">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-              <StackPanel Orientation="Horizontal" Spacing="8"/>
-            </ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="result:SqlResultSession">
-              <Border Classes="surface-card"
-                      Padding="6">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <Button Classes="secondary compact"
-                          Command="{Binding DataContext.SelectSessionCommand, ElementName=Root}"
-                          CommandParameter="{Binding .}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                      <TextBlock Text="{Binding SqlText}"
-                                 MaxWidth="220"
-                                 TextTrimming="CharacterEllipsis"/>
-                      <TextBlock Text="Pinned"
-                                 IsVisible="{Binding IsPinned}"
-                                 Foreground="{StaticResource TextSecondaryBrush}"/>
-                    </StackPanel>
-                  </Button>
-                  <Button Classes="danger compact"
-                          Command="{Binding DataContext.CloseSessionTabCommand, ElementName=Root}"
-                          CommandParameter="{Binding .}"
-                          Content="x"/>
-                </StackPanel>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
-    </Border>
-
-    <Border Grid.Row="2"
-            Grid.ColumnSpan="2"
-            Margin="0,8,0,0"
-            Classes="surface-card"
-            Padding="10"
-            IsVisible="{Binding HasPendingPreviewPanel}">
-      <StackPanel Spacing="6">
-        <TextBlock Text="Pending ChangeSet Preview"
-                   FontWeight="{StaticResource FontWeightStrong}"/>
-        <TextBlock Text="Production-like connection detected: direct execution is blocked."
-                   Foreground="{StaticResource StatusWarningBrush}"
-                   IsVisible="{Binding IsProductionLikeConnectionContext}"/>
-        <TextBlock Text="{Binding TransactionModeStatusText}"
-                   Foreground="{StaticResource StatusWarningBrush}"
-                   IsVisible="{Binding HasTransactionModeStatusText}"/>
-        <TextBlock Text="{Binding PendingChangeSetSummaryText}"
-                   TextWrapping="Wrap"/>
-        <TextBlock Text="{Binding PendingDiffPreviewText}"
-                   TextWrapping="Wrap"
-                   Foreground="{StaticResource TextSecondaryBrush}"/>
-        <TextBox Text="{Binding GeneratedPendingSqlText}"
-                 IsReadOnly="True"
-                 AcceptsReturn="True"
-                 TextWrapping="Wrap"
-                 MinHeight="74"
-                 FontFamily="{StaticResource MonoFont}"/>
-        <StackPanel Orientation="Horizontal"
-                    Spacing="8">
-          <Button Classes="secondary compact"
-                  Command="{Binding ClearPendingChangesPreviewCommand}"
-                  Content="Clear Preview"/>
-          <Button Classes="secondary compact"
-                  Command="{Binding CopyGeneratedPendingSqlCommand}"
-                  Content="Copy SQL"/>
-          <Button Classes="secondary compact"
-                  Command="{Binding SendGeneratedPendingSqlToEditorCommand}"
-                  Content="Send to Editor"/>
-          <Button Classes="danger compact"
-                  Command="{Binding RequestExecutePendingChangesCommand}"
-                  Content="Execute Pending"/>
-        </StackPanel>
-
-        <Border Classes="surface-card"
-                Padding="8"
-                IsVisible="{Binding IsPendingExecutionConfirmationVisible}">
-          <StackPanel Spacing="6">
-            <TextBlock Text="Direct execution confirmation required."
-                       FontWeight="{StaticResource FontWeightStrong}"/>
-            <TextBlock Text="The generated UPDATE statements will be validated with mutation guard and then executed."
-                       TextWrapping="Wrap"
-                       Foreground="{StaticResource TextSecondaryBrush}"/>
-            <StackPanel Orientation="Horizontal"
-                        Spacing="8">
-              <Button Classes="danger compact"
-                      Command="{Binding ConfirmExecutePendingChangesCommand}"
-                      Content="{Binding ConfirmExecutePendingChangesText}"/>
-              <Button Classes="secondary compact"
-                      Command="{Binding ConfirmExecutePendingChangesRollbackCommand}"
-                      Content="Confirm Rollback"
-                      IsVisible="{Binding HasTransactionRollbackOption}"/>
-              <Button Classes="secondary compact"
-                      Command="{Binding CancelExecutePendingChangesCommand}"
-                      Content="Cancel"/>
-            </StackPanel>
-          </StackPanel>
-        </Border>
-
-        <TextBlock Text="{Binding PendingExecutionStatusText}"
-                   IsVisible="{Binding HasPendingExecutionStatusText}"
-                   TextWrapping="Wrap"
-                   Foreground="{StaticResource TextSecondaryBrush}"/>
-      </StackPanel>
-    </Border>
-
-    <Border Grid.Row="3"
-            Grid.ColumnSpan="2"
             Margin="0,8,0,8"
             Classes="surface-card"
-            Padding="10">
-      <Grid RowDefinitions="Auto,Auto"
-            ColumnDefinitions="*,*,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
-            ColumnSpacing="12">
-        <TextBlock Grid.Row="0"
-                   Grid.Column="0"
-                   Grid.ColumnSpan="18"
-                   Text="{Binding ResultBreadcrumbText}"
-                   Foreground="{StaticResource TextSecondaryBrush}"
-                   TextTrimming="CharacterEllipsis"/>
-
-        <TextBlock Grid.Row="1"
-                   Grid.Column="0"
-                   Text="{Binding ConnectionId, StringFormat='Connection: {0}'}"/>
-        <TextBlock Grid.Row="1"
-                   Grid.Column="1"
-                   Text="{Binding DatabaseName, StringFormat='Database: {0}'}"/>
-        <TextBlock Grid.Row="1"
-                   Grid.Column="2"
-                   Text="{Binding ExecutedAtText, StringFormat='Executed At: {0}'}"/>
-        <TextBox Grid.Row="1"
-                 Grid.Column="3"
-                 Width="220"
-                 Watermark="Search all columns"
-                 Text="{Binding SearchText}"/>
-        <ComboBox Grid.Row="1"
-                  Grid.Column="4"
-                  Width="180"
-                  ItemsSource="{Binding AvailableSortColumns}"
-                  SelectedItem="{Binding SelectedSortColumn, Mode=TwoWay}"/>
-        <Button Grid.Row="1"
-                Grid.Column="5"
-                Classes="secondary compact"
-                Command="{Binding ToggleSortDirectionCommand}"
-                Content="{Binding SortDirectionText}"/>
-        <Button Grid.Row="1"
-                Grid.Column="6"
-                Classes="secondary compact"
-                Command="{Binding AddSortCriterionCommand}"
-                Content="Add sort"/>
-        <Button Grid.Row="1"
-                Grid.Column="7"
-                Classes="secondary compact"
-                Command="{Binding ClearSortCriteriaCommand}"
-                Content="Clear sorts"/>
-        <ComboBox Grid.Row="1"
-                  Grid.Column="8"
-                  Width="170"
-                  ItemsSource="{Binding AvailableSortColumns}"
-                  SelectedItem="{Binding SelectedGroupColumn, Mode=TwoWay}"/>
-        <Button Grid.Row="1"
-                Grid.Column="9"
-                Classes="secondary compact"
-                Command="{Binding AddGroupColumnCommand}"
-                Content="Add group"/>
-        <Button Grid.Row="1"
-                Grid.Column="10"
-                Classes="secondary compact"
-                Command="{Binding ClearGroupColumnsCommand}"
-                Content="Clear groups"/>
-        <ComboBox Grid.Row="1"
-                  Grid.Column="11"
-                  Width="170"
-                  ItemsSource="{Binding AvailableSortColumns}"
-                  SelectedItem="{Binding SelectedFilterColumn, Mode=TwoWay}"/>
-        <ComboBox Grid.Row="1"
-                  Grid.Column="12"
-                  Width="130"
-                  ItemsSource="{Binding AvailableFilterOperations}"
-                  SelectedItem="{Binding SelectedFilterOperation, Mode=TwoWay}"/>
-        <TextBox Grid.Row="1"
-                 Grid.Column="13"
-                 Width="170"
-                 Watermark="Column filter"
-                 Text="{Binding ColumnFilterValue}"/>
-        <StackPanel Grid.Row="1"
-                    Grid.Column="14"
-                    Orientation="Horizontal"
-                    Spacing="6">
-          <Button Classes="secondary compact"
-                  Command="{Binding ApplyColumnFilterCommand}"
-                  Content="Add filter"/>
-          <Button Classes="secondary compact"
-                  Command="{Binding ClearColumnFilterCommand}"
-                  Content="Clear filters"/>
+            Padding="8"
+            IsVisible="{Binding HasPendingPreviewPanel}">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <StackPanel Grid.Column="0" Spacing="4">
+          <TextBlock Text="Pendências"
+                     FontWeight="{StaticResource FontWeightStrong}"/>
+          <TextBlock Text="{Binding PendingChangeSetSummaryText}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding PendingDiffPreviewText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding PendingExecutionStatusText}" IsVisible="{Binding HasPendingExecutionStatusText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
         </StackPanel>
-        <TextBox Grid.Row="1"
-                 Grid.Column="15"
-                 Width="220"
-                 Watermark="Session annotation"
-                 Text="{Binding SessionAnnotationText, Mode=TwoWay}"/>
-        <Button Grid.Row="1"
-                Grid.Column="16"
-                Classes="secondary compact"
-                Command="{Binding SaveSessionAnnotationCommand}"
-                Content="Save note"/>
-        <Button Grid.Row="1"
-                Grid.Column="17"
-                Classes="secondary compact"
-                Command="{Binding ClearSessionAnnotationCommand}"
-                Content="Clear note"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+          <Button Classes="secondary compact" Command="{Binding ClearPendingChangesPreviewCommand}" Content="Fechar"/>
+          <Button Classes="danger compact" Command="{Binding RequestExecutePendingChangesCommand}" Content="Executar"/>
+        </StackPanel>
       </Grid>
     </Border>
 
-    <Border Grid.Row="4"
-            Grid.Column="0"
-            Margin="0,0,8,0"
-            Classes="surface-card"
-            Padding="8">
-      <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*">
-        <TextBlock Grid.Row="0"
-                   Text="Recent Sessions"
-                   FontWeight="{StaticResource FontWeightStrong}"/>
-
-        <ListBox Grid.Row="1"
-                 Margin="0,8,0,0"
-                 ItemsSource="{Binding Sessions}"
-                 SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
-                 IsVisible="{Binding HasSessions}">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="result:SqlResultSession">
-              <Border Classes="surface-card"
-                      Margin="0,0,0,6"
-                      Padding="8">
-                <Grid RowDefinitions="Auto,Auto,Auto"
-                      ColumnDefinitions="*,Auto">
-                  <TextBlock Grid.Row="0"
-                             Grid.Column="0"
-                             Text="{Binding SqlText}"
-                             TextTrimming="CharacterEllipsis"
-                             TextWrapping="NoWrap"/>
-                  <TextBlock Grid.Row="1"
-                             Grid.Column="0"
-                             Margin="0,4,0,0"
-                             Text="{Binding ExecutedAt.LocalDateTime, StringFormat='dd/MM HH:mm:ss'}"
-                             Foreground="{StaticResource TextSecondaryBrush}"/>
-                  <TextBlock Grid.Row="2"
-                             Grid.Column="0"
-                             Margin="0,4,0,0"
-                             Text="{Binding Annotation, StringFormat='Note: {0}'}"
-                             TextWrapping="Wrap"
-                             IsVisible="{Binding Annotation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                             Foreground="{StaticResource TextSecondaryBrush}"/>
-                  <Border Grid.Row="0"
-                          Grid.Column="1"
-                          Grid.RowSpan="3"
-                          Classes="chip"
-                          IsVisible="{Binding IsPinned}"
-                          Padding="6,2">
-                    <TextBlock Text="Pinned"/>
-                  </Border>
+    <Grid Grid.Row="2" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+      <Border Grid.Column="0"
+              Width="308"
+              Classes="surface-card"
+              Padding="8"
+              IsVisible="{Binding IsSidebarVisible}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="8">
+            <Expander Classes="app-accordion" IsExpanded="True" IsVisible="{Binding HasSessions}">
+              <Expander.Header>
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="Sessões recentes"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Sessions.Count}" Foreground="{StaticResource TextSecondaryBrush}"/>
                 </Grid>
-              </Border>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+              </Expander.Header>
+              <ListBox ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession, Mode=TwoWay}" MaxHeight="220">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="result:SqlResultSession">
+                    <Border Classes="list-row" Margin="0,0,0,6">
+                      <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding SqlText}" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding ExecutedAt.LocalDateTime, StringFormat='dd/MM HH:mm:ss'}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding ResultSet.Data.Rows.Count, StringFormat='{}{0} linhas'}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <Button Grid.Row="0"
+                                Grid.Column="1"
+                                Classes="secondary compact"
+                                Command="{Binding DataContext.SelectSessionCommand, ElementName=Root}"
+                                CommandParameter="{Binding .}"
+                                Content="Open"/>
+                        <Button Grid.Row="0"
+                                Grid.Column="2"
+                                Classes="danger compact"
+                                Command="{Binding DataContext.CloseSessionTabCommand, ElementName=Root}"
+                                CommandParameter="{Binding .}"
+                                Content="x"/>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Expander>
 
-        <Grid Grid.Row="2"
-              Margin="0,8,0,0"
-              ColumnDefinitions="*,Auto">
-          <TextBlock Grid.Column="0"
-                     Text="Group Criteria"
-                     FontWeight="{StaticResource FontWeightStrong}"/>
-          <Button Grid.Column="1"
-                  Classes="secondary compact"
-                  Command="{Binding ClearGroupColumnsCommand}"
-                  Content="Clear"/>
-        </Grid>
-
-        <ItemsControl Grid.Row="3"
-                      Margin="0,6,0,0"
-                      ItemsSource="{Binding ActiveGroupColumns}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Grid Margin="0,0,0,4"
-                    ColumnDefinitions="*,Auto"
-                    ColumnSpacing="6">
-                <TextBlock Grid.Column="0"
-                           VerticalAlignment="Center"
-                           Text="{Binding ColumnName}"/>
-                <Button Grid.Column="1"
-                        Classes="secondary compact"
-                        Command="{Binding DataContext.RemoveGroupColumnCommand, ElementName=Root}"
-                        CommandParameter="{Binding .}"
-                        Content="x"/>
-              </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <Grid Grid.Row="4"
-              Margin="0,8,0,0"
-              ColumnDefinitions="*,Auto"
-              IsVisible="{Binding HasGroupBuckets}">
-          <TextBlock Grid.Column="0"
-                     Text="Group Buckets"
-                     FontWeight="{StaticResource FontWeightStrong}"/>
-        </Grid>
-
-        <ItemsControl Grid.Row="5"
-                      Margin="0,6,0,0"
-                      ItemsSource="{Binding GroupBuckets}"
-                      IsVisible="{Binding HasGroupBuckets}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Grid Margin="0,0,0,4"
-                    ColumnDefinitions="*,Auto,Auto"
-                    ColumnSpacing="6">
-                <TextBlock Grid.Column="0"
-                           VerticalAlignment="Center"
-                           Text="{Binding GroupKey}"/>
-                <TextBlock Grid.Column="1"
-                           VerticalAlignment="Center"
-                           Text="{Binding RowCount}"
-                           Foreground="{StaticResource TextSecondaryBrush}"/>
-                <Button Grid.Column="2"
-                        Classes="secondary compact"
-                        Command="{Binding DataContext.ToggleGroupBucketCollapsedCommand, ElementName=Root}"
-                        CommandParameter="{Binding .}"
-                        Content="{Binding CollapseActionText}"/>
-              </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <Grid Grid.Row="6"
-              Margin="0,8,0,0"
-              ColumnDefinitions="*,Auto">
-          <TextBlock Grid.Column="0"
-                     Text="Sort Criteria"
-                     FontWeight="{StaticResource FontWeightStrong}"/>
-          <Button Grid.Column="1"
-                  Classes="secondary compact"
-                  Command="{Binding ClearSortCriteriaCommand}"
-                  Content="Clear"/>
-        </Grid>
-
-        <ItemsControl Grid.Row="7"
-                      Margin="0,6,0,0"
-                      ItemsSource="{Binding ActiveSortCriteria}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Grid Margin="0,0,0,4"
-                    ColumnDefinitions="*,Auto,Auto"
-                    ColumnSpacing="6">
-                <TextBlock Grid.Column="0"
-                           VerticalAlignment="Center"
-                           Text="{Binding ColumnName}"/>
-                <TextBlock Grid.Column="1"
-                           VerticalAlignment="Center"
-                           Text="{Binding DirectionText}"
-                           Foreground="{StaticResource TextSecondaryBrush}"/>
-                <Button Grid.Column="2"
-                        Classes="secondary compact"
-                        Command="{Binding DataContext.RemoveSortCriterionCommand, ElementName=Root}"
-                        CommandParameter="{Binding .}"
-                        Content="x"/>
-              </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <Grid Grid.Row="8"
-              Margin="0,8,0,0"
-              ColumnDefinitions="*,Auto">
-          <TextBlock Grid.Column="0"
-                     Text="Filter Criteria"
-                     FontWeight="{StaticResource FontWeightStrong}"/>
-          <Button Grid.Column="1"
-                  Classes="secondary compact"
-                  Command="{Binding ClearColumnFilterCommand}"
-                  Content="Clear"/>
-        </Grid>
-
-        <ItemsControl Grid.Row="9"
-                      Margin="0,6,0,0"
-                      ItemsSource="{Binding ActiveFilterCriteria}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Grid Margin="0,0,0,4"
-                    ColumnDefinitions="*,Auto,Auto,Auto"
-                    ColumnSpacing="6">
-                <TextBlock Grid.Column="0"
-                           VerticalAlignment="Center"
-                           Text="{Binding ColumnName}"/>
-                <TextBlock Grid.Column="1"
-                           VerticalAlignment="Center"
-                           Text="{Binding OperationText}"
-                           Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock Grid.Column="2"
-                           VerticalAlignment="Center"
-                           Text="{Binding Value}"/>
-                <Button Grid.Column="3"
-                        Classes="secondary compact"
-                        Command="{Binding DataContext.RemoveColumnFilterCommand, ElementName=Root}"
-                        CommandParameter="{Binding .}"
-                        Content="x"/>
-              </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <Grid Grid.Row="10"
-              Margin="0,8,0,0"
-              ColumnDefinitions="*,Auto">
-          <TextBlock Grid.Column="0"
-                     Text="Visible Columns"
-                     FontWeight="{StaticResource FontWeightStrong}"/>
-          <Button Grid.Column="1"
-                  Classes="secondary compact"
-                  Command="{Binding ShowAllColumnsCommand}"
-                  Content="Show all"/>
-        </Grid>
-
-        <ScrollViewer Grid.Row="11"
-                      Margin="0,8,0,0"
-                      MaxHeight="520"
-                      VerticalScrollBarVisibility="Auto">
-          <StackPanel Spacing="10">
-            <ItemsControl ItemsSource="{Binding ColumnVisibilityItems}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Grid Margin="0,0,0,4"
-                        ColumnDefinitions="*,Auto,Auto,Auto"
-                        ColumnSpacing="4">
-                    <CheckBox Grid.Column="0"
-                              Content="{Binding ColumnName}"
-                              IsChecked="{Binding IsVisible, Mode=TwoWay}"/>
-                    <Button Grid.Column="1"
-                            Classes="secondary compact"
-                            Command="{Binding DataContext.MoveColumnUpCommand, ElementName=Root}"
-                            CommandParameter="{Binding .}"
-                            Content="Up"/>
-                    <Button Grid.Column="2"
-                            Classes="secondary compact"
-                            Command="{Binding DataContext.MoveColumnDownCommand, ElementName=Root}"
-                            CommandParameter="{Binding .}"
-                            Content="Down"/>
-                    <Button Grid.Column="3"
-                            Classes="secondary compact"
-                            Command="{Binding DataContext.ToggleColumnFrozenCommand, ElementName=Root}"
-                            CommandParameter="{Binding .}"
-                            Content="{Binding FrozenActionText}"/>
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <Border Classes="surface-card" Padding="8">
+            <Expander Classes="app-accordion" IsExpanded="True">
+              <Expander.Header>
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Colunas visíveis"/><TextBlock Grid.Column="1" Text="{Binding VisibleColumnsSummaryText}" Foreground="{StaticResource TextSecondaryBrush}"/></Grid>
+              </Expander.Header>
               <StackPanel Spacing="6">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                  <TextBlock Grid.Column="0"
-                             Text="Snippets"
-                             FontWeight="{StaticResource FontWeightStrong}"/>
-                  <TextBlock Grid.Column="1"
-                             Text="{Binding FavoriteSnippetCountText}"
-                             Foreground="{StaticResource TextSecondaryBrush}"/>
+                  <TextBox Grid.Column="0" Watermark="Buscar coluna..." Text="{Binding ColumnSearchText}" KeyDown="ColumnSearchBox_OnKeyDown"/>
+                  <Button Grid.Column="1" Classes="secondary compact" Command="{Binding ClearColumnSearchTextCommand}" Content="×" IsVisible="{Binding HasColumnSearchText}"/>
                 </Grid>
-
-                <TextBox Watermark="Snippet name"
-                         Text="{Binding SnippetNameInput, Mode=TwoWay}"/>
-                <TextBox Watermark="Snippet description"
-                         Text="{Binding SnippetDescriptionInput, Mode=TwoWay}"/>
-                <TextBox Watermark="Tags"
-                         Text="{Binding SnippetTagsInput, Mode=TwoWay}"/>
-
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-                  <Button Grid.Column="0"
-                          Classes="secondary compact"
-                          Command="{Binding SaveCurrentSqlAsSnippetCommand}"
-                          Content="Save Snippet"/>
-                  <Button Grid.Column="1"
-                          Classes="secondary compact"
-                          Command="{Binding ToggleCurrentSqlFavoriteCommand}"
-                          Content="{Binding ToggleCurrentSqlFavoriteText}"/>
-                </Grid>
-
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                  <Button Grid.Column="0"
-                          Classes="secondary compact"
-                          Command="{Binding OpenSelectedSnippetInEditorCommand}"
-                          Content="Open Selected"/>
-                  <Button Grid.Column="1"
-                          Classes="secondary compact"
-                          Command="{Binding DeleteSelectedSnippetCommand}"
-                          Content="Delete Selected"/>
-                </Grid>
-
-                <ListBox ItemsSource="{Binding SavedSnippets}"
-                         SelectedItem="{Binding SelectedSnippet, Mode=TwoWay}"
-                         MaxHeight="180">
-                  <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="result:SqlSavedQuerySnippet">
-                      <Border Classes="surface-card" Margin="0,0,0,6" Padding="6">
-                        <Grid RowDefinitions="Auto,Auto,Auto"
-                              ColumnDefinitions="*,Auto,Auto"
-                              ColumnSpacing="6">
-                          <TextBlock Grid.Row="0"
-                                     Grid.Column="0"
-                                     Text="{Binding Name}"
-                                     FontWeight="{StaticResource FontWeightStrong}"
-                                     TextTrimming="CharacterEllipsis"/>
-                          <TextBlock Grid.Row="1"
-                                     Grid.Column="0"
-                                     Text="{Binding Description}"
-                                     Foreground="{StaticResource TextSecondaryBrush}"
-                                     TextWrapping="Wrap"/>
-                          <TextBlock Grid.Row="2"
-                                     Grid.Column="0"
-                                     Text="{Binding Tags}"
-                                     Foreground="{StaticResource TextSecondaryBrush}"
-                                     TextTrimming="CharacterEllipsis"/>
-                          <TextBlock Grid.Row="0"
-                                     Grid.Column="1"
-                                     Text="Fav"
-                                     IsVisible="{Binding IsFavorite}"
-                                     Foreground="{StaticResource TextSecondaryBrush}"/>
-                          <Button Grid.Row="0"
-                                  Grid.Column="2"
-                                  Classes="secondary compact"
-                                  Command="{Binding DataContext.OpenSnippetInEditorCommand, ElementName=Root}"
-                                  CommandParameter="{Binding .}"
-                                  Content="Open"/>
-                        </Grid>
-                      </Border>
+                <Button Classes="secondary compact" Command="{Binding ShowAllColumnsCommand}" Content="Mostrar todas" HorizontalAlignment="Left"/>
+                <ItemsControl ItemsSource="{Binding FilteredColumnVisibilityItems}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4" Margin="0,0,0,4">
+                        <CheckBox Grid.Column="0" Content="{Binding ColumnName}" IsChecked="{Binding IsVisible, Mode=TwoWay}"/>
+                        <Button Grid.Column="1" Classes="secondary compact" Content="?">
+                          <Button.Flyout>
+                            <Flyout Placement="RightEdgeAlignedTop">
+                              <Border Classes="surface-card" Padding="8" MinWidth="190">
+                                <StackPanel Spacing="6">
+                                  <Button Classes="secondary compact" Command="{Binding DataContext.MoveColumnUpCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="Mover para cima"/>
+                                  <Button Classes="secondary compact" Command="{Binding DataContext.MoveColumnDownCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="Mover para baixo"/>
+                                  <Button Classes="secondary compact" Command="{Binding DataContext.ToggleColumnFrozenCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="{Binding FrozenActionText}"/>
+                                </StackPanel>
+                              </Border>
+                            </Flyout>
+                          </Button.Flyout>
+                        </Button>
+                      </Grid>
                     </DataTemplate>
-                  </ListBox.ItemTemplate>
-                </ListBox>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Expander>
 
-                <Border Classes="surface-card" Padding="6">
-                  <StackPanel Spacing="6">
-                    <TextBlock Text="Quick Templates"
-                               FontWeight="{StaticResource FontWeightStrong}"/>
-                    <ComboBox ItemsSource="{Binding AvailableSqlTemplates}"
-                              SelectedItem="{Binding SelectedSqlTemplate, Mode=TwoWay}">
-                      <ComboBox.ItemTemplate>
-                        <DataTemplate>
-                          <TextBlock Text="{Binding Name}"/>
-                        </DataTemplate>
-                      </ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <TextBlock Text="{Binding SelectedSqlTemplate.Description}"
-                               TextWrapping="Wrap"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
-                    <Button Classes="secondary compact"
-                            Command="{Binding SendSelectedSqlTemplateToEditorCommand}"
-                            Content="Send Template to Editor"/>
-                  </StackPanel>
+            <Expander Classes="app-accordion" IsExpanded="False">
+              <Expander.Header>
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Filtros"/><TextBlock Grid.Column="1" Text="{Binding ActiveFilterCount}" Foreground="{StaticResource TextSecondaryBrush}"/></Grid>
+              </Expander.Header>
+              <StackPanel Spacing="6">
+                <ItemsControl ItemsSource="{Binding ActiveFilterCriteria}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                          <TextBlock Text="{Binding ColumnName}"/>
+                          <TextBlock Text="{Binding OperationText}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                          <TextBlock Text="{Binding Value}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="secondary compact" Command="{Binding DataContext.RemoveColumnFilterCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="×"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="secondary compact" Command="{Binding ClearColumnFilterCommand}" Content="Limpar filtros"/>
+              </StackPanel>
+            </Expander>
+
+            <Expander Classes="app-accordion" IsExpanded="False">
+              <Expander.Header>
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Ordenação"/><TextBlock Grid.Column="1" Text="{Binding ActiveSortCount}" Foreground="{StaticResource TextSecondaryBrush}"/></Grid>
+              </Expander.Header>
+              <StackPanel Spacing="6">
+                <ItemsControl ItemsSource="{Binding ActiveSortCriteria}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                          <TextBlock Text="{Binding ColumnName}"/>
+                          <TextBlock Text="{Binding DirectionText}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="secondary compact" Command="{Binding DataContext.RemoveSortCriterionCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="×"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="secondary compact" Command="{Binding ClearSortCriteriaCommand}" Content="Limpar ordenação"/>
+              </StackPanel>
+            </Expander>
+
+            <Expander Classes="app-accordion" IsExpanded="False">
+              <Expander.Header>
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Agrupamento"/><TextBlock Grid.Column="1" Text="{Binding ActiveGroupCount}" Foreground="{StaticResource TextSecondaryBrush}"/></Grid>
+              </Expander.Header>
+              <StackPanel Spacing="6">
+                <ItemsControl ItemsSource="{Binding ActiveGroupColumns}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                        <TextBlock Grid.Column="0" Text="{Binding ColumnName}"/>
+                        <Button Grid.Column="1" Classes="secondary compact" Command="{Binding DataContext.RemoveGroupColumnCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="×"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="secondary compact" Command="{Binding ClearGroupColumnsCommand}" Content="Limpar agrupamentos"/>
+              </StackPanel>
+            </Expander>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+
+      <Border Grid.Column="1" Classes="surface-card" Padding="8">
+        <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="8">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+            <Grid Grid.Column="0" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <TextBox Grid.Column="0"
+                       x:Name="SearchBox"
+                       Watermark="Buscar nos resultados..."
+                       Text="{Binding SearchText}"
+                       KeyDown="SearchBox_OnKeyDown"/>
+              <Button Grid.Column="1" Classes="secondary compact" Command="{Binding ClearSearchTextCommand}" Content="×" IsVisible="{Binding HasSearchText}"/>
+            </Grid>
+
+            <Button Grid.Column="1" Classes="secondary compact" Content="Filtros ?">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="240">
+                    <StackPanel Spacing="6">
+                      <ComboBox ItemsSource="{Binding AvailableSortColumns}" SelectedItem="{Binding SelectedFilterColumn, Mode=TwoWay}"/>
+                      <ComboBox ItemsSource="{Binding AvailableFilterOperations}" SelectedItem="{Binding SelectedFilterOperation, Mode=TwoWay}"/>
+                      <TextBox Watermark="Valor" Text="{Binding ColumnFilterValue}"/>
+                      <Button Classes="secondary compact" Command="{Binding ApplyColumnFilterCommand}" Content="Adicionar filtro"/>
+                      <Button Classes="secondary compact" Command="{Binding ClearColumnFilterCommand}" Content="Limpar filtros"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+
+            <Button Grid.Column="2" Classes="secondary compact" Content="Ordenar ?">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="220">
+                    <StackPanel Spacing="6">
+                      <ComboBox ItemsSource="{Binding AvailableSortColumns}" SelectedItem="{Binding SelectedSortColumn, Mode=TwoWay}"/>
+                      <Button Classes="secondary compact" Command="{Binding ToggleSortDirectionCommand}" Content="{Binding SortDirectionText}"/>
+                      <Button Classes="secondary compact" Command="{Binding AddSortCriterionCommand}" Content="Adicionar ordenação"/>
+                      <Button Classes="secondary compact" Command="{Binding ClearSortCriteriaCommand}" Content="Limpar ordenações"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+
+            <Button Grid.Column="3" Classes="secondary compact" Content="Agrupar ?">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="220">
+                    <StackPanel Spacing="6">
+                      <ComboBox ItemsSource="{Binding AvailableSortColumns}" SelectedItem="{Binding SelectedGroupColumn, Mode=TwoWay}"/>
+                      <Button Classes="secondary compact" Command="{Binding AddGroupColumnCommand}" Content="Agrupar por coluna"/>
+                      <Button Classes="secondary compact" Command="{Binding ClearGroupColumnsCommand}" Content="Limpar agrupamentos"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+
+            <Button Grid.Column="4" Classes="secondary compact" Content="Colunas ?">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="200">
+                    <StackPanel Spacing="6">
+                      <Button Classes="secondary compact" Command="{Binding ShowAllColumnsCommand}" Content="Mostrar todas"/>
+                      <TextBlock Text="Reordenação e freeze no painel lateral." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" FontSize="11"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+
+            <Button Grid.Column="5" Classes="secondary compact" Content="Densidade">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="180">
+                    <StackPanel Spacing="6">
+                      <Button Classes="secondary compact" Click="DensityCompact_Click" Content="Compacta"/>
+                      <Button Classes="secondary compact" Click="DensityComfortable_Click" Content="Confortável"/>
+                      <Button Classes="secondary compact" Click="DensitySpacious_Click" Content="Espaçosa"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+          </Grid>
+
+          <DataGrid Grid.Row="1"
+                    x:Name="ResultGrid"
+                    Classes="sql-result-grid"
+                    ItemsSource="{Binding RowsView}"
+                    SelectedItem="{Binding SelectedRowItem, Mode=TwoWay}"
+                    IsReadOnly="False"
+                    AutoGenerateColumns="False"
+                    FrozenColumnCount="{Binding FrozenColumnCount}"
+                    SelectionMode="Extended"
+                    CellPointerPressed="ResultGrid_OnCellPointerPressed"
+                    CellEditEnding="ResultGrid_OnCellEditEnding">
+            <DataGrid.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Copiar célula" Command="{Binding CopySelectedCellCommand}"/>
+                <MenuItem Header="Copiar linha JSON" Command="{Binding CopySelectedRowAsJsonCommand}"/>
+                <MenuItem Header="Copiar linha CSV" Command="{Binding CopySelectedRowAsCsvCommand}"/>
+                <MenuItem Header="Copiar linha Markdown" Command="{Binding CopySelectedRowAsMarkdownCommand}"/>
+                <Separator/>
+                <MenuItem Header="Filtrar por este valor" Command="{Binding FilterBySelectedCellValueCommand}"/>
+                <MenuItem Header="Ordenar ASC" Command="{Binding SortSelectedColumnAscendingCommand}"/>
+                <MenuItem Header="Ordenar DESC" Command="{Binding SortSelectedColumnDescendingCommand}"/>
+                <MenuItem Header="Ocultar coluna" Command="{Binding HideSelectedCellColumnCommand}"/>
+                <Separator/>
+                <MenuItem Header="Ver detalhes da linha" Command="{Binding OpenDetailsTabCommand}"/>
+                <MenuItem Header="Gerar WHERE" Command="{Binding GenerateWhereClauseCommand}"/>
+                <MenuItem Header="Abrir FK relacionada" Command="{Binding NavigateSelectedForeignKeyCommand}"/>
+              </ContextMenu>
+            </DataGrid.ContextMenu>
+          </DataGrid>
+
+          <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="8">
+            <Button Grid.Column="0" Classes="secondary compact" Command="{Binding FirstPageCommand}" Content="‹‹"/>
+            <Button Grid.Column="1" Classes="secondary compact" Command="{Binding PreviousPageCommand}" Content="‹"/>
+            <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Página" Foreground="{StaticResource TextSecondaryBrush}"/>
+            <TextBlock Grid.Column="3" VerticalAlignment="Center" Text="{Binding PageSummaryText}"/>
+            <Button Grid.Column="4" Classes="secondary compact" Command="{Binding NextPageCommand}" Content="›"/>
+            <Button Grid.Column="5" Classes="secondary compact" Command="{Binding LastPageCommand}" Content="››"/>
+            <TextBlock Grid.Column="6" VerticalAlignment="Center" Text="{Binding RowWindowText, StringFormat='Linhas {0} de'}" Foreground="{StaticResource TextSecondaryBrush}"/>
+            <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="6">
+              <TextBlock VerticalAlignment="Center" Text="{Binding RowCountText}" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <ComboBox Width="92" ItemsSource="{Binding AvailablePageSizes}" SelectedItem="{Binding PageSize, Mode=TwoWay}"/>
+            </StackPanel>
+          </Grid>
+
+          <Border Grid.Row="3"
+                  Classes="surface-card"
+                  Padding="8"
+                  IsVisible="{Binding IsBottomPanelVisible}">
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+              <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="6">
+                <Button Grid.Column="0" Classes="secondary compact" Command="{Binding OpenDetailsTabCommand}" Content="Detalhes"/>
+                <Button Grid.Column="1" Classes="secondary compact" Command="{Binding OpenColumnProfilesTabCommand}" Content="Perfil"/>
+                <Button Grid.Column="2" Classes="secondary compact" Command="{Binding OpenComparisonTabCommand}" Content="Comparação"/>
+                <Button Grid.Column="3" Classes="secondary compact" Command="{Binding OpenMessagesTabCommand}" Content="Mensagens"/>
+                <Border Grid.Column="4" Classes="badge" IsVisible="{Binding HasSelectedCell}">
+                  <TextBlock Text="{Binding SelectedCellSummary}"/>
                 </Border>
+                <Button Grid.Column="5" Classes="secondary compact" Command="{Binding ToggleBottomPanelCommand}" Content="Fechar"/>
+              </Grid>
 
-                <Border Classes="surface-card" Padding="6"
-                        IsVisible="{Binding HasAvailableTableQuickActions}">
-                  <StackPanel Spacing="6">
-                    <TextBlock Text="Table Quick Actions"
-                               FontWeight="{StaticResource FontWeightStrong}"/>
-                    <ItemsControl ItemsSource="{Binding AvailableTableQuickActions}">
+              <TabControl Grid.Row="1" SelectedIndex="{Binding SelectedBottomPanelTabIndex, Mode=TwoWay}">
+                <TabItem Header="Detalhes" IsVisible="{Binding IsResultDetailVisible}">
+                  <Grid ColumnDefinitions="2*,3*" ColumnSpacing="10">
+                    <ItemsControl Grid.Column="0" ItemsSource="{Binding SelectedRowFields}">
                       <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                          <Border Classes="surface-card" Margin="0,0,0,6" Padding="6">
-                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="6">
-                              <TextBlock Grid.Row="0"
-                                         Grid.Column="0"
-                                         Text="{Binding Name}"
-                                         FontWeight="{StaticResource FontWeightStrong}"/>
-                              <TextBlock Grid.Row="1"
-                                         Grid.Column="0"
-                                         Text="{Binding Description}"
-                                         Foreground="{StaticResource TextSecondaryBrush}"
-                                         TextWrapping="Wrap"/>
-                              <Button Grid.RowSpan="2"
-                                      Grid.Column="1"
-                                      Classes="secondary compact"
-                                      Command="{Binding DataContext.SendTableQuickActionToEditorCommand, ElementName=Root}"
-                                      CommandParameter="{Binding .}"
-                                      Content="Send"/>
-                            </Grid>
-                          </Border>
+                          <Grid Margin="0,0,0,4" ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                            <TextBlock Grid.Column="0" Text="{Binding ColumnName}" FontWeight="{StaticResource FontWeightStrong}"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"/>
+                          </Grid>
                         </DataTemplate>
                       </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <TextBox Grid.Column="1" Text="{Binding SelectedRowJson}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" FontFamily="{StaticResource MonoFont}"/>
+                  </Grid>
+                </TabItem>
+
+                <TabItem Header="Perfil da coluna">
+                  <StackPanel Spacing="6">
+                    <Button Classes="secondary compact" Command="{Binding BuildColumnProfilesCommand}" Content="Analyze" HorizontalAlignment="Left"/>
+                    <TextBlock Text="{Binding ColumnProfileStatusText}" IsVisible="{Binding HasColumnProfileStatusText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding DataQualitySummaryText}" IsVisible="{Binding HasDataQualitySummaryText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasColumnProfiles}">
+                      <ItemsControl ItemsSource="{Binding ColumnProfiles}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Border Classes="surface-card" Margin="0,0,0,6" Padding="6">
+                              <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding ColumnName}" FontWeight="{StaticResource FontWeightStrong}"/>
+                                <TextBlock Text="{Binding KindText}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="{Binding SummaryText}" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding TopValuesText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                              </StackPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </ScrollViewer>
                   </StackPanel>
-                </Border>
-              </StackPanel>
-            </Border>
-          </StackPanel>
-        </ScrollViewer>
-      </Grid>
-    </Border>
+                </TabItem>
 
-    <Border Grid.Row="4"
-            Grid.Column="1"
-            Classes="surface-card"
-            Padding="8">
-      <Grid RowDefinitions="*,Auto,Auto,Auto,Auto">
-        <DataGrid Grid.Row="0"
-                  x:Name="ResultGrid"
-                  ItemsSource="{Binding RowsView}"
-                  SelectedItem="{Binding SelectedRowItem, Mode=TwoWay}"
-                  IsReadOnly="False"
-                  GridLinesVisibility="Horizontal"
-                  AutoGenerateColumns="False"
-                  FrozenColumnCount="{Binding FrozenColumnCount}"
-                  SelectionMode="Extended"
-                  CellPointerPressed="ResultGrid_OnCellPointerPressed"
-                  CellEditEnding="ResultGrid_OnCellEditEnding">
-          <DataGrid.ContextMenu>
-            <ContextMenu>
-              <MenuItem Header="Copy Cell"
-                        Command="{Binding CopySelectedCellCommand}"/>
-              <MenuItem Header="Copy Row JSON"
-                        Command="{Binding CopySelectedRowAsJsonCommand}"/>
-              <MenuItem Header="Copy Row CSV"
-                        Command="{Binding CopySelectedRowAsCsvCommand}"/>
-              <MenuItem Header="Copy Row Markdown"
-                        Command="{Binding CopySelectedRowAsMarkdownCommand}"/>
-              <MenuItem Header="Show Row Details"
-                        Command="{Binding ShowSelectedRowDetailsCommand}"/>
-              <Separator/>
-              <MenuItem Header="Copy Visible Rows JSON"
-                        Command="{Binding CopyVisibleRowsAsJsonCommand}"/>
-              <MenuItem Header="Copy Visible Rows CSV"
-                        Command="{Binding CopyVisibleRowsAsCsvCommand}"/>
-              <MenuItem Header="Copy Visible Rows Markdown"
-                        Command="{Binding CopyVisibleRowsAsMarkdownCommand}"/>
-              <Separator/>
-              <MenuItem Header="Export Visible Rows CSV"
-                        Command="{Binding ExportVisibleRowsAsCsvCommand}"/>
-              <MenuItem Header="Export Visible Rows JSON"
-                        Command="{Binding ExportVisibleRowsAsJsonCommand}"/>
-              <MenuItem Header="Copy Column as SQL IN"
-                        Command="{Binding CopySelectedColumnAsSqlInCommand}"/>
-              <Separator/>
-              <MenuItem Header="Filter by Cell Value"
-                        Command="{Binding FilterBySelectedCellValueCommand}"/>
-              <MenuItem Header="Sort Asc"
-                        Command="{Binding SortSelectedColumnAscendingCommand}"/>
-              <MenuItem Header="Sort Desc"
-                        Command="{Binding SortSelectedColumnDescendingCommand}"/>
-              <MenuItem Header="Hide Column"
-                        Command="{Binding HideSelectedCellColumnCommand}"/>
-              <Separator/>
-              <MenuItem Header="Generate WHERE"
-                        Command="{Binding GenerateWhereClauseCommand}"/>
-              <MenuItem Header="Open Related Record (FK)"
-                        Command="{Binding NavigateSelectedForeignKeyCommand}"/>
-            </ContextMenu>
-          </DataGrid.ContextMenu>
-        </DataGrid>
-
-        <Grid Grid.Row="1"
-              Margin="0,8,0,0"
-              ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*"
-              ColumnSpacing="8">
-          <Button Grid.Column="0"
-                  Classes="secondary compact"
-                  Command="{Binding FirstPageCommand}"
-                  Content="&lt;&lt;"/>
-          <Button Grid.Column="1"
-                  Classes="secondary compact"
-                  Command="{Binding PreviousPageCommand}"
-                  Content="&lt;"/>
-          <Button Grid.Column="2"
-                  Classes="secondary compact"
-                  Command="{Binding NextPageCommand}"
-                  Content="&gt;"/>
-          <Button Grid.Column="3"
-                  Classes="secondary compact"
-                  Command="{Binding LastPageCommand}"
-                  Content="&gt;&gt;"/>
-          <TextBlock Grid.Column="4"
-                     VerticalAlignment="Center"
-                     Text="{Binding PageSummaryText, StringFormat='Page {0}'}"/>
-          <TextBlock Grid.Column="5"
-                     HorizontalAlignment="Right"
-                     VerticalAlignment="Center"
-                     Text="{Binding RowCountText, StringFormat='Filtered Rows: {0}'}"
-                     Foreground="{StaticResource TextSecondaryBrush}"/>
-        </Grid>
-
-        <Grid Grid.Row="2"
-              Margin="0,8,0,0"
-              ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*"
-              ColumnSpacing="8">
-          <Border Grid.Column="0"
-                  Classes="chip"
-                  Padding="8,2">
-            <TextBlock Text="{Binding SelectedCellSummary, StringFormat='Cell: {0}'}"/>
-          </Border>
-          <Button Grid.Column="1"
-                  Classes="secondary compact"
-                  Command="{Binding CopySelectedCellCommand}"
-                  Content="Copy Cell"/>
-          <Button Grid.Column="2"
-                  Classes="secondary compact"
-                  Command="{Binding CopySelectedRowAsJsonCommand}"
-                  Content="Copy Row JSON"/>
-          <Button Grid.Column="3"
-                  Classes="secondary compact"
-                  Command="{Binding CopySelectedRowAsCsvCommand}"
-                  Content="Copy Row CSV"/>
-          <Button Grid.Column="4"
-                  Classes="secondary compact"
-                  Command="{Binding CopySelectedRowAsMarkdownCommand}"
-                  Content="Copy Row MD"/>
-          <StackPanel Grid.Column="5"
-                      Orientation="Horizontal"
-                      HorizontalAlignment="Right"
-                      Spacing="8">
-            <Button Classes="secondary compact"
-                    Command="{Binding CopyVisibleRowsAsJsonCommand}"
-                    Content="Copy Page JSON"/>
-            <Button Classes="secondary compact"
-                    Command="{Binding CopyVisibleRowsAsCsvCommand}"
-                    Content="Copy Page CSV"/>
-            <Button Classes="secondary compact"
-                    Command="{Binding CopyVisibleRowsAsMarkdownCommand}"
-                    Content="Copy Page MD"/>
-            <Button Classes="secondary compact"
-                    Command="{Binding ExportVisibleRowsAsCsvCommand}"
-                    Content="Export CSV"/>
-            <Button Classes="secondary compact"
-                    Command="{Binding ExportVisibleRowsAsJsonCommand}"
-                    Content="Export JSON"/>
-            <Button Classes="secondary compact"
-                    Click="ExportReportButton_Click"
-                    Content="Export Report"/>
-            <Button Classes="secondary compact"
-                    Command="{Binding CopySelectedColumnAsSqlInCommand}"
-                    Content="Copy SQL IN"/>
-            <Button Classes="secondary compact"
-                    Command="{Binding GenerateWhereClauseCommand}"
-                    Content="Generate WHERE"/>
-            <Button Classes="secondary compact"
-                    Command="{Binding NavigateSelectedForeignKeyCommand}"
-                    Content="Open Related FK"/>
-          </StackPanel>
-        </Grid>
-
-        <Border Grid.Row="3"
-                Margin="0,8,0,0"
-                Padding="8"
-                Classes="surface-card"
-                IsVisible="{Binding IsResultDetailVisible}">
-          <Grid ColumnDefinitions="2*,3*"
-                ColumnSpacing="10">
-            <Grid Grid.Column="0"
-                  RowDefinitions="Auto,*">
-              <Grid Grid.Row="0"
-                    ColumnDefinitions="*,Auto,Auto"
-                    ColumnSpacing="6">
-                <TextBlock Grid.Column="0"
-                           Text="{Binding SelectedRowSummary, StringFormat='Selected {0}'}"
-                           FontWeight="{StaticResource FontWeightStrong}"/>
-                <Button Grid.Column="1"
-                        Classes="secondary compact"
-                        Command="{Binding HideSelectedRowDetailsCommand}"
-                        Content="Close"/>
-                <Button Grid.Column="2"
-                        Classes="secondary compact"
-                        Command="{Binding ClearSelectedRowCommand}"
-                        Content="Clear"/>
-              </Grid>
-
-              <ItemsControl Grid.Row="1"
-                            Margin="0,8,0,0"
-                            ItemsSource="{Binding SelectedRowFields}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Grid Margin="0,0,0,4"
-                          ColumnDefinitions="Auto,*"
-                          ColumnSpacing="6">
-                      <TextBlock Grid.Column="0"
-                                 Text="{Binding ColumnName}"
-                                 FontWeight="{StaticResource FontWeightStrong}"/>
-                      <TextBlock Grid.Column="1"
-                                 Text="{Binding Value}"
-                                 TextWrapping="Wrap"/>
+                <TabItem Header="Comparação">
+                  <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                      <ComboBox Grid.Column="0" ItemsSource="{Binding ComparableSessions}" SelectedItem="{Binding SelectedComparisonSession, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"/>
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
+                      <Button Grid.Column="1" Classes="secondary compact" Command="{Binding CompareWithSelectedSessionCommand}" Content="Comparar"/>
+                      <Button Grid.Column="2" Classes="secondary compact" Command="{Binding ClearComparisonCommand}" Content="Limpar"/>
                     </Grid>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
+                    <TextBlock Text="{Binding ComparisonSummaryText}" IsVisible="{Binding HasComparisonSummaryText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasComparisonDiffItems}">
+                      <ItemsControl ItemsSource="{Binding ComparisonDiffItems}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Border Classes="surface-card" Margin="0,0,0,6" Padding="6">
+                              <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding ChangeType}" FontWeight="{StaticResource FontWeightStrong}"/>
+                                <TextBlock Text="{Binding RowKey}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="{Binding Detail}" TextWrapping="Wrap"/>
+                              </StackPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </ScrollViewer>
+                  </StackPanel>
+                </TabItem>
+
+                <TabItem Header="Mensagens">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding ExecutionSafetyStatusText}" IsVisible="{Binding HasExecutionSafetyStatusText}" Foreground="{StaticResource StatusWarningBrush}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding TransactionModeStatusText}" IsVisible="{Binding HasTransactionModeStatusText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding PendingExecutionStatusText}" IsVisible="{Binding HasPendingExecutionStatusText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding ColumnProfileStatusText}" IsVisible="{Binding HasColumnProfileStatusText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </TabItem>
+              </TabControl>
             </Grid>
-
-            <Grid Grid.Column="1"
-                  RowDefinitions="Auto,*">
-              <TextBlock Grid.Row="0"
-                         Text="Row JSON"
-                         FontWeight="{StaticResource FontWeightStrong}"/>
-              <TextBox Grid.Row="1"
-                       Margin="0,8,0,0"
-                       IsReadOnly="True"
-                       AcceptsReturn="True"
-                       TextWrapping="Wrap"
-                       Text="{Binding SelectedRowJson}"/>
-            </Grid>
-          </Grid>
-        </Border>
-
-        <Border Grid.Row="4"
-                Margin="0,8,0,0"
-                Padding="8"
-                Classes="surface-card">
-          <StackPanel Spacing="6">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Grid.Column="0"
-                         Text="Column Profiles"
-                         FontWeight="{StaticResource FontWeightStrong}"/>
-              <Button Grid.Column="1"
-                      Classes="secondary compact"
-                      Command="{Binding BuildColumnProfilesCommand}"
-                      Content="Analyze"/>
-            </Grid>
-
-            <TextBlock Text="{Binding ColumnProfileStatusText}"
-                       IsVisible="{Binding HasColumnProfileStatusText}"
-                       Foreground="{StaticResource TextSecondaryBrush}"
-                       TextWrapping="Wrap"/>
-
-            <TextBlock Text="{Binding DataQualitySummaryText}"
-                       IsVisible="{Binding HasDataQualitySummaryText}"
-                       Foreground="{StaticResource TextSecondaryBrush}"
-                       TextWrapping="Wrap"/>
-
-            <ScrollViewer MaxHeight="120"
-                          VerticalScrollBarVisibility="Auto"
-                          IsVisible="{Binding HasDataQualityIssues}">
-              <ItemsControl ItemsSource="{Binding DataQualityIssues}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Border Classes="surface-card"
-                            Margin="0,0,0,6"
-                            Padding="6">
-                      <StackPanel Spacing="2">
-                        <TextBlock Text="{Binding Severity, StringFormat='[{0}]'}"
-                                   FontWeight="{StaticResource FontWeightStrong}"/>
-                        <TextBlock Text="{Binding ColumnName, StringFormat='Column: {0}'}"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
-                        <TextBlock Text="{Binding Message}"
-                                   TextWrapping="Wrap"/>
-                      </StackPanel>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
-
-            <ScrollViewer MaxHeight="180"
-                          VerticalScrollBarVisibility="Auto"
-                          IsVisible="{Binding HasColumnProfiles}">
-              <ItemsControl ItemsSource="{Binding ColumnProfiles}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Border Classes="surface-card"
-                            Margin="0,0,0,6"
-                            Padding="6">
-                      <StackPanel Spacing="4">
-                        <TextBlock Text="{Binding ColumnName}"
-                                   FontWeight="{StaticResource FontWeightStrong}"/>
-                        <TextBlock Text="{Binding KindText}"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
-                        <TextBlock Text="{Binding SummaryText}"
-                                   TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding TopValuesText, StringFormat='Top: {0}'}"
-                                   TextWrapping="Wrap"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
-                      </StackPanel>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
-
-            <Border Classes="surface-card"
-                    Padding="6"
-                    Margin="0,6,0,0">
-              <StackPanel Spacing="6">
-                <TextBlock Text="Result Comparison"
-                           FontWeight="{StaticResource FontWeightStrong}"/>
-                <Grid ColumnDefinitions="*,Auto,Auto"
-                      ColumnSpacing="6">
-                  <ComboBox Grid.Column="0"
-                            ItemsSource="{Binding ComparableSessions}"
-                            SelectedItem="{Binding SelectedComparisonSession, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
-                      <DataTemplate>
-                        <TextBlock Text="{Binding DisplayText}"
-                                   TextTrimming="CharacterEllipsis"/>
-                      </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                  </ComboBox>
-                  <Button Grid.Column="1"
-                          Classes="secondary compact"
-                          Command="{Binding CompareWithSelectedSessionCommand}"
-                          Content="Compare"/>
-                  <Button Grid.Column="2"
-                          Classes="secondary compact"
-                          Command="{Binding ClearComparisonCommand}"
-                          Content="Clear"/>
-                </Grid>
-
-                <TextBlock Text="{Binding ComparisonSummaryText}"
-                           IsVisible="{Binding HasComparisonSummaryText}"
-                           TextWrapping="Wrap"
-                           Foreground="{StaticResource TextSecondaryBrush}"/>
-
-                <ScrollViewer MaxHeight="140"
-                              VerticalScrollBarVisibility="Auto"
-                              IsVisible="{Binding HasComparisonDiffItems}">
-                  <ItemsControl ItemsSource="{Binding ComparisonDiffItems}">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate>
-                        <Border Classes="surface-card"
-                                Margin="0,0,0,6"
-                                Padding="6">
-                          <StackPanel Spacing="2">
-                            <TextBlock Text="{Binding ChangeType, StringFormat='[{0}]'}"
-                                       FontWeight="{StaticResource FontWeightStrong}"/>
-                            <TextBlock Text="{Binding RowKey}"
-                                       TextWrapping="Wrap"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <TextBlock Text="{Binding Detail}"
-                                       TextWrapping="Wrap"/>
-                          </StackPanel>
-                        </Border>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                </ScrollViewer>
-              </StackPanel>
-            </Border>
-          </StackPanel>
-        </Border>
-      </Grid>
-    </Border>
+          </Border>
+        </Grid>
+      </Border>
+    </Grid>
   </Grid>
 </UserControl>
+

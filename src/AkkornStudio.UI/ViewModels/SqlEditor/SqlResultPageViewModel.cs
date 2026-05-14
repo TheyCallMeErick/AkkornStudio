@@ -88,6 +88,11 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     private IReadOnlyList<SqlQuickTemplateOption> _availableSqlTemplates = [];
     private SqlQuickTemplateOption? _selectedSqlTemplate;
     private IReadOnlyList<SqlTableQuickActionOption> _availableTableQuickActions = [];
+    private bool _isSidebarVisible = true;
+    private bool _isBottomPanelVisible;
+    private int _selectedBottomPanelTabIndex;
+    private int _pageSize = DefaultPageSize;
+    private string _columnSearchText = string.Empty;
 
     private const string FilterOperationContains = "contains";
     private const string FilterOperationEquals = "equals";
@@ -122,6 +127,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     {
         WriteIndented = true,
     };
+    private static readonly IReadOnlyList<int> PageSizeOptions = [50, 100, 250, 500];
 
     public SqlResultPageViewModel()
         : this(
@@ -284,6 +290,14 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         ClearComparisonCommand = new RelayCommand(
             ClearComparison,
             () => HasComparisonSummaryText || HasComparisonDiffItems);
+        ToggleSidebarCommand = new RelayCommand(ToggleSidebarVisibility);
+        ToggleBottomPanelCommand = new RelayCommand(ToggleBottomPanelVisibility, () => HasBottomPanelContent);
+        OpenDetailsTabCommand = new RelayCommand(OpenDetailsTab, () => HasSelectedRow);
+        OpenColumnProfilesTabCommand = new RelayCommand(OpenColumnProfilesTab);
+        OpenComparisonTabCommand = new RelayCommand(OpenComparisonTab);
+        OpenMessagesTabCommand = new RelayCommand(OpenMessagesTab);
+        ClearSearchTextCommand = new RelayCommand(ClearSearchText, () => !string.IsNullOrWhiteSpace(SearchText));
+        ClearColumnSearchTextCommand = new RelayCommand(ClearColumnSearchText, () => !string.IsNullOrWhiteSpace(ColumnSearchText));
 
         ReloadSavedSnippets();
     }
@@ -355,6 +369,14 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     public ICommand NavigateSelectedForeignKeyCommand { get; }
     public ICommand CompareWithSelectedSessionCommand { get; }
     public ICommand ClearComparisonCommand { get; }
+    public ICommand ToggleSidebarCommand { get; }
+    public ICommand ToggleBottomPanelCommand { get; }
+    public ICommand OpenDetailsTabCommand { get; }
+    public ICommand OpenColumnProfilesTabCommand { get; }
+    public ICommand OpenComparisonTabCommand { get; }
+    public ICommand OpenMessagesTabCommand { get; }
+    public ICommand ClearSearchTextCommand { get; }
+    public ICommand ClearColumnSearchTextCommand { get; }
     public event Action<string>? ClipboardCopyRequested;
     public event Action<SqlResultExportRequest>? ExportRequested;
 
@@ -405,6 +427,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             RaisePropertyChanged(nameof(HasComparisonSummaryText));
             RaisePropertyChanged(nameof(ComparisonDiffItems));
             RaisePropertyChanged(nameof(HasComparisonDiffItems));
+            RaisePropertyChanged(nameof(HasBottomPanelContent));
+            RaisePropertyChanged(nameof(HasMessagesPanelContent));
             RaisePropertyChanged(nameof(IsBuildingColumnProfiles));
             RaisePropertyChanged(nameof(ColumnProfileStatusText));
             RaisePropertyChanged(nameof(HasColumnProfileStatusText));
@@ -436,6 +460,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             RaisePropertyChanged(nameof(SelectedCellSummary));
             RaisePropertyChanged(nameof(CanGenerateWhereClause));
             RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
+            RaisePropertyChanged(nameof(RowWindowText));
             RebuildRowsProjection();
             NotifyCommands();
         }
@@ -523,6 +548,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
                 return;
 
             RaisePropertyChanged(nameof(CanShowSelectedRowDetails));
+            RaisePropertyChanged(nameof(HasBottomPanelContent));
             (HideSelectedRowDetailsCommand as RelayCommand)?.NotifyCanExecuteChanged();
         }
     }
@@ -786,6 +812,21 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         }
     }
     public string RowCountText => _totalFilteredRows.ToString();
+    public IReadOnlyList<int> AvailablePageSizes => PageSizeOptions;
+    public int PageSize
+    {
+        get => _pageSize;
+        set
+        {
+            int normalized = PageSizeOptions.Contains(value) ? value : DefaultPageSize;
+            if (!Set(ref _pageSize, normalized))
+                return;
+
+            CurrentPage = 1;
+            RaisePropertyChanged(nameof(RowWindowText));
+            RebuildRowsProjection();
+        }
+    }
     public string ColumnCountText => Session?.ResultSet.Data?.Columns.Count.ToString() ?? "0";
     public bool IsCurrentSessionPinned => Session?.IsPinned == true;
     public string TogglePinText => IsCurrentSessionPinned ? "Desfixar" : "Fixar";
@@ -812,6 +853,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
 
             RaisePropertyChanged(nameof(CurrentPage));
             RaisePropertyChanged(nameof(PageSummaryText));
+            RaisePropertyChanged(nameof(RowWindowText));
             RaisePropertyChanged(nameof(HasPreviousPage));
             RaisePropertyChanged(nameof(HasNextPage));
             NotifyCommands();
@@ -837,6 +879,18 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     }
 
     public string PageSummaryText => $"{CurrentPage}/{TotalPages}";
+    public string RowWindowText
+    {
+        get
+        {
+            if (_totalFilteredRows <= 0)
+                return "0-0";
+
+            int start = ((CurrentPage - 1) * PageSize) + 1;
+            int end = Math.Min(_totalFilteredRows, CurrentPage * PageSize);
+            return $"{start}-{end}";
+        }
+    }
 
     public string SearchText
     {
@@ -849,8 +903,27 @@ public sealed class SqlResultPageViewModel : ViewModelBase
 
             CurrentPage = 1;
             RebuildRowsProjection();
+            RaisePropertyChanged(nameof(HasSearchText));
+            NotifyCommands();
         }
     }
+    public bool HasSearchText => !string.IsNullOrWhiteSpace(SearchText);
+
+    public string ColumnSearchText
+    {
+        get => _columnSearchText;
+        set
+        {
+            string normalized = value ?? string.Empty;
+            if (!Set(ref _columnSearchText, normalized))
+                return;
+
+            RaisePropertyChanged(nameof(FilteredColumnVisibilityItems));
+            RaisePropertyChanged(nameof(HasColumnSearchText));
+            NotifyCommands();
+        }
+    }
+    public bool HasColumnSearchText => !string.IsNullOrWhiteSpace(ColumnSearchText);
 
     public IReadOnlyList<string> AvailableSortColumns
     {
@@ -869,8 +942,17 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         {
             _columnVisibilityItems = value;
             RaisePropertyChanged(nameof(ColumnVisibilityItems));
+            RaisePropertyChanged(nameof(FilteredColumnVisibilityItems));
+            RaisePropertyChanged(nameof(VisibleColumnsSummaryText));
         }
     }
+    public IReadOnlyList<SqlResultColumnVisibilityItemViewModel> FilteredColumnVisibilityItems =>
+        string.IsNullOrWhiteSpace(ColumnSearchText)
+            ? ColumnVisibilityItems.ToList()
+            : ColumnVisibilityItems
+                .Where(item => item.ColumnName.Contains(ColumnSearchText, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+    public string VisibleColumnsSummaryText => $"{ColumnVisibilityItems.Count(item => item.IsVisible)}/{ColumnVisibilityItems.Count}";
 
     public ObservableCollection<SqlResultColumnProfileItemViewModel> ColumnProfiles
     {
@@ -880,6 +962,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             _columnProfiles = value;
             RaisePropertyChanged(nameof(ColumnProfiles));
             RaisePropertyChanged(nameof(HasColumnProfiles));
+            RaisePropertyChanged(nameof(HasBottomPanelContent));
         }
     }
 
@@ -891,9 +974,11 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             _activeSortCriteria = value;
             RaisePropertyChanged(nameof(ActiveSortCriteria));
             RaisePropertyChanged(nameof(HasActiveSortCriteria));
+            RaisePropertyChanged(nameof(ActiveSortCount));
             (ClearSortCriteriaCommand as RelayCommand)?.NotifyCanExecuteChanged();
         }
     }
+    public int ActiveSortCount => ActiveSortCriteria.Count;
 
     public ObservableCollection<SqlResultGroupColumnItemViewModel> ActiveGroupColumns
     {
@@ -903,9 +988,11 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             _activeGroupColumns = value;
             RaisePropertyChanged(nameof(ActiveGroupColumns));
             RaisePropertyChanged(nameof(HasActiveGroupColumns));
+            RaisePropertyChanged(nameof(ActiveGroupCount));
             (ClearGroupColumnsCommand as RelayCommand)?.NotifyCanExecuteChanged();
         }
     }
+    public int ActiveGroupCount => ActiveGroupColumns.Count;
 
     public ObservableCollection<SqlResultGroupBucketItemViewModel> GroupBuckets
     {
@@ -926,9 +1013,11 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             _activeFilterCriteria = value;
             RaisePropertyChanged(nameof(ActiveFilterCriteria));
             RaisePropertyChanged(nameof(HasActiveColumnFilters));
+            RaisePropertyChanged(nameof(ActiveFilterCount));
             (ClearColumnFilterCommand as RelayCommand)?.NotifyCanExecuteChanged();
         }
     }
+    public int ActiveFilterCount => ActiveFilterCriteria.Count;
 
     public string? SelectedSortColumn
     {
@@ -1039,6 +1128,33 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         private set => Set(ref _columnProfileStatusText, value ?? string.Empty);
     }
     public bool HasColumnProfileStatusText => !string.IsNullOrWhiteSpace(ColumnProfileStatusText);
+    public bool IsSidebarVisible
+    {
+        get => _isSidebarVisible;
+        set => Set(ref _isSidebarVisible, value);
+    }
+    public bool IsBottomPanelVisible
+    {
+        get => _isBottomPanelVisible;
+        set => Set(ref _isBottomPanelVisible, value);
+    }
+    public int SelectedBottomPanelTabIndex
+    {
+        get => _selectedBottomPanelTabIndex;
+        set => Set(ref _selectedBottomPanelTabIndex, Math.Max(0, value));
+    }
+    public bool HasBottomPanelContent =>
+        IsResultDetailVisible
+        || HasColumnProfiles
+        || HasDataQualityIssues
+        || HasComparisonSummaryText
+        || HasComparisonDiffItems
+        || HasMessagesPanelContent;
+    public bool HasMessagesPanelContent =>
+        HasPendingExecutionStatusText
+        || HasColumnProfileStatusText
+        || HasExecutionSafetyStatusText
+        || HasTransactionModeStatusText;
 
     public IReadOnlyList<string> AvailableFilterOperations
     {
@@ -1912,6 +2028,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         RaisePropertyChanged(nameof(SelectedCellSummary));
         RaisePropertyChanged(nameof(CanGenerateWhereClause));
         RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
+        RaisePropertyChanged(nameof(HasBottomPanelContent));
     }
 
     private void ShowSelectedRowDetails()
@@ -1920,6 +2037,9 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             return;
 
         IsResultDetailVisible = true;
+        IsBottomPanelVisible = true;
+        SelectedBottomPanelTabIndex = 0;
+        RaisePropertyChanged(nameof(HasBottomPanelContent));
         NotifyCommands();
     }
 
@@ -1929,7 +2049,65 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             return;
 
         IsResultDetailVisible = false;
+        RaisePropertyChanged(nameof(HasBottomPanelContent));
+        if (!HasBottomPanelContent)
+            IsBottomPanelVisible = false;
         NotifyCommands();
+    }
+
+    private void ToggleSidebarVisibility()
+    {
+        IsSidebarVisible = !IsSidebarVisible;
+    }
+
+    private void ToggleBottomPanelVisibility()
+    {
+        if (!HasBottomPanelContent)
+        {
+            IsBottomPanelVisible = false;
+            return;
+        }
+
+        IsBottomPanelVisible = !IsBottomPanelVisible;
+    }
+
+    private void OpenDetailsTab()
+    {
+        ShowSelectedRowDetails();
+    }
+
+    private void OpenColumnProfilesTab()
+    {
+        IsBottomPanelVisible = true;
+        SelectedBottomPanelTabIndex = 1;
+    }
+
+    private void OpenComparisonTab()
+    {
+        IsBottomPanelVisible = true;
+        SelectedBottomPanelTabIndex = 2;
+    }
+
+    private void OpenMessagesTab()
+    {
+        IsBottomPanelVisible = true;
+        SelectedBottomPanelTabIndex = 3;
+    }
+
+    private void ClearSearchText()
+    {
+        if (string.IsNullOrWhiteSpace(SearchText))
+            return;
+
+        SearchText = string.Empty;
+    }
+
+    private void ClearColumnSearchText()
+    {
+        if (string.IsNullOrWhiteSpace(ColumnSearchText))
+            return;
+
+        ColumnSearchText = string.Empty;
     }
 
     public void SelectCell(DataRowView rowView, string columnName)
@@ -3032,6 +3210,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             return false;
         }
 
+        IsBottomPanelVisible = true;
+        SelectedBottomPanelTabIndex = 1;
         _isBuildingColumnProfiles = true;
         RaisePropertyChanged(nameof(IsBuildingColumnProfiles));
         NotifyCommands();
@@ -3946,6 +4126,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         if (Session is null || SelectedComparisonSession is null)
             return;
 
+        IsBottomPanelVisible = true;
+        SelectedBottomPanelTabIndex = 2;
         SqlResultSession? baseline = Sessions.FirstOrDefault(item => item.Id == SelectedComparisonSession.SessionId);
         if (baseline is null)
         {
@@ -4330,6 +4512,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             RaisePropertyChanged(nameof(RowsView));
             RaisePropertyChanged(nameof(HasVisibleRows));
             RaisePropertyChanged(nameof(RowCountText));
+            RaisePropertyChanged(nameof(RowWindowText));
             NotifyCommands();
             return;
         }
@@ -4420,12 +4603,12 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         List<DataRow> filteredRows = groupedRows;
         _filteredRows = filteredRows;
         _totalFilteredRows = filteredRows.Count;
-        int computedTotalPages = Math.Max(1, (int)Math.Ceiling(_totalFilteredRows / (double)DefaultPageSize));
+        int computedTotalPages = Math.Max(1, (int)Math.Ceiling(_totalFilteredRows / (double)PageSize));
         TotalPages = computedTotalPages;
         CurrentPage = Math.Min(CurrentPage, TotalPages);
 
-        int skip = (CurrentPage - 1) * DefaultPageSize;
-        List<DataRow> pageRows = filteredRows.Skip(skip).Take(DefaultPageSize).ToList();
+        int skip = (CurrentPage - 1) * PageSize;
+        List<DataRow> pageRows = filteredRows.Skip(skip).Take(PageSize).ToList();
         _pagedSourceRows = pageRows;
 
         DataTable projected = BuildProjectedTable(table, visibleOrderedColumns);
@@ -4436,6 +4619,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         RaisePropertyChanged(nameof(RowsView));
         RaisePropertyChanged(nameof(HasVisibleRows));
         RaisePropertyChanged(nameof(RowCountText));
+        RaisePropertyChanged(nameof(RowWindowText));
         RestoreSelectedRowFromSessionState();
         RestoreSelectedCellFromSessionState();
         RaisePropertyChanged(nameof(CanGenerateWhereClause));
@@ -4597,6 +4781,13 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         (NavigateSelectedForeignKeyCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (CompareWithSelectedSessionCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ClearComparisonCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ToggleBottomPanelCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (OpenDetailsTabCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (OpenColumnProfilesTabCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (OpenComparisonTabCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (OpenMessagesTabCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ClearSearchTextCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ClearColumnSearchTextCommand as RelayCommand)?.NotifyCanExecuteChanged();
     }
 
     public sealed record SqlQuickTemplateOption(

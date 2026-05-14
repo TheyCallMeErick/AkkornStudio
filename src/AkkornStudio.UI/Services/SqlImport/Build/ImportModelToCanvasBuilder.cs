@@ -189,7 +189,8 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                         context.Input.FromParts,
                         out string leftExpression,
                         out string joinOperator,
-                        out string rightExpression))
+                        out string rightExpression,
+                        out bool shouldPreserveRawOnClause))
                 {
                     string leftExpressionAliased = ImportBuildUtilities.RewriteQualifierToAlias(leftExpression, context.Input.FromParts);
                     string rightExpressionAliased = ImportBuildUtilities.RewriteQualifierToAlias(rightExpression, context.Input.FromParts);
@@ -206,7 +207,7 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                         ? "<>"
                         : joinOperator;
                     joinNode.Parameters["right_expr"] = rightExpressionAliased;
-                    if (ContainsTopLevelAndConjunction(onClause))
+                    if (shouldPreserveRawOnClause)
                         joinNode.Parameters["on_raw"] = rewrittenOnRaw;
 
                     PinViewModel? leftPin = null;
@@ -318,8 +319,10 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
             IReadOnlyList<ImportFromPart> fromParts,
             out string leftExpression,
             out string joinOperator,
-            out string rightExpression)
+            out string rightExpression,
+            out bool shouldPreserveRawOnClause)
         {
+            shouldPreserveRawOnClause = false;
             if (ImportBuildUtilities.TryParseSimpleBinaryPredicate(
                     onClause,
                     out leftExpression,
@@ -329,8 +332,10 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                 return true;
             }
 
-            foreach (string conjunct in SplitTopLevelAndConjuncts(onClause))
+            IReadOnlyList<string> conjuncts = SplitTopLevelAndConjuncts(onClause);
+            for (int conjunctIndex = 0; conjunctIndex < conjuncts.Count; conjunctIndex++)
             {
+                string conjunct = conjuncts[conjunctIndex];
                 if (!ImportBuildUtilities.TryParseSimpleBinaryPredicate(
                         conjunct,
                         out string candidateLeft,
@@ -349,9 +354,19 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                 if (!linksCurrentJoinToPrevious)
                     continue;
 
+                if (!AreRemainingConjunctsCurrentSourceFilters(
+                        conjuncts,
+                        conjunctIndex,
+                        currentJoinSourceIndex,
+                        fromParts))
+                {
+                    continue;
+                }
+
                 leftExpression = candidateLeft;
                 joinOperator = candidateOperator;
                 rightExpression = candidateRight;
+                shouldPreserveRawOnClause = conjuncts.Count > 1;
                 return true;
             }
 
@@ -361,9 +376,22 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
             return false;
         }
 
-        private static bool ContainsTopLevelAndConjunction(string expression)
+        private static bool AreRemainingConjunctsCurrentSourceFilters(
+            IReadOnlyList<string> conjuncts,
+            int chosenJoinConjunctIndex,
+            int currentJoinSourceIndex,
+            IReadOnlyList<ImportFromPart> fromParts)
         {
-            return SplitTopLevelAndConjuncts(expression).Count > 1;
+            for (int index = 0; index < conjuncts.Count; index++)
+            {
+                if (index == chosenJoinConjunctIndex)
+                    continue;
+
+                if (!IsCurrentSourceLocalFilter(conjuncts[index], currentJoinSourceIndex, fromParts))
+                    return false;
+            }
+
+            return true;
         }
 
         private static IReadOnlyList<string> SplitTopLevelAndConjuncts(string expression)
@@ -423,6 +451,88 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
             bool leftBoundary = index == 0 || !char.IsLetterOrDigit(expression[index - 1]);
             bool rightBoundary = index + 3 >= expression.Length || !char.IsLetterOrDigit(expression[index + 3]);
             return leftBoundary && rightBoundary;
+        }
+
+        private static bool IsCurrentSourceLocalFilter(
+            string expression,
+            int currentJoinSourceIndex,
+            IReadOnlyList<ImportFromPart> fromParts)
+        {
+            if (!TryParseBinaryPredicateOperands(expression, out string leftOperand, out _, out string rightOperand))
+                return false;
+
+            bool leftIsIdentifier = ImportBuildUtilities.TryResolveSourceAndColumn(leftOperand, fromParts, out int leftSourceIndex, out _);
+            bool rightIsIdentifier = ImportBuildUtilities.TryResolveSourceAndColumn(rightOperand, fromParts, out int rightSourceIndex, out _);
+
+            if (leftIsIdentifier && !rightIsIdentifier)
+                return leftSourceIndex == currentJoinSourceIndex && IsLiteralOperand(rightOperand);
+
+            if (rightIsIdentifier && !leftIsIdentifier)
+                return rightSourceIndex == currentJoinSourceIndex && IsLiteralOperand(leftOperand);
+
+            return false;
+        }
+
+        private static bool TryParseBinaryPredicateOperands(
+            string expression,
+            out string leftOperand,
+            out string @operator,
+            out string rightOperand)
+        {
+            string candidate = StripOuterParentheses(expression);
+            Match match = Regex.Match(
+                candidate,
+                @"^\s*(?<left>.+?)\s*(?<op><>|!=|>=|<=|=|>|<)\s*(?<right>.+?)\s*$",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+            if (!match.Success)
+            {
+                leftOperand = string.Empty;
+                @operator = string.Empty;
+                rightOperand = string.Empty;
+                return false;
+            }
+
+            leftOperand = StripOuterParentheses(match.Groups["left"].Value.Trim());
+            @operator = match.Groups["op"].Value.Trim();
+            rightOperand = StripOuterParentheses(match.Groups["right"].Value.Trim());
+            return true;
+        }
+
+        private static bool IsLiteralOperand(string operand)
+        {
+            string trimmed = operand.Trim();
+            if (trimmed.Length == 0)
+                return false;
+
+            if (trimmed.StartsWith('\'') && trimmed.EndsWith('\'') && trimmed.Length >= 2)
+                return true;
+
+            if (trimmed.StartsWith('"') && trimmed.EndsWith('"') && trimmed.Length >= 2)
+                return true;
+
+            if (trimmed.StartsWith('@') || trimmed.StartsWith(':') || trimmed.StartsWith('$'))
+                return true;
+
+            if (trimmed.Equals("TRUE", StringComparison.OrdinalIgnoreCase)
+                || trimmed.Equals("FALSE", StringComparison.OrdinalIgnoreCase)
+                || trimmed.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return decimal.TryParse(trimmed, out _);
+        }
+
+        private static string StripOuterParentheses(string value)
+        {
+            string result = value?.Trim() ?? string.Empty;
+            while (result.Length >= 2 && result[0] == '(' && result[^1] == ')')
+            {
+                result = result[1..^1].Trim();
+            }
+
+            return result;
         }
 
         private static bool ShouldSwapJoinSides(int currentJoinSourceIndex, int leftSourceIndex, int rightSourceIndex)
