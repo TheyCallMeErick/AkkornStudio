@@ -182,8 +182,11 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                 context.Canvas.Nodes.Add(joinNode);
 
                 string onClause = context.Input.FromParts[i].OnClause!;
-                if (ImportBuildUtilities.TryParseSimpleBinaryPredicate(
+                string rewrittenOnRaw = ImportBuildUtilities.RewriteKnownQualifiersToAliasInExpression(onClause, context.Input.FromParts);
+                if (TryResolveJoinBinaryPredicate(
+                        i,
                         onClause,
+                        context.Input.FromParts,
                         out string leftExpression,
                         out string joinOperator,
                         out string rightExpression))
@@ -203,6 +206,8 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                         ? "<>"
                         : joinOperator;
                     joinNode.Parameters["right_expr"] = rightExpressionAliased;
+                    if (ContainsTopLevelAndConjunction(onClause))
+                        joinNode.Parameters["on_raw"] = rewrittenOnRaw;
 
                     PinViewModel? leftPin = null;
                     PinViewModel? rightPin = null;
@@ -237,7 +242,6 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                 }
                 else
                 {
-                    string rewrittenOnRaw = ImportBuildUtilities.RewriteKnownQualifiersToAliasInExpression(onClause, context.Input.FromParts);
                     joinNode.Parameters["on_raw"] = rewrittenOnRaw;
                     context.Report.Add(SqlImportReportFactory.Partial(
                         SqlImportDiagnosticCodes.FallbackRegexUsed,
@@ -306,6 +310,119 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                     }
                 }
             }
+        }
+
+        private static bool TryResolveJoinBinaryPredicate(
+            int currentJoinSourceIndex,
+            string onClause,
+            IReadOnlyList<ImportFromPart> fromParts,
+            out string leftExpression,
+            out string joinOperator,
+            out string rightExpression)
+        {
+            if (ImportBuildUtilities.TryParseSimpleBinaryPredicate(
+                    onClause,
+                    out leftExpression,
+                    out joinOperator,
+                    out rightExpression))
+            {
+                return true;
+            }
+
+            foreach (string conjunct in SplitTopLevelAndConjuncts(onClause))
+            {
+                if (!ImportBuildUtilities.TryParseSimpleBinaryPredicate(
+                        conjunct,
+                        out string candidateLeft,
+                        out string candidateOperator,
+                        out string candidateRight))
+                {
+                    continue;
+                }
+
+                int leftSourceIndex = ResolveSourceIndex(candidateLeft, fromParts);
+                int rightSourceIndex = ResolveSourceIndex(candidateRight, fromParts);
+                bool linksCurrentJoinToPrevious =
+                    (leftSourceIndex == currentJoinSourceIndex && rightSourceIndex >= 0 && rightSourceIndex < currentJoinSourceIndex)
+                    || (rightSourceIndex == currentJoinSourceIndex && leftSourceIndex >= 0 && leftSourceIndex < currentJoinSourceIndex);
+
+                if (!linksCurrentJoinToPrevious)
+                    continue;
+
+                leftExpression = candidateLeft;
+                joinOperator = candidateOperator;
+                rightExpression = candidateRight;
+                return true;
+            }
+
+            leftExpression = string.Empty;
+            joinOperator = string.Empty;
+            rightExpression = string.Empty;
+            return false;
+        }
+
+        private static bool ContainsTopLevelAndConjunction(string expression)
+        {
+            return SplitTopLevelAndConjuncts(expression).Count > 1;
+        }
+
+        private static IReadOnlyList<string> SplitTopLevelAndConjuncts(string expression)
+        {
+            var parts = new List<string>();
+            if (string.IsNullOrWhiteSpace(expression))
+                return parts;
+
+            int start = 0;
+            int depth = 0;
+            int index = 0;
+            while (index < expression.Length)
+            {
+                char current = expression[index];
+                if (current == '(')
+                {
+                    depth++;
+                    index++;
+                    continue;
+                }
+
+                if (current == ')')
+                {
+                    depth = Math.Max(0, depth - 1);
+                    index++;
+                    continue;
+                }
+
+                if (depth == 0 && IsAndAt(expression, index))
+                {
+                    string segment = expression[start..index].Trim();
+                    if (!string.IsNullOrWhiteSpace(segment))
+                        parts.Add(segment);
+                    index += 3;
+                    start = index;
+                    continue;
+                }
+
+                index++;
+            }
+
+            string tail = expression[start..].Trim();
+            if (!string.IsNullOrWhiteSpace(tail))
+                parts.Add(tail);
+
+            return parts;
+        }
+
+        private static bool IsAndAt(string expression, int index)
+        {
+            if (index < 0 || index + 3 > expression.Length)
+                return false;
+
+            if (!expression.AsSpan(index, 3).Equals("AND", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            bool leftBoundary = index == 0 || !char.IsLetterOrDigit(expression[index - 1]);
+            bool rightBoundary = index + 3 >= expression.Length || !char.IsLetterOrDigit(expression[index + 3]);
+            return leftBoundary && rightBoundary;
         }
 
         private static bool ShouldSwapJoinSides(int currentJoinSourceIndex, int leftSourceIndex, int rightSourceIndex)

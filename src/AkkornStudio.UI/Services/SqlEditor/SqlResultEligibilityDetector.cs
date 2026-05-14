@@ -22,38 +22,38 @@ public sealed class SqlResultEligibilityDetector
         ConnectionConfig? connectionConfig)
     {
         if (string.IsNullOrWhiteSpace(statementSql) || metadata is null || connectionConfig is null)
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("Metadata or connection context is missing.");
 
         if (IsReadOnlyConnection(connectionConfig))
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("Connection is read-only.");
 
         string sql = statementSql.Trim();
         if (!sql.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("Only SELECT result sets are eligible.");
 
         if (ContainsAny(sql, " JOIN ", " GROUP BY ", " HAVING ", " DISTINCT ", " UNION ", " INTERSECT ", " EXCEPT "))
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("Query shape is complex (join/group/union) and is treated as read-only.");
 
         Match fromMatch = FromRegex.Match(sql);
         if (!fromMatch.Success)
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("Could not resolve target table from query.");
 
         string tableRef = fromMatch.Groups["table"].Value.Trim();
         if (string.IsNullOrWhiteSpace(tableRef))
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("Could not resolve target table from query.");
 
         TableMetadata? table = ResolveTable(metadata, tableRef);
         if (table is null || table.Kind != TableKind.Table)
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("Target source is not a base table.");
 
         if (!TryParseSelectColumns(sql, out IReadOnlyList<string> selectedColumns))
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("SELECT list cannot be safely mapped to editable columns.");
 
         if (selectedColumns.Count == 0)
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("No editable columns detected in SELECT list.");
 
         if (selectedColumns.Any(static column => IsAggregateName(column)))
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("Aggregate projections are read-only.");
 
         var resultColumnNames = new HashSet<string>(
             resultTable.Columns.Cast<DataColumn>().Select(static c => c.ColumnName),
@@ -66,7 +66,7 @@ public sealed class SqlResultEligibilityDetector
             .ToList();
 
         if (pkColumns.Count == 0 || pkColumns.Count != table.PrimaryKeyColumns.Count)
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("Primary key columns are missing in result set.");
 
         List<string> editableColumns = selectedColumns
             .Where(resultColumnNames.Contains)
@@ -75,7 +75,7 @@ public sealed class SqlResultEligibilityDetector
             .ToList();
 
         if (editableColumns.Count == 0)
-            return SqlInlineEditEligibility.NotEligible;
+            return SqlInlineEditEligibility.Ineligible("No non-key editable columns were found.");
 
         return new SqlInlineEditEligibility(
             true,

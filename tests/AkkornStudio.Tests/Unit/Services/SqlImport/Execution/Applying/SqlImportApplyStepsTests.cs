@@ -87,6 +87,50 @@ public class SqlImportApplyStepsTests
     }
 
     [Fact]
+    public void WhereClauseApplier_WithAliasedStringComparison_ImportsWhereChain()
+    {
+        var setup = CreateCoreContext(
+            fromParts: [new ImportFromPart("public.orders", "ro", null, null)],
+            selectedColumns: [new ImportSelectTerm("ro.id", null)]);
+        var query = CreateQuery(
+            whereClause: "ro.status = 'OPEN'",
+            selectedColumns: [new SqlImportSelectedColumn("ro.id", null)],
+            sourceParts: [new SqlImportSourcePart("public.orders", "ro", null, null)]);
+        var context = new SqlImportApplyContext(query, setup.CoreContext, setup.Report, CancellationToken.None);
+
+        var step = new SqlImportWhereClauseApplier(setup.Canvas);
+
+        SqlImportApplyResult result = step.Apply(context);
+
+        Assert.Equal(1, result.Imported);
+        Assert.DoesNotContain(setup.Report, item =>
+            item.DiagnosticCode == AkkornStudio.SqlImport.Diagnostics.SqlImportDiagnosticCodes.AstUnsupported
+            && item.Label.Contains("WHERE", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void WhereClauseApplier_WithParenthesizedAndComparison_ImportsWhereChain()
+    {
+        var setup = CreateCoreContext(
+            fromParts: [new ImportFromPart("public.orders", "ro", null, null)],
+            selectedColumns: [new ImportSelectTerm("ro.id", null)]);
+        var query = CreateQuery(
+            whereClause: "(ro.status = 'OPEN') AND ro.id > 10",
+            selectedColumns: [new SqlImportSelectedColumn("ro.id", null)],
+            sourceParts: [new SqlImportSourcePart("public.orders", "ro", null, null)]);
+        var context = new SqlImportApplyContext(query, setup.CoreContext, setup.Report, CancellationToken.None);
+
+        var step = new SqlImportWhereClauseApplier(setup.Canvas);
+
+        SqlImportApplyResult result = step.Apply(context);
+
+        Assert.True(result.Imported > 0);
+        Assert.DoesNotContain(setup.Report, item =>
+            item.DiagnosticCode == AkkornStudio.SqlImport.Diagnostics.SqlImportDiagnosticCodes.AstUnsupported
+            && item.Label.Contains("WHERE", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void HavingClauseApplier_WithCountDistinctComparison_AddsDistinctCountNode()
     {
         var setup = CreateCoreContext();
@@ -148,6 +192,7 @@ public class SqlImportApplyStepsTests
     }
 
     private static (CanvasViewModel Canvas, ImportBuildContext CoreContext, ObservableCollection<ImportReportItem> Report) CreateCoreContext(
+        IReadOnlyList<ImportFromPart>? fromParts = null,
         IReadOnlyList<ImportSelectTerm>? selectedColumns = null
     )
     {
@@ -156,7 +201,7 @@ public class SqlImportApplyStepsTests
         var builder = new ImportModelToCanvasBuilder(canvas);
 
         var buildInput = new ImportBuildInput(
-            [new ImportFromPart("public.orders", null, null, null)],
+            fromParts ?? [new ImportFromPart("public.orders", null, null, null)],
             selectedColumns ?? [new ImportSelectTerm("id", null)],
             IsStar: false,
             StarQualifier: null,
@@ -174,14 +219,15 @@ public class SqlImportApplyStepsTests
         string? havingClause = null,
         int? limit = null,
         bool isDistinct = false,
-        IReadOnlyList<SqlImportSelectedColumn>? selectedColumns = null
+        IReadOnlyList<SqlImportSelectedColumn>? selectedColumns = null,
+        IReadOnlyList<SqlImportSourcePart>? sourceParts = null
     ) =>
         new(
             isDistinct,
             IsStar: false,
             StarQualifier: null,
             selectedColumns ?? [new SqlImportSelectedColumn("id", null)],
-            [new SqlImportSourcePart("public.orders", null, null, null)],
+            sourceParts ?? [new SqlImportSourcePart("public.orders", null, null, null)],
             whereClause,
             orderBy,
             groupBy,

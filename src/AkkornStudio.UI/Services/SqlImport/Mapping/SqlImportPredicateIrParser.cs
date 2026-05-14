@@ -105,6 +105,7 @@ public sealed class SqlImportPredicateIrParser
         string? parentExprId
     )
     {
+        expression = StripEnclosingParentheses(expression);
         string exprHash = ComputeHash(expression);
         string exprId = StableSqlImportIdGenerator.BuildExprId(
             queryId,
@@ -466,7 +467,7 @@ public sealed class SqlImportPredicateIrParser
         string? parentExprId
     )
     {
-        string trimmed = expression.Trim();
+        string trimmed = StripEnclosingParentheses(expression);
         string exprHash = ComputeHash(trimmed);
         string exprId = StableSqlImportIdGenerator.BuildExprId(
             queryId,
@@ -488,6 +489,23 @@ public sealed class SqlImportPredicateIrParser
                 trimmed,
                 "null",
                 true
+            );
+        }
+
+        if (trimmed.Equals("TRUE", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("FALSE", StringComparison.OrdinalIgnoreCase))
+        {
+            bool boolValue = trimmed.Equals("TRUE", StringComparison.OrdinalIgnoreCase);
+            return new SqlImportLiteralExpr(
+                exprId,
+                null,
+                SqlImportSemanticType.Boolean,
+                SqlResolutionStatus.Resolved,
+                CreateTrace(queryId, exprId),
+                CreateNodeMetadata(),
+                trimmed,
+                boolValue ? "true" : "false",
+                false
             );
         }
 
@@ -981,6 +999,63 @@ public sealed class SqlImportPredicateIrParser
     private static string ComputeHash(string input)
     {
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
+    }
+
+    private static string StripEnclosingParentheses(string expression)
+    {
+        string current = expression.Trim();
+        while (current.Length >= 2
+               && current[0] == '('
+               && current[^1] == ')'
+               && IsWrappedBySingleOuterParentheses(current))
+        {
+            current = current[1..^1].Trim();
+        }
+
+        return current;
+    }
+
+    private static bool IsWrappedBySingleOuterParentheses(string expression)
+    {
+        int depth = 0;
+        bool inString = false;
+
+        for (int index = 0; index < expression.Length; index++)
+        {
+            char character = expression[index];
+            if (character == '\'')
+            {
+                bool escapedQuote = index + 1 < expression.Length && expression[index + 1] == '\'';
+                if (escapedQuote)
+                {
+                    index++;
+                    continue;
+                }
+
+                inString = !inString;
+                continue;
+            }
+
+            if (inString)
+                continue;
+
+            if (character == '(')
+            {
+                depth++;
+                continue;
+            }
+
+            if (character != ')')
+                continue;
+
+            depth--;
+            if (depth == 0 && index != expression.Length - 1)
+                return false;
+            if (depth < 0)
+                return false;
+        }
+
+        return depth == 0;
     }
 
     private static TraceMeta CreateTrace(string queryId, string exprId)

@@ -25,6 +25,20 @@ public sealed class SqlResultPageViewModelTests
     }
 
     [Fact]
+    public void SetSession_WhenInlineEditIsIneligible_ShowsReadOnlyReason()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select * from customers;",
+            inlineEditEligibility: SqlInlineEditEligibility.Ineligible("Connection is read-only."));
+
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        Assert.Contains("Read-only", sut.EditabilityStatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("read-only", sut.EditabilityStatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void SetSession_UpdatesResultBreadcrumbText()
     {
         var sut = new SqlResultPageViewModel();
@@ -80,6 +94,105 @@ public sealed class SqlResultPageViewModelTests
         Assert.Null(cleared!.Annotation);
         Assert.Equal(string.Empty, sut.SessionAnnotationText);
         Assert.False(sut.HasSessionAnnotation);
+    }
+
+    [Fact]
+    public void SetSession_WithComparableHistory_PopulatesComparableSessions()
+    {
+        SqlInlineEditEligibility eligibility = new(
+            IsEligible: true,
+            TableFullName: "public.customers",
+            PrimaryKeyColumns: ["id"],
+            EditableColumns: ["name"]);
+        var service = new SqlResultSessionService();
+        SqlResultSession baseline = BuildSession(
+            "select * from customers;",
+            new DateTimeOffset(2026, 05, 12, 12, 0, 0, TimeSpan.Zero),
+            rows: [(1, "alice"), (2, "bob")],
+            inlineEditEligibility: eligibility);
+        SqlResultSession current = BuildSession(
+            "select * from customers;",
+            new DateTimeOffset(2026, 05, 12, 12, 5, 0, TimeSpan.Zero),
+            rows: [(1, "alice"), (3, "carol")],
+            inlineEditEligibility: eligibility);
+
+        SqlResultSession baselineStored = service.Add(new SqlResultSessionCreateRequest(
+            SqlText: baseline.SqlText,
+            ConnectionId: baseline.ConnectionId,
+            DatabaseName: baseline.DatabaseName,
+            SchemaName: baseline.SchemaName,
+            ResultSet: baseline.ResultSet,
+            Provider: baseline.Provider,
+            InlineEditEligibility: eligibility));
+        SqlResultSession currentStored = service.Add(new SqlResultSessionCreateRequest(
+            SqlText: current.SqlText,
+            ConnectionId: current.ConnectionId,
+            DatabaseName: current.DatabaseName,
+            SchemaName: current.SchemaName,
+            ResultSet: current.ResultSet,
+            Provider: current.Provider,
+            InlineEditEligibility: eligibility));
+
+        var sut = new SqlResultPageViewModel();
+        sut.ConfigureSessionService(service);
+        sut.SetSession(currentStored, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        Assert.True(sut.HasComparableSessions);
+        Assert.Contains(sut.ComparableSessions, item => item.SessionId == baselineStored.Id);
+        Assert.True(sut.CanCompareWithSelectedSession);
+    }
+
+    [Fact]
+    public void CompareWithSelectedSessionCommand_WithReliablePrimaryKey_BuildsDiffSummary()
+    {
+        SqlInlineEditEligibility eligibility = new(
+            IsEligible: true,
+            TableFullName: "public.customers",
+            PrimaryKeyColumns: ["id"],
+            EditableColumns: ["name"]);
+        var service = new SqlResultSessionService();
+        SqlResultSession baseline = BuildSession(
+            "select * from customers;",
+            new DateTimeOffset(2026, 05, 12, 12, 0, 0, TimeSpan.Zero),
+            rows: [(1, "alice"), (2, "bob")],
+            inlineEditEligibility: eligibility);
+        SqlResultSession current = BuildSession(
+            "select * from customers;",
+            new DateTimeOffset(2026, 05, 12, 12, 5, 0, TimeSpan.Zero),
+            rows: [(1, "alice-updated"), (3, "carol")],
+            inlineEditEligibility: eligibility);
+
+        _ = service.Add(new SqlResultSessionCreateRequest(
+            SqlText: baseline.SqlText,
+            ConnectionId: baseline.ConnectionId,
+            DatabaseName: baseline.DatabaseName,
+            SchemaName: baseline.SchemaName,
+            ResultSet: baseline.ResultSet,
+            Provider: baseline.Provider,
+            InlineEditEligibility: eligibility));
+        SqlResultSession currentStored = service.Add(new SqlResultSessionCreateRequest(
+            SqlText: current.SqlText,
+            ConnectionId: current.ConnectionId,
+            DatabaseName: current.DatabaseName,
+            SchemaName: current.SchemaName,
+            ResultSet: current.ResultSet,
+            Provider: current.Provider,
+            InlineEditEligibility: eligibility));
+
+        var sut = new SqlResultPageViewModel();
+        sut.ConfigureSessionService(service);
+        sut.SetSession(currentStored, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        sut.CompareWithSelectedSessionCommand.Execute(null);
+
+        Assert.True(sut.HasComparisonSummaryText);
+        Assert.Contains("Added: 1", sut.ComparisonSummaryText, StringComparison.Ordinal);
+        Assert.Contains("Removed: 1", sut.ComparisonSummaryText, StringComparison.Ordinal);
+        Assert.Contains("Changed: 1", sut.ComparisonSummaryText, StringComparison.Ordinal);
+        Assert.True(sut.HasComparisonDiffItems);
+        Assert.Contains(sut.ComparisonDiffItems, item => item.ChangeType == "Added");
+        Assert.Contains(sut.ComparisonDiffItems, item => item.ChangeType == "Removed");
+        Assert.Contains(sut.ComparisonDiffItems, item => item.ChangeType == "Changed");
     }
 
     [Fact]
@@ -1327,6 +1440,37 @@ public sealed class SqlResultPageViewModelTests
     }
 
     [Fact]
+    public async Task BuildColumnProfilesAsync_WhenDataHasQualitySignals_BuildsDataQualitySummaryAndIssues()
+    {
+        var sut = new SqlResultPageViewModel();
+        SqlResultSession session = BuildSession(
+            "select id, name from customers;",
+            rows:
+            [
+                (1, "alice"),
+                (2, "alice"),
+                (3, "alice"),
+            ]);
+
+        DataTable table = Assert.IsType<DataTable>(session.ResultSet.Data);
+        table.Rows[0]["name"] = DBNull.Value;
+        table.Rows[1]["name"] = string.Empty;
+        table.Rows[2]["name"] = string.Empty;
+        sut.SetSession(session, sourceSqlEditorDocumentId: Guid.NewGuid());
+
+        bool profiled = await sut.BuildColumnProfilesAsync();
+
+        Assert.True(profiled);
+        Assert.True(sut.HasDataQualitySummaryText);
+        Assert.Contains("issue", sut.DataQualitySummaryText, StringComparison.OrdinalIgnoreCase);
+        Assert.True(sut.HasDataQualityIssues);
+        Assert.Contains(
+            sut.DataQualityIssues,
+            issue => issue.ColumnName.Equals("name", StringComparison.OrdinalIgnoreCase)
+                && issue.Message.Contains("High null rate", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void FilterBySelectedCellValueCommand_AddsEqualsFilterAndRestrictsRows()
     {
         var sut = new SqlResultPageViewModel();
@@ -2013,6 +2157,8 @@ public sealed class SqlResultPageViewModelTests
         Assert.False(sut.IsPendingExecutionConfirmationVisible);
         Assert.True(sut.HasPendingExecutionError);
         Assert.Contains("blocked for production-like", sut.PendingExecutionStatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.True(sut.HasExecutionSafetyStatusText);
+        Assert.Contains("Production-like context", sut.ExecutionSafetyStatusText, StringComparison.OrdinalIgnoreCase);
         Assert.False(sut.CanRequestExecutePendingChanges);
     }
 

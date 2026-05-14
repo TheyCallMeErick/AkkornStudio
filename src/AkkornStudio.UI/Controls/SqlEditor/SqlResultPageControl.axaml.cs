@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Avalonia.Data;
+using Avalonia.Data.Converters;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -15,6 +17,7 @@ namespace AkkornStudio.UI.Controls.SqlEditor;
 
 public partial class SqlResultPageControl : UserControl
 {
+    private static readonly IValueConverter DbNullToTextConverter = new DbNullToTextValueConverter();
     private SqlResultPageViewModel? _subscribedViewModel;
     private readonly SqlEditorReportExportService _reportExportService = new();
     private readonly IBrush _pendingCellBackgroundBrush = ResolveBrush(
@@ -269,36 +272,54 @@ public partial class SqlResultPageControl : UserControl
         foreach (DataColumn column in table.Columns)
         {
             string columnName = column.ColumnName;
+            var displayBinding = new Binding($"[{columnName}]")
+            {
+                Mode = BindingMode.OneWay,
+                Converter = DbNullToTextConverter,
+            };
             ResultGrid.Columns.Add(new DataGridTemplateColumn
             {
                 Header = columnName,
                 SortMemberPath = columnName,
                 IsReadOnly = !viewModel.IsColumnEditable(columnName),
-                CellTemplate = new FuncDataTemplate<DataRowView>((row, _) =>
-                    new TextBlock
+                CellTemplate = new FuncDataTemplate<DataRowView>((_, _) =>
+                {
+                    var textBlock = new TextBlock
                     {
-                        Text = GetCellDisplayText(row, columnName),
                         TextTrimming = TextTrimming.CharacterEllipsis,
-                    }),
-                CellEditingTemplate = new FuncDataTemplate<DataRowView>((row, _) =>
-                    new TextBox
-                    {
-                        Text = GetCellDisplayText(row, columnName),
-                    }),
+                    };
+                    textBlock.Bind(TextBlock.TextProperty, displayBinding);
+                    return textBlock;
+                }),
+                CellEditingTemplate = new FuncDataTemplate<DataRowView>((_, _) =>
+                {
+                    var textBox = new TextBox();
+                    textBox.Bind(TextBox.TextProperty, displayBinding);
+                    return textBox;
+                }),
             });
         }
     }
 
-    private static string GetCellDisplayText(DataRowView row, string columnName)
+    private sealed class DbNullToTextValueConverter : IValueConverter
     {
-        if (!row.Row.Table.Columns.Contains(columnName))
-            return string.Empty;
+        public object? Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            _ = targetType;
+            _ = parameter;
+            _ = culture;
+            if (value is null || value == DBNull.Value)
+                return string.Empty;
+            return value.ToString();
+        }
 
-        object? value = row.Row[columnName];
-        if (value is null || value == DBNull.Value)
-            return string.Empty;
-
-        return value.ToString() ?? string.Empty;
+        public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            _ = targetType;
+            _ = parameter;
+            _ = culture;
+            return value;
+        }
     }
 
     private static FilePickerFileType GetExportFileType(SqlEditorReportType reportType)

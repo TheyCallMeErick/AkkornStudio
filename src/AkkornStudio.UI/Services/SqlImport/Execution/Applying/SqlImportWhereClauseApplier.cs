@@ -53,10 +53,11 @@ internal sealed class SqlImportWhereClauseApplier(CanvasViewModel canvas) : ISql
         {
             SqlImportClauseApplyUtilities.SafeWire(rootCondition!, "result", result, "where", _canvas);
 
-            report.Add(SqlImportReportFactory.WherePartial(
+            report.Add(new ImportReportItem(
                 $"WHERE {SqlImportClauseApplyUtilities.Truncate(query.WhereClause, 60)}",
-                rootCondition!.Id
-            ));
+                ImportItemStatus.Imported,
+                "WHERE predicate mapped to graph condition chain.",
+                rootCondition!.Id));
 
             if (fallbackActivated)
             {
@@ -99,10 +100,14 @@ internal sealed class SqlImportWhereClauseApplier(CanvasViewModel canvas) : ISql
         List<string> orParts = SplitTopLevelByKeyword(normalized, "OR");
         if (orParts.Count > 1)
             return TryBuildLogicalGate(NodeType.Or, orParts, query, fromParts, tableNodes, layout, sourceCount, out node, ref fallbackActivated, ref imported, ref partial);
+        if (TryFallbackSplitParenthesizedBinary(normalized, "OR", out IReadOnlyList<string> fallbackOrParts))
+            return TryBuildLogicalGate(NodeType.Or, fallbackOrParts, query, fromParts, tableNodes, layout, sourceCount, out node, ref fallbackActivated, ref imported, ref partial);
 
         List<string> andParts = SplitTopLevelByKeyword(normalized, "AND");
         if (andParts.Count > 1)
             return TryBuildLogicalGate(NodeType.And, andParts, query, fromParts, tableNodes, layout, sourceCount, out node, ref fallbackActivated, ref imported, ref partial);
+        if (TryFallbackSplitParenthesizedBinary(normalized, "AND", out IReadOnlyList<string> fallbackAndParts))
+            return TryBuildLogicalGate(NodeType.And, fallbackAndParts, query, fromParts, tableNodes, layout, sourceCount, out node, ref fallbackActivated, ref imported, ref partial);
 
         if (TryStripNotPrefix(normalized, out string inner))
         {
@@ -406,6 +411,56 @@ internal sealed class SqlImportWhereClauseApplier(CanvasViewModel canvas) : ISql
             return true;
         }
 
+        Match fallbackBinaryMatch = Regex.Match(
+            expression,
+            @"^\s*(?<left>.+?)\s*(?<op><>|!=|>=|<=|=|>|<)\s*(?<right>.+?)\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
+        if (fallbackBinaryMatch.Success)
+        {
+            string leftCandidate = StripOuterParentheses(fallbackBinaryMatch.Groups["left"].Value.Trim());
+            if (IsQualifiedIdentifier(leftCandidate))
+            {
+                string leftExpr = SqlImportIdentifierNormalizer.NormalizeQualifiedIdentifier(leftCandidate);
+                string op = fallbackBinaryMatch.Groups["op"].Value.Trim();
+                string rightExpr = StripOuterParentheses(fallbackBinaryMatch.Groups["right"].Value.Trim());
+
+                NodeType compType = op switch
+                {
+                    "=" => NodeType.Equals,
+                    "<>" or "!=" => NodeType.NotEquals,
+                    ">" => NodeType.GreaterThan,
+                    ">=" => NodeType.GreaterOrEqual,
+                    "<" => NodeType.LessThan,
+                    "<=" => NodeType.LessOrEqual,
+                    _ => NodeType.Equals,
+                };
+
+                NodeViewModel comp = new(NodeDefinitionRegistry.Get(compType), layout.ComparisonPosition(sourceCount));
+                _canvas.Nodes.Add(comp);
+
+                TryWireExpressionToPin(leftExpr, comp, "left", fromParts, tableNodes, ref fallbackActivated);
+
+                if (IsQualifiedIdentifier(rightExpr) && TryWireExpressionToPin(rightExpr, comp, "right", fromParts, tableNodes, ref fallbackActivated))
+                {
+                    imported++;
+                    node = comp;
+                    return true;
+                }
+
+                if (TryWireLiteralExpressionToPin(rightExpr, comp, "right", layout, sourceCount))
+                {
+                    imported++;
+                    node = comp;
+                    return true;
+                }
+
+                comp.PinLiterals["right"] = UnquoteLiteral(rightExpr);
+                imported++;
+                node = comp;
+                return true;
+            }
+        }
+
         partial++;
         return false;
     }
@@ -509,10 +564,16 @@ internal sealed class SqlImportWhereClauseApplier(CanvasViewModel canvas) : ISql
 
     private static bool IsQualifiedIdentifier(string expression)
     {
-        return Regex.IsMatch(
-            expression,
-            $@"^\s*{SqlImportIdentifierNormalizer.QualifiedIdentifierPattern}\s*$",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        string normalized = SqlImportIdentifierNormalizer.NormalizeQualifiedIdentifier(expression);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        string[] segments = normalized.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0)
+            return false;
+
+        return segments.All(static segment =>
+            Regex.IsMatch(segment, @"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant));
     }
 
     private static bool TryStripNotPrefix(string expression, out string inner)
@@ -652,6 +713,30 @@ internal sealed class SqlImportWhereClauseApplier(CanvasViewModel canvas) : ISql
         bool afterIsBoundary = !char.IsLetterOrDigit(after) && after != '_';
 
         return beforeIsBoundary && afterIsBoundary;
+    }
+
+    private static bool TryFallbackSplitParenthesizedBinary(
+        string expression,
+        string keyword,
+        out IReadOnlyList<string> parts)
+    {
+        parts = [];
+        Match match = Regex.Match(
+            expression,
+            $@"^\(\s*(?<left>.+?)\s*\)\s+{Regex.Escape(keyword)}\s+(?<right>.+?)\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant
+        );
+
+        if (!match.Success)
+            return false;
+
+        string left = match.Groups["left"].Value.Trim();
+        string right = match.Groups["right"].Value.Trim();
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+            return false;
+
+        parts = [left, right];
+        return true;
     }
 
     private static string NormalizeRawSqlLiteral(string value)

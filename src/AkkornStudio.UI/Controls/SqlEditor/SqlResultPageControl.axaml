@@ -15,7 +15,7 @@
             Grid.ColumnSpan="2"
             Classes="surface-card"
             Padding="10">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
             ColumnSpacing="8">
         <Button Grid.Column="0"
                 Classes="secondary compact"
@@ -115,6 +115,16 @@
             <TextBlock Text="Close Session"/>
           </StackPanel>
         </Button>
+
+        <Border Grid.Column="17"
+                Classes="chip"
+                Padding="8,2"
+                IsVisible="{Binding HasExecutionSafetyStatusText}">
+          <TextBlock Text="{Binding ExecutionSafetyStatusText}"
+                     Foreground="{StaticResource StatusWarningBrush}"
+                     TextTrimming="CharacterEllipsis"
+                     MaxWidth="280"/>
+        </Border>
       </Grid>
     </Border>
 
@@ -957,6 +967,34 @@
                        Foreground="{StaticResource TextSecondaryBrush}"
                        TextWrapping="Wrap"/>
 
+            <TextBlock Text="{Binding DataQualitySummaryText}"
+                       IsVisible="{Binding HasDataQualitySummaryText}"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       TextWrapping="Wrap"/>
+
+            <ScrollViewer MaxHeight="120"
+                          VerticalScrollBarVisibility="Auto"
+                          IsVisible="{Binding HasDataQualityIssues}">
+              <ItemsControl ItemsSource="{Binding DataQualityIssues}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Classes="surface-card"
+                            Margin="0,0,0,6"
+                            Padding="6">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="{Binding Severity, StringFormat='[{0}]'}"
+                                   FontWeight="{StaticResource FontWeightStrong}"/>
+                        <TextBlock Text="{Binding ColumnName, StringFormat='Column: {0}'}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding Message}"
+                                   TextWrapping="Wrap"/>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+
             <ScrollViewer MaxHeight="180"
                           VerticalScrollBarVisibility="Auto"
                           IsVisible="{Binding HasColumnProfiles}">
@@ -982,6 +1020,65 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
             </ScrollViewer>
+
+            <Border Classes="surface-card"
+                    Padding="6"
+                    Margin="0,6,0,0">
+              <StackPanel Spacing="6">
+                <TextBlock Text="Result Comparison"
+                           FontWeight="{StaticResource FontWeightStrong}"/>
+                <Grid ColumnDefinitions="*,Auto,Auto"
+                      ColumnSpacing="6">
+                  <ComboBox Grid.Column="0"
+                            ItemsSource="{Binding ComparableSessions}"
+                            SelectedItem="{Binding SelectedComparisonSession, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding DisplayText}"
+                                   TextTrimming="CharacterEllipsis"/>
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <Button Grid.Column="1"
+                          Classes="secondary compact"
+                          Command="{Binding CompareWithSelectedSessionCommand}"
+                          Content="Compare"/>
+                  <Button Grid.Column="2"
+                          Classes="secondary compact"
+                          Command="{Binding ClearComparisonCommand}"
+                          Content="Clear"/>
+                </Grid>
+
+                <TextBlock Text="{Binding ComparisonSummaryText}"
+                           IsVisible="{Binding HasComparisonSummaryText}"
+                           TextWrapping="Wrap"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                <ScrollViewer MaxHeight="140"
+                              VerticalScrollBarVisibility="Auto"
+                              IsVisible="{Binding HasComparisonDiffItems}">
+                  <ItemsControl ItemsSource="{Binding ComparisonDiffItems}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Border Classes="surface-card"
+                                Margin="0,0,0,6"
+                                Padding="6">
+                          <StackPanel Spacing="2">
+                            <TextBlock Text="{Binding ChangeType, StringFormat='[{0}]'}"
+                                       FontWeight="{StaticResource FontWeightStrong}"/>
+                            <TextBlock Text="{Binding RowKey}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBlock Text="{Binding Detail}"
+                                       TextWrapping="Wrap"/>
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+              </StackPanel>
+            </Border>
           </StackPanel>
         </Border>
       </Grid>

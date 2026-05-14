@@ -48,6 +48,12 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     private ObservableCollection<SqlResultFilterCriterionItemViewModel> _activeFilterCriteria = [];
     private ObservableCollection<SqlResultColumnVisibilityItemViewModel> _columnVisibilityItems = [];
     private ObservableCollection<SqlResultColumnProfileItemViewModel> _columnProfiles = [];
+    private ObservableCollection<SqlResultDataQualityIssueItemViewModel> _dataQualityIssues = [];
+    private string _dataQualitySummaryText = string.Empty;
+    private ObservableCollection<SqlResultComparableSessionItemViewModel> _comparableSessions = [];
+    private SqlResultComparableSessionItemViewModel? _selectedComparisonSession;
+    private ObservableCollection<SqlResultComparisonDiffItemViewModel> _comparisonDiffItems = [];
+    private string _comparisonSummaryText = string.Empty;
     private int _frozenColumnCount;
     private readonly MutationGuardService _mutationGuardService;
     private readonly SqlMutationDiffService _mutationDiffService;
@@ -272,6 +278,12 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         NavigateSelectedForeignKeyCommand = new RelayCommand(
             NavigateSelectedForeignKey,
             () => CanNavigateSelectedForeignKey);
+        CompareWithSelectedSessionCommand = new RelayCommand(
+            CompareWithSelectedSession,
+            () => CanCompareWithSelectedSession);
+        ClearComparisonCommand = new RelayCommand(
+            ClearComparison,
+            () => HasComparisonSummaryText || HasComparisonDiffItems);
 
         ReloadSavedSnippets();
     }
@@ -341,6 +353,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     public ICommand SendSelectedSqlTemplateToEditorCommand { get; }
     public ICommand SendTableQuickActionToEditorCommand { get; }
     public ICommand NavigateSelectedForeignKeyCommand { get; }
+    public ICommand CompareWithSelectedSessionCommand { get; }
+    public ICommand ClearComparisonCommand { get; }
     public event Action<string>? ClipboardCopyRequested;
     public event Action<SqlResultExportRequest>? ExportRequested;
 
@@ -354,6 +368,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
 
             ResetPendingChangeArtifacts();
             ResetColumnProfiles();
+            ResetComparisonArtifacts();
             IsResultDetailVisible = false;
             ApplySessionTransactionModePreference(value);
             UpdatePendingExecutionStatus(string.Empty, hasError: false);
@@ -378,6 +393,18 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             RaisePropertyChanged(nameof(CanPreparePendingChangesPreview));
             RaisePropertyChanged(nameof(CanGeneratePendingSql));
             RaisePropertyChanged(nameof(HasColumnProfiles));
+            RaisePropertyChanged(nameof(DataQualityIssues));
+            RaisePropertyChanged(nameof(HasDataQualityIssues));
+            RaisePropertyChanged(nameof(DataQualitySummaryText));
+            RaisePropertyChanged(nameof(HasDataQualitySummaryText));
+            RaisePropertyChanged(nameof(ComparableSessions));
+            RaisePropertyChanged(nameof(HasComparableSessions));
+            RaisePropertyChanged(nameof(SelectedComparisonSession));
+            RaisePropertyChanged(nameof(CanCompareWithSelectedSession));
+            RaisePropertyChanged(nameof(ComparisonSummaryText));
+            RaisePropertyChanged(nameof(HasComparisonSummaryText));
+            RaisePropertyChanged(nameof(ComparisonDiffItems));
+            RaisePropertyChanged(nameof(HasComparisonDiffItems));
             RaisePropertyChanged(nameof(IsBuildingColumnProfiles));
             RaisePropertyChanged(nameof(ColumnProfileStatusText));
             RaisePropertyChanged(nameof(HasColumnProfileStatusText));
@@ -390,6 +417,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             RaisePropertyChanged(nameof(HasTransactionRollbackOption));
             RaisePropertyChanged(nameof(ConfirmExecutePendingChangesText));
             RaisePropertyChanged(nameof(IsProductionLikeConnectionContext));
+            RaisePropertyChanged(nameof(ExecutionSafetyStatusText));
+            RaisePropertyChanged(nameof(HasExecutionSafetyStatusText));
             RaisePropertyChanged(nameof(CanRequestExecutePendingChanges));
             RaisePropertyChanged(nameof(CanConfirmExecutePendingChanges));
             RaisePropertyChanged(nameof(CanConfirmExecutePendingChangesWithRollback));
@@ -589,6 +618,11 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         || HasPendingExecutionStatusText
         || IsPendingExecutionConfirmationVisible;
     public bool IsProductionLikeConnectionContext => DetectProductionLikeConnectionContext();
+    public string ExecutionSafetyStatusText =>
+        IsProductionLikeConnectionContext
+            ? "Production-like context detected: direct execution is blocked."
+            : string.Empty;
+    public bool HasExecutionSafetyStatusText => !string.IsNullOrWhiteSpace(ExecutionSafetyStatusText);
     public bool CanRequestExecutePendingChanges =>
         HasPendingEdits
         && !_isExecutingPendingChanges
@@ -735,7 +769,12 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         {
             var eligibility = Session?.InlineEditEligibility;
             if (eligibility?.IsEligible != true)
-                return "Read-only (safe inline edit unavailable)";
+            {
+                string reason = string.IsNullOrWhiteSpace(eligibility?.IneligibilityReason)
+                    ? "safe inline edit unavailable"
+                    : eligibility!.IneligibilityReason!;
+                return $"Read-only ({reason})";
+            }
 
             string tableName = string.IsNullOrWhiteSpace(eligibility.TableFullName)
                 ? "table"
@@ -935,6 +974,64 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     public bool HasActiveGroupColumns => ActiveGroupColumns.Count > 0;
     public bool HasGroupBuckets => GroupBuckets.Count > 0;
     public bool HasColumnProfiles => ColumnProfiles.Count > 0;
+    public ObservableCollection<SqlResultDataQualityIssueItemViewModel> DataQualityIssues
+    {
+        get => _dataQualityIssues;
+        private set
+        {
+            _dataQualityIssues = value;
+            RaisePropertyChanged(nameof(DataQualityIssues));
+            RaisePropertyChanged(nameof(HasDataQualityIssues));
+        }
+    }
+    public bool HasDataQualityIssues => DataQualityIssues.Count > 0;
+    public string DataQualitySummaryText
+    {
+        get => _dataQualitySummaryText;
+        private set => Set(ref _dataQualitySummaryText, value ?? string.Empty);
+    }
+    public bool HasDataQualitySummaryText => !string.IsNullOrWhiteSpace(DataQualitySummaryText);
+    public ObservableCollection<SqlResultComparableSessionItemViewModel> ComparableSessions
+    {
+        get => _comparableSessions;
+        private set
+        {
+            _comparableSessions = value;
+            RaisePropertyChanged(nameof(ComparableSessions));
+            RaisePropertyChanged(nameof(HasComparableSessions));
+        }
+    }
+    public bool HasComparableSessions => ComparableSessions.Count > 0;
+    public SqlResultComparableSessionItemViewModel? SelectedComparisonSession
+    {
+        get => _selectedComparisonSession;
+        set
+        {
+            if (!Set(ref _selectedComparisonSession, value))
+                return;
+
+            RaisePropertyChanged(nameof(CanCompareWithSelectedSession));
+            NotifyCommands();
+        }
+    }
+    public bool CanCompareWithSelectedSession => Session is not null && SelectedComparisonSession is not null;
+    public ObservableCollection<SqlResultComparisonDiffItemViewModel> ComparisonDiffItems
+    {
+        get => _comparisonDiffItems;
+        private set
+        {
+            _comparisonDiffItems = value;
+            RaisePropertyChanged(nameof(ComparisonDiffItems));
+            RaisePropertyChanged(nameof(HasComparisonDiffItems));
+        }
+    }
+    public bool HasComparisonDiffItems => ComparisonDiffItems.Count > 0;
+    public string ComparisonSummaryText
+    {
+        get => _comparisonSummaryText;
+        private set => Set(ref _comparisonSummaryText, value ?? string.Empty);
+    }
+    public bool HasComparisonSummaryText => !string.IsNullOrWhiteSpace(ComparisonSummaryText);
     public bool IsBuildingColumnProfiles => _isBuildingColumnProfiles;
     public string ColumnProfileStatusText
     {
@@ -1023,6 +1120,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     {
         _connectionConfigBySessionResolver = connectionConfigBySessionResolver ?? throw new ArgumentNullException(nameof(connectionConfigBySessionResolver));
         RaisePropertyChanged(nameof(IsProductionLikeConnectionContext));
+        RaisePropertyChanged(nameof(ExecutionSafetyStatusText));
+        RaisePropertyChanged(nameof(HasExecutionSafetyStatusText));
         RaisePropertyChanged(nameof(CanRefreshSession));
         RaisePropertyChanged(nameof(CanRequestExecutePendingChanges));
         RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
@@ -1109,6 +1208,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         ApplySessionState(session);
         Session = session;
         _sourceSqlEditorDocumentId = _sessionSourceEditorDocumentMap.GetValueOrDefault(session.Id);
+        RebuildComparableSessions();
     }
 
     private void ApplySessionState(SqlResultSession session)
@@ -2801,8 +2901,38 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             return;
         }
 
+        if (!TryBuildPendingChangeSet(out SqlResultChangeSet? changeSet)
+            || changeSet is null)
+        {
+            UpdatePendingExecutionStatus("No pending changes to execute.", hasError: true);
+            return;
+        }
+
+        IReadOnlyList<string> statements = BuildPendingUpdateStatements(Session, changeSet);
+        if (statements.Count == 0)
+        {
+            UpdatePendingExecutionStatus("No executable SQL statements were generated.", hasError: true);
+            return;
+        }
+
         if (!HasGeneratedPendingSqlText)
-            GeneratePendingSqlFromCurrentEdits();
+        {
+            _pendingChangeSetPreview = changeSet;
+            GeneratedPendingSqlText = string.Join(Environment.NewLine, statements);
+            PendingChangeSetSummaryText = BuildPendingChangeSetSummaryText(changeSet);
+            RaisePropertyChanged(nameof(HasPendingChangeSetPreview));
+            RaisePropertyChanged(nameof(HasGeneratedPendingSqlText));
+            RaisePropertyChanged(nameof(HasPendingPreviewPanel));
+            RaisePropertyChanged(nameof(CanCopyGeneratedPendingSql));
+            RaisePropertyChanged(nameof(CanSendGeneratedPendingSqlToEditor));
+        }
+
+        if (!TryValidatePendingStatementsByMutationGuard(statements, out string? mutationGuardReason))
+        {
+            SetPendingExecutionConfirmationVisible(false);
+            UpdatePendingExecutionStatus(mutationGuardReason ?? "Execution blocked by mutation guard.", hasError: true);
+            return;
+        }
 
         SetPendingExecutionConfirmationVisible(true);
         UpdatePendingExecutionStatus(
@@ -2810,6 +2940,24 @@ public sealed class SqlResultPageViewModel : ViewModelBase
                 ? "Direct execution in transaction mode requires explicit confirmation. Choose commit or rollback."
                 : "Direct execution requires explicit confirmation. Review preview and confirm execution.",
             hasError: false);
+    }
+
+    private bool TryValidatePendingStatementsByMutationGuard(
+        IReadOnlyList<string> statements,
+        out string? blockingReason)
+    {
+        blockingReason = null;
+        foreach (string statement in statements)
+        {
+            MutationGuardResult guard = _mutationGuardService.Analyze(statement);
+            if (guard.IsSafe || !guard.RequiresConfirmation)
+                continue;
+
+            blockingReason = guard.Issues.FirstOrDefault()?.Message ?? "Execution blocked by mutation guard.";
+            return false;
+        }
+
+        return true;
     }
 
     public async Task<bool> RefreshCurrentSessionAsync(CancellationToken ct = default)
@@ -2878,6 +3026,9 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         if (table is null)
         {
             UpdateColumnProfileStatus("No result set available for column profiling.");
+            DataQualityIssues = [];
+            DataQualitySummaryText = string.Empty;
+            RaisePropertyChanged(nameof(HasDataQualitySummaryText));
             return false;
         }
 
@@ -2891,6 +3042,10 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             IReadOnlyList<SqlResultColumnProfile> profiles = await _columnProfilingService.BuildProfilesAsync(table, ct);
             ColumnProfiles = new ObservableCollection<SqlResultColumnProfileItemViewModel>(
                 profiles.Select(SqlResultColumnProfileItemViewModel.FromProfile));
+            DataQualityIssues = new ObservableCollection<SqlResultDataQualityIssueItemViewModel>(
+                BuildDataQualityIssues(profiles));
+            DataQualitySummaryText = BuildDataQualitySummaryText(profiles, DataQualityIssues.Count);
+            RaisePropertyChanged(nameof(HasDataQualitySummaryText));
 
             string status = profiles.Count == 0
                 ? "No columns available for profiling."
@@ -2901,11 +3056,17 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         catch (OperationCanceledException)
         {
             UpdateColumnProfileStatus("Column profiling was canceled.");
+            DataQualityIssues = [];
+            DataQualitySummaryText = string.Empty;
+            RaisePropertyChanged(nameof(HasDataQualitySummaryText));
             return false;
         }
         catch (Exception ex)
         {
             UpdateColumnProfileStatus($"Failed to build column profile: {ex.Message}");
+            DataQualityIssues = [];
+            DataQualitySummaryText = string.Empty;
+            RaisePropertyChanged(nameof(HasDataQualitySummaryText));
             return false;
         }
         finally
@@ -3177,10 +3338,72 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     private void ResetColumnProfiles()
     {
         ColumnProfiles = [];
+        DataQualityIssues = [];
+        DataQualitySummaryText = string.Empty;
+        RaisePropertyChanged(nameof(HasDataQualitySummaryText));
         UpdateColumnProfileStatus(string.Empty);
         _isBuildingColumnProfiles = false;
         RaisePropertyChanged(nameof(IsBuildingColumnProfiles));
         NotifyCommands();
+    }
+
+    private static IReadOnlyList<SqlResultDataQualityIssueItemViewModel> BuildDataQualityIssues(
+        IReadOnlyList<SqlResultColumnProfile> profiles)
+    {
+        var issues = new List<SqlResultDataQualityIssueItemViewModel>();
+        foreach (SqlResultColumnProfile profile in profiles)
+        {
+            if (profile.RowCount <= 0)
+                continue;
+
+            double nullRate = profile.NullCount / (double)profile.RowCount;
+            if (nullRate >= 0.25d)
+            {
+                issues.Add(new SqlResultDataQualityIssueItemViewModel(
+                    "Warning",
+                    profile.ColumnName,
+                    $"High null rate: {nullRate:P0} ({profile.NullCount}/{profile.RowCount})."));
+            }
+
+            if (profile.Kind == SqlResultColumnProfileKind.Text && profile.EmptyCount > 0)
+            {
+                issues.Add(new SqlResultDataQualityIssueItemViewModel(
+                    "Info",
+                    profile.ColumnName,
+                    $"Contains empty text values: {profile.EmptyCount}."));
+            }
+
+            if (profile.DistinctCount == 1 && profile.RowCount > 1)
+            {
+                issues.Add(new SqlResultDataQualityIssueItemViewModel(
+                    "Info",
+                    profile.ColumnName,
+                    "Single distinct value across all sampled rows."));
+            }
+
+            if (profile.Kind == SqlResultColumnProfileKind.Temporal && profile.SuspectFutureValueCount > 0)
+            {
+                issues.Add(new SqlResultDataQualityIssueItemViewModel(
+                    "Warning",
+                    profile.ColumnName,
+                    $"Temporal values in the future: {profile.SuspectFutureValueCount}."));
+            }
+        }
+
+        return issues;
+    }
+
+    private static string BuildDataQualitySummaryText(
+        IReadOnlyList<SqlResultColumnProfile> profiles,
+        int issueCount)
+    {
+        if (profiles.Count == 0)
+            return string.Empty;
+
+        int rowCount = profiles.Max(static profile => profile.RowCount);
+        return issueCount == 0
+            ? $"Data quality scan complete: {profiles.Count} column(s), {rowCount} row(s), no issues detected."
+            : $"Data quality scan complete: {profiles.Count} column(s), {rowCount} row(s), {issueCount} issue(s) flagged.";
     }
 
     private void UpdateColumnProfileStatus(string statusText)
@@ -3659,10 +3882,233 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         if (_sessionService is null)
         {
             Sessions = Session is null ? [] : [Session];
+            RebuildComparableSessions();
             return;
         }
 
         Sessions = _sessionService.Sessions;
+        RebuildComparableSessions();
+    }
+
+    private void RebuildComparableSessions()
+    {
+        SqlResultSession? current = Session;
+        if (current is null)
+        {
+            ComparableSessions = [];
+            SelectedComparisonSession = null;
+            return;
+        }
+
+        List<SqlResultComparableSessionItemViewModel> candidates = Sessions
+            .Where(candidate => candidate.Id != current.Id && IsComparableSessionCandidate(current, candidate))
+            .Select(candidate => new SqlResultComparableSessionItemViewModel(
+                candidate.Id,
+                $"{candidate.ExecutedAt.LocalDateTime:dd/MM HH:mm:ss} · {TrimSqlPreview(candidate.SqlText)}"))
+            .ToList();
+
+        ComparableSessions = new ObservableCollection<SqlResultComparableSessionItemViewModel>(candidates);
+        if (SelectedComparisonSession is not null && candidates.Any(item => item.SessionId == SelectedComparisonSession.SessionId))
+            return;
+
+        SelectedComparisonSession = candidates.FirstOrDefault();
+    }
+
+    private static bool IsComparableSessionCandidate(SqlResultSession current, SqlResultSession candidate)
+    {
+        if (current.ResultSet.Data is null || candidate.ResultSet.Data is null)
+            return false;
+
+        if (current.InlineEditEligibility.IsEligible != true || candidate.InlineEditEligibility.IsEligible != true)
+            return false;
+
+        List<string> currentKeys = current.InlineEditEligibility.PrimaryKeyColumns
+            .Where(static key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        List<string> candidateKeys = candidate.InlineEditEligibility.PrimaryKeyColumns
+            .Where(static key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (currentKeys.Count == 0 || candidateKeys.Count == 0 || currentKeys.Count != candidateKeys.Count)
+            return false;
+
+        if (!currentKeys.All(candidateKeys.Contains))
+            return false;
+
+        return currentKeys.All(key =>
+            current.ResultSet.Data.Columns.Contains(key)
+            && candidate.ResultSet.Data.Columns.Contains(key));
+    }
+
+    private void CompareWithSelectedSession()
+    {
+        if (Session is null || SelectedComparisonSession is null)
+            return;
+
+        SqlResultSession? baseline = Sessions.FirstOrDefault(item => item.Id == SelectedComparisonSession.SessionId);
+        if (baseline is null)
+        {
+            ComparisonSummaryText = "Selected comparison session is no longer available.";
+            ComparisonDiffItems = [];
+            RaisePropertyChanged(nameof(HasComparisonSummaryText));
+            return;
+        }
+
+        if (!IsComparableSessionCandidate(Session, baseline))
+        {
+            ComparisonSummaryText = "Comparison requires both sessions to have reliable primary-key metadata.";
+            ComparisonDiffItems = [];
+            RaisePropertyChanged(nameof(HasComparisonSummaryText));
+            NotifyCommands();
+            return;
+        }
+
+        IReadOnlyList<string> keyColumns = Session.InlineEditEligibility.PrimaryKeyColumns
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        bool hasCurrentMap = TryBuildRowMap(
+            Session.ResultSet.Data!,
+            keyColumns,
+            out Dictionary<string, DataRow> currentMap,
+            out string? currentDuplicate);
+        bool hasBaselineMap = TryBuildRowMap(
+            baseline.ResultSet.Data!,
+            keyColumns,
+            out Dictionary<string, DataRow> baselineMap,
+            out string? baselineDuplicate);
+        if (!hasCurrentMap || !hasBaselineMap)
+        {
+            string duplicate = currentDuplicate ?? baselineDuplicate ?? "<unknown>";
+            ComparisonSummaryText = $"Comparison aborted due to duplicate key rows ({duplicate}).";
+            ComparisonDiffItems = [];
+            RaisePropertyChanged(nameof(HasComparisonSummaryText));
+            NotifyCommands();
+            return;
+        }
+
+        List<string> sharedColumns = Session.ResultSet.Data!.Columns.Cast<DataColumn>()
+            .Select(column => column.ColumnName)
+            .Where(column => baseline.ResultSet.Data!.Columns.Contains(column))
+            .ToList();
+
+        var diffs = new List<SqlResultComparisonDiffItemViewModel>();
+
+        int addedCount = 0;
+        foreach (string key in currentMap.Keys.Where(key => !baselineMap.ContainsKey(key)).OrderBy(static key => key, StringComparer.Ordinal))
+        {
+            addedCount += 1;
+            diffs.Add(new SqlResultComparisonDiffItemViewModel("Added", key, "Row exists only in current session."));
+        }
+
+        int removedCount = 0;
+        foreach (string key in baselineMap.Keys.Where(key => !currentMap.ContainsKey(key)).OrderBy(static key => key, StringComparer.Ordinal))
+        {
+            removedCount += 1;
+            diffs.Add(new SqlResultComparisonDiffItemViewModel("Removed", key, "Row exists only in baseline session."));
+        }
+
+        int changedCount = 0;
+        foreach (string key in currentMap.Keys.Where(baselineMap.ContainsKey).OrderBy(static key => key, StringComparer.Ordinal))
+        {
+            DataRow currentRow = currentMap[key];
+            DataRow baselineRow = baselineMap[key];
+            List<string> changedColumns = sharedColumns
+                .Where(column => !AreValuesEquivalent(currentRow[column], baselineRow[column]))
+                .ToList();
+            if (changedColumns.Count == 0)
+                continue;
+
+            changedCount += 1;
+            string changedPreview = string.Join(", ", changedColumns.Take(5));
+            if (changedColumns.Count > 5)
+                changedPreview += ", ...";
+
+            diffs.Add(new SqlResultComparisonDiffItemViewModel(
+                "Changed",
+                key,
+                $"Changed columns ({changedColumns.Count}): {changedPreview}"));
+        }
+
+        ComparisonDiffItems = new ObservableCollection<SqlResultComparisonDiffItemViewModel>(diffs);
+        ComparisonSummaryText =
+            $"Compared current session against baseline {baseline.ExecutedAt.LocalDateTime:dd/MM/yyyy HH:mm:ss} using key [{string.Join(", ", keyColumns)}]. " +
+            $"Added: {addedCount}, Removed: {removedCount}, Changed: {changedCount}.";
+        RaisePropertyChanged(nameof(HasComparisonSummaryText));
+        NotifyCommands();
+    }
+
+    private void ClearComparison()
+    {
+        ResetComparisonArtifacts();
+        NotifyCommands();
+    }
+
+    private void ResetComparisonArtifacts()
+    {
+        ComparisonSummaryText = string.Empty;
+        ComparisonDiffItems = [];
+        RaisePropertyChanged(nameof(HasComparisonSummaryText));
+    }
+
+    private static bool TryBuildRowMap(
+        DataTable table,
+        IReadOnlyList<string> keyColumns,
+        out Dictionary<string, DataRow> map,
+        out string? duplicateKey)
+    {
+        map = new Dictionary<string, DataRow>(StringComparer.Ordinal);
+        duplicateKey = null;
+        foreach (DataRow row in table.Rows)
+        {
+            string key = BuildComparisonRowKey(row, keyColumns);
+            if (map.ContainsKey(key))
+            {
+                duplicateKey = key;
+                map = new Dictionary<string, DataRow>(StringComparer.Ordinal);
+                return false;
+            }
+
+            map[key] = row;
+        }
+
+        return true;
+    }
+
+    private static string BuildComparisonRowKey(DataRow row, IReadOnlyList<string> keyColumns)
+    {
+        return string.Join(
+            " | ",
+            keyColumns.Select(column => $"{column}={FormatPendingValue(row[column])}"));
+    }
+
+    private static bool AreValuesEquivalent(object? left, object? right)
+    {
+        object? normalizedLeft = left is DBNull ? null : left;
+        object? normalizedRight = right is DBNull ? null : right;
+        if (normalizedLeft is null && normalizedRight is null)
+            return true;
+
+        if (normalizedLeft is null || normalizedRight is null)
+            return false;
+
+        if (Equals(normalizedLeft, normalizedRight))
+            return true;
+
+        string leftText = Convert.ToString(normalizedLeft, CultureInfo.InvariantCulture) ?? string.Empty;
+        string rightText = Convert.ToString(normalizedRight, CultureInfo.InvariantCulture) ?? string.Empty;
+        return string.Equals(leftText, rightText, StringComparison.Ordinal);
+    }
+
+    private static string TrimSqlPreview(string? sqlText)
+    {
+        string normalized = (sqlText ?? string.Empty).ReplaceLineEndings(" ").Trim();
+        if (normalized.Length <= 64)
+            return normalized;
+
+        return normalized[..61] + "...";
     }
 
     private HashSet<string> GetCollapsedGroupKeysForSession(Guid sessionId)
@@ -4149,6 +4595,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         (SendSelectedSqlTemplateToEditorCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (SendTableQuickActionToEditorCommand as RelayCommand<SqlTableQuickActionOption>)?.NotifyCanExecuteChanged();
         (NavigateSelectedForeignKeyCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (CompareWithSelectedSessionCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ClearComparisonCommand as RelayCommand)?.NotifyCanExecuteChanged();
     }
 
     public sealed record SqlQuickTemplateOption(
@@ -4160,6 +4608,32 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         string Key,
         string Name,
         string Description);
+
+    public sealed class SqlResultComparableSessionItemViewModel
+    {
+        public SqlResultComparableSessionItemViewModel(Guid sessionId, string displayText)
+        {
+            SessionId = sessionId;
+            DisplayText = displayText;
+        }
+
+        public Guid SessionId { get; }
+        public string DisplayText { get; }
+    }
+
+    public sealed class SqlResultComparisonDiffItemViewModel
+    {
+        public SqlResultComparisonDiffItemViewModel(string changeType, string rowKey, string detail)
+        {
+            ChangeType = changeType;
+            RowKey = rowKey;
+            Detail = detail;
+        }
+
+        public string ChangeType { get; }
+        public string RowKey { get; }
+        public string Detail { get; }
+    }
 
     public sealed record SqlResultExportRequest(
         string SuggestedFileName,
@@ -4288,6 +4762,20 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             FilterOperationLessThanOrEqual => "<=",
             _ => Operation,
         };
+    }
+
+    public sealed class SqlResultDataQualityIssueItemViewModel
+    {
+        public SqlResultDataQualityIssueItemViewModel(string severity, string columnName, string message)
+        {
+            Severity = severity;
+            ColumnName = columnName;
+            Message = message;
+        }
+
+        public string Severity { get; }
+        public string ColumnName { get; }
+        public string Message { get; }
     }
 
     public sealed class SqlResultSelectedRowFieldItemViewModel

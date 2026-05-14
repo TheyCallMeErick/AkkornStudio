@@ -513,13 +513,12 @@ public sealed class SqlMutationDiffService
         if (string.IsNullOrWhiteSpace(source))
             return null;
 
-        if (source.StartsWith("(", StringComparison.Ordinal) && source.EndsWith(")", StringComparison.Ordinal))
+        if (TryExtractParenthesizedMergeSourceSelect(source, out string? innerSelect))
         {
-            string inner = source[1..^1].Trim();
-            if (!inner.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
+            if (!innerSelect.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
                 return null;
 
-            string countSql = $"SELECT COUNT(*) FROM ({inner}) AS akkorn_merge_src";
+            string countSql = $"SELECT COUNT(*) FROM ({innerSelect}) AS akkorn_merge_src";
             return await ExecuteScalarCountAsync(
                 PrefixWithClause(countSql, ctePrefix),
                 config,
@@ -537,7 +536,7 @@ public sealed class SqlMutationDiffService
     {
         Match match = Regex.Match(
             statementSql,
-            @"\bUSING\s+(?<source>\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|[^\s;]+(?:\s+[A-Za-z_][A-Za-z0-9_]*)?)\s+ON\b",
+            @"\bUSING\s+(?<source>\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)(?:\s+(?:AS\s+)?[A-Za-z_][A-Za-z0-9_]*)?|[^\s;]+(?:\s+[A-Za-z_][A-Za-z0-9_]*)?)\s+ON\b",
             RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
         return match.Success ? match.Groups["source"].Value.Trim() : null;
     }
@@ -605,10 +604,54 @@ public sealed class SqlMutationDiffService
 
     private static string NormalizeMergeSourceClause(string source)
     {
-        if (source.StartsWith("(", StringComparison.Ordinal) && source.EndsWith(")", StringComparison.Ordinal))
-            return source;
-
         return source.Trim();
+    }
+
+    private static bool TryExtractParenthesizedMergeSourceSelect(string source, out string innerSelect)
+    {
+        innerSelect = string.Empty;
+        string trimmed = source.Trim();
+        if (!trimmed.StartsWith("(", StringComparison.Ordinal))
+            return false;
+
+        int depth = 0;
+        bool inSingleQuote = false;
+        int closingIndex = -1;
+        for (int i = 0; i < trimmed.Length; i++)
+        {
+            char current = trimmed[i];
+            if (current == '\'' && (i == 0 || trimmed[i - 1] != '\\'))
+                inSingleQuote = !inSingleQuote;
+
+            if (inSingleQuote)
+                continue;
+
+            if (current == '(')
+                depth++;
+            else if (current == ')')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    closingIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (closingIndex <= 0)
+            return false;
+
+        string extracted = trimmed[1..closingIndex].Trim();
+        string tail = trimmed[(closingIndex + 1)..].Trim();
+        if (!string.IsNullOrWhiteSpace(tail)
+            && !Regex.IsMatch(tail, @"^(?:AS\s+)?[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            return false;
+        }
+
+        innerSelect = extracted;
+        return true;
     }
 
     private static string ExtractLeadingTableToken(string source)

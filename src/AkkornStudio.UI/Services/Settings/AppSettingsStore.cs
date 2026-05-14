@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using AkkornStudio.UI.Services.SqlEditor;
@@ -32,6 +33,7 @@ public sealed class ProjectConventionSettings
 public static class AppSettingsStore
 {
     private static readonly ILogger _logger = NullLogger.Instance;
+    private static readonly AsyncLocal<string?> SettingsPathOverrideAsyncLocal = new();
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -41,7 +43,11 @@ public static class AppSettingsStore
         AllowTrailingCommas = true,
     };
 
-    public static string? SettingsPathOverride { get; set; }
+    public static string? SettingsPathOverride
+    {
+        get => SettingsPathOverrideAsyncLocal.Value;
+        set => SettingsPathOverrideAsyncLocal.Value = value;
+    }
 
     private static string SettingsPath => SettingsPathOverride ?? Path.Combine(
         global::AkkornStudio.UI.AppConstants.AppDataDirectory,

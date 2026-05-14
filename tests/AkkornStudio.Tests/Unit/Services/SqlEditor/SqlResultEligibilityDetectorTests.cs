@@ -42,6 +42,7 @@ public sealed class SqlResultEligibilityDetectorTests
             config);
 
         Assert.False(result.IsEligible);
+        Assert.Contains("complex", result.IneligibilityReason ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -59,6 +60,7 @@ public sealed class SqlResultEligibilityDetectorTests
             config);
 
         Assert.False(result.IsEligible);
+        Assert.Contains("read-only", result.IneligibilityReason ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
