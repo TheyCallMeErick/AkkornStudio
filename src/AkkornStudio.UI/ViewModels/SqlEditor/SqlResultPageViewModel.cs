@@ -2,6 +2,7 @@ using System.Data;
 using System.Windows.Input;
 using AkkornStudio.Core;
 using AkkornStudio.Metadata;
+using AkkornStudio.UI.Services.Settings;
 using AkkornStudio.UI.Services.SqlEditor;
 using AkkornStudio.UI.Services.SqlEditor.Results;
 using System.Collections.ObjectModel;
@@ -413,6 +414,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             UpdatePendingExecutionStatus(string.Empty, hasError: false);
             RaisePropertyChanged(nameof(HasSession));
             RaisePropertyChanged(nameof(SqlText));
+            RaisePropertyChanged(nameof(SqlHeaderText));
             RaisePropertyChanged(nameof(ConnectionId));
             RaisePropertyChanged(nameof(DatabaseName));
             RaisePropertyChanged(nameof(ResultBreadcrumbText));
@@ -508,6 +510,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     }
 
     public string SqlText => Session?.SqlText ?? string.Empty;
+    public string SqlHeaderText => BuildSqlHeaderText(SqlText);
     public string ConnectionId => Session?.ConnectionId ?? string.Empty;
     public string DatabaseName => Session?.DatabaseName ?? "-";
     public string ResultBreadcrumbText
@@ -551,6 +554,19 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             (ClearSelectedRowCommand as RelayCommand)?.NotifyCanExecuteChanged();
             (ShowSelectedRowDetailsCommand as RelayCommand)?.NotifyCanExecuteChanged();
         }
+    }
+
+    private static string BuildSqlHeaderText(string? sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+            return string.Empty;
+
+        string singleLine = Regex.Replace(sql, @"\s+", " ").Trim();
+        const int maxLength = 180;
+        if (singleLine.Length <= maxLength)
+            return singleLine;
+
+        return $"{singleLine[..(maxLength - 3)]}...";
     }
 
     public string SelectedRowJson
@@ -2267,6 +2283,16 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         NotifyCommands();
     }
 
+    public void RefreshDateTimeDisplayFormatting()
+    {
+        if (Session is null)
+            return;
+
+        RestoreSelectedRowFromSessionState();
+        RestoreSelectedCellFromSessionState();
+        RaisePropertyChanged(nameof(SelectionContextText));
+    }
+
     public bool IsColumnEditable(string? columnName)
     {
         if (string.IsNullOrWhiteSpace(columnName) || Session?.InlineEditEligibility.IsEligible != true)
@@ -2330,7 +2356,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         if (sourceColumn is null)
             return false;
 
-        if (!TryConvertEditedValue(sourceColumn.DataType, editedText, out object? convertedValue))
+        SqlEditorResultDateTimeDisplaySettings displaySettings = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
+        if (!TryConvertEditedValue(sourceColumn.DataType, editedText, displaySettings, out object? convertedValue))
         {
             errorMessage = $"Invalid value for column '{columnName}'.";
             return false;
@@ -2461,7 +2488,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         {
             object? rawValue = rowView.Row[column];
             object? normalized = rawValue == DBNull.Value ? null : rawValue;
-            string displayValue = normalized?.ToString() ?? "<null>";
+            string displayValue = FormatDisplayValue(normalized);
             fieldItems.Add(new SqlResultSelectedRowFieldItemViewModel(column.ColumnName, displayValue));
             jsonObject[column.ColumnName] = normalized;
         }
@@ -2603,8 +2630,9 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         if (!TryGetSelectedRowObject(out Dictionary<string, object?>? rowObject) || rowObject is null)
             return;
 
+        SqlEditorResultDateTimeDisplaySettings displaySettings = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
         string header = string.Join(",", rowObject.Keys.Select(EscapeCsv));
-        string values = string.Join(",", rowObject.Values.Select(value => EscapeCsv(FormatDisplayValue(value))));
+        string values = string.Join(",", rowObject.Values.Select(value => EscapeCsv(FormatDisplayValue(value, displaySettings))));
         RaiseClipboardCopyRequested($"{header}\r\n{values}");
     }
 
@@ -2613,9 +2641,10 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         if (!TryGetSelectedRowObject(out Dictionary<string, object?>? rowObject) || rowObject is null)
             return;
 
+        SqlEditorResultDateTimeDisplaySettings displaySettings = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
         string header = $"| {string.Join(" | ", rowObject.Keys.Select(EscapeMarkdown))} |";
         string separator = $"| {string.Join(" | ", rowObject.Keys.Select(_ => "---"))} |";
-        string values = $"| {string.Join(" | ", rowObject.Values.Select(value => EscapeMarkdown(FormatDisplayValue(value))))} |";
+        string values = $"| {string.Join(" | ", rowObject.Values.Select(value => EscapeMarkdown(FormatDisplayValue(value, displaySettings))))} |";
         RaiseClipboardCopyRequested($"{header}\n{separator}\n{values}");
     }
 
@@ -2937,11 +2966,12 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         if (!TryGetVisibleRows(out List<Dictionary<string, object?>>? rows) || rows is null || rows.Count == 0)
             return false;
 
+        SqlEditorResultDateTimeDisplaySettings displaySettings = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
         string[] columns = rows[0].Keys.ToArray();
         string header = string.Join(",", columns.Select(EscapeCsv));
         string body = string.Join(
             "\r\n",
-            rows.Select(row => string.Join(",", columns.Select(column => EscapeCsv(FormatDisplayValue(row[column]))))));
+            rows.Select(row => string.Join(",", columns.Select(column => EscapeCsv(FormatDisplayValue(row[column], displaySettings))))));
         payload = $"{header}\r\n{body}";
         return !string.IsNullOrWhiteSpace(payload);
     }
@@ -2952,12 +2982,13 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         if (!TryGetVisibleRows(out List<Dictionary<string, object?>>? rows) || rows is null || rows.Count == 0)
             return false;
 
+        SqlEditorResultDateTimeDisplaySettings displaySettings = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
         string[] columns = rows[0].Keys.ToArray();
         string header = $"| {string.Join(" | ", columns.Select(EscapeMarkdown))} |";
         string separator = $"| {string.Join(" | ", columns.Select(_ => "---"))} |";
         string body = string.Join(
             "\n",
-            rows.Select(row => $"| {string.Join(" | ", columns.Select(column => EscapeMarkdown(FormatDisplayValue(row[column]))))} |"));
+            rows.Select(row => $"| {string.Join(" | ", columns.Select(column => EscapeMarkdown(FormatDisplayValue(row[column], displaySettings))))} |"));
         payload = $"{header}\n{separator}\n{body}";
         return !string.IsNullOrWhiteSpace(payload);
     }
@@ -3023,17 +3054,13 @@ public sealed class SqlResultPageViewModel : ViewModelBase
 
     private static string FormatDisplayValue(object? value)
     {
-        if (value is null || value == DBNull.Value)
-            return "<null>";
+        SqlEditorResultDateTimeDisplaySettings settings = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
+        return FormatDisplayValue(value, settings);
+    }
 
-        return value switch
-        {
-            DateTimeOffset dto => dto.ToString("O", CultureInfo.InvariantCulture),
-            DateTime dt => dt.ToString("O", CultureInfo.InvariantCulture),
-            TimeSpan ts => ts.ToString("c", CultureInfo.InvariantCulture),
-            bool b => b ? "true" : "false",
-            _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
-        };
+    private static string FormatDisplayValue(object? value, SqlEditorResultDateTimeDisplaySettings settings)
+    {
+        return SqlResultDateTimeDisplayFormatter.FormatDisplayValue(value, settings, "<null>");
     }
 
     private static string EscapeCsv(string value)
@@ -4013,7 +4040,11 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         return row is not null;
     }
 
-    private static bool TryConvertEditedValue(Type targetType, string? editedText, out object? convertedValue)
+    private static bool TryConvertEditedValue(
+        Type targetType,
+        string? editedText,
+        SqlEditorResultDateTimeDisplaySettings displaySettings,
+        out object? convertedValue)
     {
         Type normalizedType = Nullable.GetUnderlyingType(targetType) ?? targetType;
         string input = editedText?.Trim() ?? string.Empty;
@@ -4043,26 +4074,20 @@ public sealed class SqlResultPageViewModel : ViewModelBase
 
         if (normalizedType == typeof(DateTime))
         {
-            if (DateTime.TryParse(input, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime dateValue))
-            {
-                convertedValue = dateValue;
-                return true;
-            }
-
-            convertedValue = null;
-            return false;
+            return SqlResultDateTimeDisplayFormatter.TryConvertEditedDateTimeValue(
+                targetType,
+                input,
+                displaySettings,
+                out convertedValue);
         }
 
         if (normalizedType == typeof(DateTimeOffset))
         {
-            if (DateTimeOffset.TryParse(input, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset dateOffsetValue))
-            {
-                convertedValue = dateOffsetValue;
-                return true;
-            }
-
-            convertedValue = null;
-            return false;
+            return SqlResultDateTimeDisplayFormatter.TryConvertEditedDateTimeValue(
+                targetType,
+                input,
+                displaySettings,
+                out convertedValue);
         }
 
         if (normalizedType == typeof(TimeSpan))

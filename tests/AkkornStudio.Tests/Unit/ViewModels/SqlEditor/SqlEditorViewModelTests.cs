@@ -964,6 +964,25 @@ public sealed class SqlEditorViewModelTests
     }
 
     [Fact]
+    public async Task ExecuteSelectionOrCurrent_WhenScriptHasOnlyComments_ReturnsNoOpSuccess()
+    {
+        var sut = new SqlEditorViewModel();
+        sut.ActiveTab.SqlText = """
+                                -- ========= SITUACAO =========
+                                -- 8 => SUSPENSO
+                                -- 9 => ENCERRADO
+                                """;
+
+        SqlEditorResultSet result = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.RowsAffected);
+        Assert.Same(result, sut.ActiveTab.LastResult);
+        Assert.False(sut.HasExecutionError);
+        AssertLocalized(sut.ExecutionStatusText, "Execucao concluida com sucesso.", "Execution succeeded.");
+    }
+
+    [Fact]
     public async Task CancelExecution_DuringExecuteAll_StopsSafelyAndClassifiesAsCancelled()
     {
         ConnectionConfig config = new(

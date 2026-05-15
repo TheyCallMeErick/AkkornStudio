@@ -14,6 +14,7 @@ namespace AkkornStudio.UI;
 public partial class MainWindow
 {
     private bool _isSyncingEditorSafetySettings;
+    private bool _isSyncingEditorResultDateTimeSettings;
     private bool _isSyncingProjectConventionSettings;
 
     private void SettingsBackdrop_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -42,6 +43,7 @@ public partial class MainWindow
         GetSettingsModule().OpenSettings(keepStartVisible);
         SyncLanguageComboSelection();
         SyncEditorSafetySettingsToggles();
+        SyncEditorResultDateTimeSettingsControls();
         SyncProjectConventionSettingsControls();
         EnsureKeyboardShortcutsSettingsPanel();
     }
@@ -223,6 +225,56 @@ public partial class MainWindow
             top1000WithoutWhereEnabled ? "ON" : "OFF",
             protectMutationWithoutWhereEnabled ? "ON" : "OFF");
         SetSettingsStatus(status, isError: false);
+    }
+
+    private void SyncEditorResultDateTimeSettingsControls()
+    {
+        ComboBox? dateOrderCombo = this.FindControl<ComboBox>("SettingsEditorResultDateOrderCombo");
+        ComboBox? separatorCombo = this.FindControl<ComboBox>("SettingsEditorResultDateSeparatorCombo");
+        CheckBox? preferRawToggle = this.FindControl<CheckBox>("SettingsEditorResultPreferRawToggle");
+        if (dateOrderCombo is null || separatorCombo is null || preferRawToggle is null)
+            return;
+
+        SqlEditorResultDateTimeDisplaySettings settings = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
+
+        _isSyncingEditorResultDateTimeSettings = true;
+        SelectComboBoxItemByTag(dateOrderCombo, settings.DateOrder);
+        SelectComboBoxItemByTag(separatorCombo, settings.DateSeparator);
+        preferRawToggle.IsChecked = settings.PreferRawValues;
+        _isSyncingEditorResultDateTimeSettings = false;
+    }
+
+    private void SettingsEditorResultDateTime_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        ApplyEditorResultDateTimeSettingsFromControls();
+        e.Handled = true;
+    }
+
+    private void ApplyEditorResultDateTimeSettingsFromControls()
+    {
+        if (_isSyncingEditorResultDateTimeSettings)
+            return;
+
+        ComboBox? dateOrderCombo = this.FindControl<ComboBox>("SettingsEditorResultDateOrderCombo");
+        ComboBox? separatorCombo = this.FindControl<ComboBox>("SettingsEditorResultDateSeparatorCombo");
+        CheckBox? preferRawToggle = this.FindControl<CheckBox>("SettingsEditorResultPreferRawToggle");
+        if (dateOrderCombo is null || separatorCombo is null || preferRawToggle is null)
+            return;
+
+        string dateOrder = (dateOrderCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "YMD";
+        string separator = (separatorCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "-";
+
+        var settings = new SqlEditorResultDateTimeDisplaySettings
+        {
+            DateOrder = dateOrder,
+            DateSeparator = separator,
+            PreferRawValues = preferRawToggle.IsChecked == true,
+        };
+
+        AppSettingsStore.SaveSqlEditorResultDateTimeDisplaySettings(settings);
+        SetSettingsStatus(
+            $"Resultados do editor atualizados: ordem {dateOrder}, separador '{separator}', modo {(settings.PreferRawValues ? "raw" : "formatado")}.",
+            isError: false);
     }
 
     private void SyncProjectConventionSettingsControls()

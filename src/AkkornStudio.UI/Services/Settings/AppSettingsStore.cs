@@ -19,6 +19,7 @@ public sealed class AppSettings
     public Dictionary<string, Dictionary<string, int>> SqlEditorCompletionFrequencyByProfile { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, List<SqlEditorHistoryEntry>> SqlEditorHistoryByProfile { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public ProjectConventionSettings ProjectConventions { get; set; } = new();
+    public SqlEditorResultDateTimeDisplaySettings SqlEditorResultDateTimeDisplay { get; set; } = new();
 }
 
 public sealed class ProjectConventionSettings
@@ -30,10 +31,18 @@ public sealed class ProjectConventionSettings
     public string DefaultWireCurveMode { get; set; } = "Bezier";
 }
 
+public sealed class SqlEditorResultDateTimeDisplaySettings
+{
+    public string DateOrder { get; set; } = "YMD";
+    public string DateSeparator { get; set; } = "-";
+    public bool PreferRawValues { get; set; }
+}
+
 public static class AppSettingsStore
 {
     private static readonly ILogger _logger = NullLogger.Instance;
     private static readonly AsyncLocal<string?> SettingsPathOverrideAsyncLocal = new();
+    public static event EventHandler<SqlEditorResultDateTimeDisplaySettings>? SqlEditorResultDateTimeDisplaySettingsChanged;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -74,6 +83,7 @@ public static class AppSettingsStore
             settings.ProjectConventions.NamingConvention = NormalizeNamingConvention(settings.ProjectConventions.NamingConvention);
             settings.ProjectConventions.MaxAliasLength = Math.Max(0, settings.ProjectConventions.MaxAliasLength);
             settings.ProjectConventions.DefaultWireCurveMode = NormalizeWireCurveMode(settings.ProjectConventions.DefaultWireCurveMode);
+            settings.SqlEditorResultDateTimeDisplay = NormalizeSqlEditorResultDateTimeDisplaySettings(settings.SqlEditorResultDateTimeDisplay);
             return settings;
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
@@ -291,6 +301,24 @@ public static class AppSettingsStore
         Save(settings);
     }
 
+    public static SqlEditorResultDateTimeDisplaySettings LoadSqlEditorResultDateTimeDisplaySettings()
+    {
+        AppSettings settings = Load();
+        return CloneSqlEditorResultDateTimeDisplaySettings(settings.SqlEditorResultDateTimeDisplay);
+    }
+
+    public static void SaveSqlEditorResultDateTimeDisplaySettings(SqlEditorResultDateTimeDisplaySettings? displaySettings)
+    {
+        AppSettings settings = Load();
+        SqlEditorResultDateTimeDisplaySettings current = NormalizeSqlEditorResultDateTimeDisplaySettings(settings.SqlEditorResultDateTimeDisplay);
+        SqlEditorResultDateTimeDisplaySettings next = NormalizeSqlEditorResultDateTimeDisplaySettings(displaySettings);
+        settings.SqlEditorResultDateTimeDisplay = next;
+        Save(settings);
+
+        if (!AreEqualSqlEditorResultDateTimeDisplaySettings(current, next))
+            SqlEditorResultDateTimeDisplaySettingsChanged?.Invoke(null, CloneSqlEditorResultDateTimeDisplaySettings(next));
+    }
+
     private static string NormalizeNamingConvention(string? value)
     {
         return value switch
@@ -312,5 +340,50 @@ public static class AppSettingsStore
             "Orthogonal" => "Orthogonal",
             _ => "Bezier",
         };
+    }
+
+    private static SqlEditorResultDateTimeDisplaySettings CloneSqlEditorResultDateTimeDisplaySettings(SqlEditorResultDateTimeDisplaySettings? source)
+    {
+        SqlEditorResultDateTimeDisplaySettings normalized = NormalizeSqlEditorResultDateTimeDisplaySettings(source);
+        return new SqlEditorResultDateTimeDisplaySettings
+        {
+            DateOrder = normalized.DateOrder,
+            DateSeparator = normalized.DateSeparator,
+            PreferRawValues = normalized.PreferRawValues,
+        };
+    }
+
+    private static SqlEditorResultDateTimeDisplaySettings NormalizeSqlEditorResultDateTimeDisplaySettings(SqlEditorResultDateTimeDisplaySettings? source)
+    {
+        source ??= new SqlEditorResultDateTimeDisplaySettings();
+        string normalizedOrder = (source.DateOrder ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "YMD" => "YMD",
+            "DMY" => "DMY",
+            "MDY" => "MDY",
+            _ => "YMD",
+        };
+
+        string normalizedSeparator = source.DateSeparator switch
+        {
+            "/" => "/",
+            _ => "-",
+        };
+
+        return new SqlEditorResultDateTimeDisplaySettings
+        {
+            DateOrder = normalizedOrder,
+            DateSeparator = normalizedSeparator,
+            PreferRawValues = source.PreferRawValues,
+        };
+    }
+
+    private static bool AreEqualSqlEditorResultDateTimeDisplaySettings(
+        SqlEditorResultDateTimeDisplaySettings left,
+        SqlEditorResultDateTimeDisplaySettings right)
+    {
+        return string.Equals(left.DateOrder, right.DateOrder, StringComparison.Ordinal)
+            && string.Equals(left.DateSeparator, right.DateSeparator, StringComparison.Ordinal)
+            && left.PreferRawValues == right.PreferRawValues;
     }
 }

@@ -72,7 +72,7 @@ public sealed class SqlServerDialect : ISqlDialect
         ";
 
     public string WrapWithPreviewLimit(string baseQuery, int maxRows) =>
-        $"SELECT TOP {maxRows} * FROM ({baseQuery}) AS __preview";
+        $"SELECT TOP {maxRows} * FROM (\n{TrimTrailingSemicolon(baseQuery)}\n) AS __preview";
 
     public string FormatPagination(int? limit, int? offset)
     {

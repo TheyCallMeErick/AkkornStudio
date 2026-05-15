@@ -67,7 +67,7 @@ public sealed class MySqlDialect : ISqlDialect
 
     public string WrapWithPreviewLimit(string baseQuery, int maxRows)
     {
-        return $"SELECT * FROM ({baseQuery}) AS __preview LIMIT {maxRows}";
+        return $"SELECT * FROM (\n{TrimTrailingSemicolon(baseQuery)}\n) AS __preview LIMIT {maxRows}";
     }
 
     public string FormatPagination(int? limit, int? offset)

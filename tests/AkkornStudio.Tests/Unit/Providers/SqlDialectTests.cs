@@ -170,6 +170,22 @@ public class SqlDialectTests
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 
+    [Fact]
+    public void WrapWithPreviewLimit_TrailingLineComment_DoesNotCommentOutLimitOrWrapper()
+    {
+        const string sql = "SELECT 1\n-- comentário final";
+
+        string postgresWrapped = new PostgresDialect().WrapWithPreviewLimit(sql, 10);
+        string mySqlWrapped = new MySqlDialect().WrapWithPreviewLimit(sql, 10);
+        string sqlServerWrapped = new SqlServerDialect().WrapWithPreviewLimit(sql, 10);
+        string sqliteWrapped = new SqliteDialect().WrapWithPreviewLimit(sql, 10);
+
+        Assert.Contains("\nLIMIT 10", postgresWrapped, StringComparison.Ordinal);
+        Assert.Contains("\n) AS __preview", mySqlWrapped, StringComparison.Ordinal);
+        Assert.Contains("\n) AS __preview", sqlServerWrapped, StringComparison.Ordinal);
+        Assert.Contains("\n) AS __preview", sqliteWrapped, StringComparison.Ordinal);
+    }
+
     private static ISqlDialect CreateDialect(DatabaseProvider provider) =>
         provider switch
         {

@@ -10,11 +10,14 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Material.Icons;
 using Material.Icons.Avalonia;
+using AkkornStudio.UI.Services.Settings;
+using AkkornStudio.UI.Services.SqlEditor;
 using AkkornStudio.UI.Services.SqlEditor.Reports;
 using AkkornStudio.UI.ViewModels;
 using System.ComponentModel;
 using System.Data;
 using System.IO;
+using System.Globalization;
 
 namespace AkkornStudio.UI.Controls.SqlEditor;
 
@@ -28,12 +31,30 @@ public partial class SqlResultPageControl : UserControl
     private readonly IBrush _pendingCellBorderBrush = ResolveBrush(
         "AccentPrimaryBrush",
         new SolidColorBrush(Color.Parse("#5B7CFA")));
+    private SqlEditorResultDateTimeDisplaySettings _dateTimeDisplaySettings = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
 
     public SqlResultPageControl()
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
         ResultGrid.LoadingRow += ResultGrid_OnLoadingRow;
+        AttachedToVisualTree += OnAttachedToVisualTree;
+        DetachedFromVisualTree += OnDetachedFromVisualTree;
+    }
+
+    private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        AppSettingsStore.SqlEditorResultDateTimeDisplaySettingsChanged -= OnDateTimeDisplaySettingsChanged;
+        AppSettingsStore.SqlEditorResultDateTimeDisplaySettingsChanged += OnDateTimeDisplaySettingsChanged;
+    }
+
+    private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        AppSettingsStore.SqlEditorResultDateTimeDisplaySettingsChanged -= OnDateTimeDisplaySettingsChanged;
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -47,6 +68,7 @@ public partial class SqlResultPageControl : UserControl
         }
 
         _subscribedViewModel = DataContext as SqlResultPageViewModel;
+        _dateTimeDisplaySettings = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
         if (_subscribedViewModel is not null)
         {
             _subscribedViewModel.ClipboardCopyRequested += OnClipboardCopyRequested;
@@ -56,6 +78,21 @@ public partial class SqlResultPageControl : UserControl
 
         RebuildResultGridColumns();
         Dispatcher.UIThread.Post(ApplyPendingHighlightsForLoadedRows);
+    }
+
+    private void OnDateTimeDisplaySettingsChanged(object? sender, SqlEditorResultDateTimeDisplaySettings settings)
+    {
+        _ = sender;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (AreSameDateTimeSettings(_dateTimeDisplaySettings, settings))
+                return;
+
+            _dateTimeDisplaySettings = settings;
+            RebuildResultGridColumns();
+            _subscribedViewModel?.RefreshDateTimeDisplayFormatting();
+            Dispatcher.UIThread.Post(ApplyPendingHighlightsForLoadedRows, DispatcherPriority.Background);
+        });
     }
 
     private async void OnClipboardCopyRequested(string text)
@@ -234,6 +271,9 @@ public partial class SqlResultPageControl : UserControl
             case TextBox textBox:
                 editedText = textBox.Text;
                 return true;
+            case CalendarDatePicker datePicker:
+                editedText = datePicker.Text;
+                return true;
             case CheckBox checkBox:
                 editedText = checkBox.IsChecked switch
                 {
@@ -243,6 +283,20 @@ public partial class SqlResultPageControl : UserControl
                 };
                 return true;
             default:
+                TextBox? nestedTextBox = editingElement.GetVisualDescendants().OfType<TextBox>().FirstOrDefault();
+                if (nestedTextBox is not null)
+                {
+                    editedText = nestedTextBox.Text;
+                    return true;
+                }
+
+                CalendarDatePicker? nestedDatePicker = editingElement.GetVisualDescendants().OfType<CalendarDatePicker>().FirstOrDefault();
+                if (nestedDatePicker is not null)
+                {
+                    editedText = nestedDatePicker.Text;
+                    return true;
+                }
+
                 editedText = null;
                 return false;
         }
@@ -317,6 +371,9 @@ public partial class SqlResultPageControl : UserControl
         if (DataContext is not SqlResultPageViewModel viewModel || viewModel.RowsView?.Table is not DataTable table)
             return;
 
+        SqlEditorResultDateTimeDisplaySettings displaySettings = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
+        _dateTimeDisplaySettings = displaySettings;
+
         foreach (DataColumn column in table.Columns)
         {
             string columnName = column.ColumnName;
@@ -339,7 +396,7 @@ public partial class SqlResultPageControl : UserControl
                     };
 
                     object? value = ResolveCellValue(rowView, columnName);
-                    string text = FormatCellText(value);
+                    string text = FormatCellText(value, displaySettings);
                     textBlock.Text = text;
                     if (string.Equals(text, "NULL", StringComparison.Ordinal))
                     {
@@ -352,11 +409,11 @@ public partial class SqlResultPageControl : UserControl
                 }),
                 CellEditingTemplate = new FuncDataTemplate<DataRowView>((rowView, _) =>
                 {
-                    var textBox = new TextBox
-                    {
-                        Text = FormatCellText(ResolveCellValue(rowView, columnName)),
-                    };
-                    return textBox;
+                    return BuildCellEditorControl(
+                        rowView,
+                        columnName,
+                        column.DataType,
+                        displaySettings);
                 }),
             });
         }
@@ -373,12 +430,86 @@ public partial class SqlResultPageControl : UserControl
         return rowView.Row[columnName];
     }
 
-    private static string FormatCellText(object? value)
+    private static string FormatCellText(object? value, SqlEditorResultDateTimeDisplaySettings displaySettings)
     {
-        if (value is null || value == DBNull.Value)
-            return "NULL";
+        return SqlResultDateTimeDisplayFormatter.FormatDisplayValue(value, displaySettings, "NULL");
+    }
 
-        return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+    private static bool AreSameDateTimeSettings(
+        SqlEditorResultDateTimeDisplaySettings left,
+        SqlEditorResultDateTimeDisplaySettings right)
+    {
+        return string.Equals(left.DateOrder, right.DateOrder, StringComparison.Ordinal)
+            && string.Equals(left.DateSeparator, right.DateSeparator, StringComparison.Ordinal)
+            && left.PreferRawValues == right.PreferRawValues;
+    }
+
+    private Control BuildCellEditorControl(
+        DataRowView rowView,
+        string columnName,
+        Type columnType,
+        SqlEditorResultDateTimeDisplaySettings displaySettings)
+    {
+        object? currentValue = ResolveCellValue(rowView, columnName);
+        Type normalizedType = Nullable.GetUnderlyingType(columnType) ?? columnType;
+
+        if (normalizedType == typeof(DateTime) || normalizedType == typeof(DateTimeOffset))
+            return BuildDateTimeEditorControl(currentValue, normalizedType, displaySettings);
+
+        return new TextBox
+        {
+            Text = SqlResultDateTimeDisplayFormatter.FormatDisplayValue(currentValue, displaySettings, string.Empty),
+        };
+    }
+
+    private Control BuildDateTimeEditorControl(
+        object? currentValue,
+        Type normalizedType,
+        SqlEditorResultDateTimeDisplaySettings displaySettings)
+    {
+        var root = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 6,
+        };
+
+        var textBox = new TextBox
+        {
+            Text = SqlResultDateTimeDisplayFormatter.BuildEditorText(currentValue, displaySettings),
+            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        textBox.SetValue(Grid.ColumnProperty, 0);
+
+        var datePicker = new CalendarDatePicker
+        {
+            SelectedDateFormat = CalendarDatePickerFormat.Custom,
+            CustomDateFormatString = SqlResultDateTimeDisplayFormatter.BuildDatePattern(displaySettings),
+            Watermark = SqlResultDateTimeDisplayFormatter.BuildDatePattern(displaySettings),
+            Width = 148,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        datePicker.SetValue(Grid.ColumnProperty, 1);
+
+        if (currentValue is DateTime dt)
+            datePicker.SelectedDate = dt.Date;
+        else if (currentValue is DateTimeOffset dto)
+            datePicker.SelectedDate = dto.Date;
+
+        datePicker.SelectedDateChanged += (_, _) =>
+        {
+            if (!datePicker.SelectedDate.HasValue)
+                return;
+
+            textBox.Text = SqlResultDateTimeDisplayFormatter.ApplyCalendarDateToText(
+                textBox.Text,
+                datePicker.SelectedDate.Value,
+                normalizedType,
+                displaySettings);
+        };
+
+        root.Children.Add(textBox);
+        root.Children.Add(datePicker);
+        return root;
     }
 
     private static Grid BuildColumnHeader(string columnName, string columnType, MaterialIconKind columnIcon)

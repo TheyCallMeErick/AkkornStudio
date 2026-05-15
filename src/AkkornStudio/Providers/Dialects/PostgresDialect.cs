@@ -83,7 +83,7 @@ public sealed class PostgresDialect : ISqlDialect
         ";
 
     public string WrapWithPreviewLimit(string baseQuery, int maxRows) =>
-        $"{baseQuery} LIMIT {maxRows}";
+        $"{TrimTrailingSemicolon(baseQuery)}\nLIMIT {maxRows}";
 
     public string FormatPagination(int? limit, int? offset)
     {

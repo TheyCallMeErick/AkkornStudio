@@ -92,6 +92,9 @@ public sealed class SqlScriptStatementSplitter
             return;
 
         string trimmed = raw.Trim();
+        if (string.IsNullOrWhiteSpace(RemoveLeadingComments(trimmed)))
+            return;
+
         int leading = raw.Length - raw.TrimStart().Length;
         int trailing = raw.Length - raw.TrimEnd().Length;
 

@@ -1475,6 +1475,17 @@ public sealed class SqlEditorViewModel : ViewModelBase
         {
             string? sql = GetSqlForExecution(selectionStart, selectionLength, caretOffset);
             UpdateActiveExecutionStatementRange(ResolveStatementLineRangeForCaret(caretOffset));
+            if (string.IsNullOrWhiteSpace(sql) && IsCommentOnlyScript(ActiveTab.SqlText))
+            {
+                SqlEditorResultSet commentOnly = BuildCommentOnlyNoOpResult();
+                StoreResult(commentOnly);
+                ShowResultInPreferredSurface(commentOnly);
+                UpdateExecutionTelemetry([commentOnly]);
+                UpdateExecutionFeedback(commentOnly);
+                RaiseSqlPanelPropertiesChanged();
+                return commentOnly;
+            }
+
             SqlEditorResultSet result = await ExecuteSqlAsync(sql, maxRows, enforceMutationGuard: true);
 
             if (IsExecutionDeferredResult(result))
@@ -1493,6 +1504,26 @@ public sealed class SqlEditorViewModel : ViewModelBase
             IsExecuting = false;
             NotifyCommands();
         }
+    }
+
+    private bool IsCommentOnlyScript(string? sqlText)
+    {
+        if (string.IsNullOrWhiteSpace(sqlText))
+            return false;
+
+        return _statementSplitter.Split(sqlText).Count == 0;
+    }
+
+    private static SqlEditorResultSet BuildCommentOnlyNoOpResult()
+    {
+        return new SqlEditorResultSet
+        {
+            StatementSql = string.Empty,
+            Success = true,
+            RowsAffected = 0,
+            ExecutionTime = TimeSpan.Zero,
+            ExecutedAt = DateTimeOffset.UtcNow,
+        };
     }
 
     public void UpdateCursorPosition(int line, int column)
@@ -1555,6 +1586,18 @@ public sealed class SqlEditorViewModel : ViewModelBase
             BeginExecutionProgress(totalStatements: Math.Max(1, statements.Count));
             if (statements.Count == 0)
             {
+                if (IsCommentOnlyScript(ActiveTab.SqlText))
+                {
+                    SqlEditorResultSet commentOnly = BuildCommentOnlyNoOpResult();
+                    StoreResult(commentOnly);
+                    ShowResultInPreferredSurface(commentOnly);
+                    UpdateExecutionTelemetry([commentOnly]);
+                    UpdateExecutionFeedback(commentOnly);
+                    RaiseSqlPanelPropertiesChanged();
+                    results.Add(commentOnly);
+                    return results;
+                }
+
                 SqlEditorResultSet empty = await ExecuteSqlAsync(null, maxRows, enforceMutationGuard: true);
                 StoreResult(empty);
                 ShowResultInPreferredSurface(empty);
@@ -2156,7 +2199,10 @@ public sealed class SqlEditorViewModel : ViewModelBase
         if (string.IsNullOrWhiteSpace(sql))
             return false;
 
-        string statement = sql.TrimStart();
+        string statement = RemoveLeadingSqlComments(sql);
+        if (string.IsNullOrWhiteSpace(statement))
+            return false;
+
         return Regex.IsMatch(statement, @"^(SELECT|WITH)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
@@ -2166,6 +2212,35 @@ public sealed class SqlEditorViewModel : ViewModelBase
             return false;
 
         return !Regex.IsMatch(sql!, @"\bWHERE\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private static string RemoveLeadingSqlComments(string sql)
+    {
+        string current = sql.TrimStart();
+        while (true)
+        {
+            if (current.StartsWith("--", StringComparison.Ordinal))
+            {
+                int newLineIndex = current.IndexOf('\n');
+                if (newLineIndex < 0)
+                    return string.Empty;
+
+                current = current[(newLineIndex + 1)..].TrimStart();
+                continue;
+            }
+
+            if (current.StartsWith("/*", StringComparison.Ordinal))
+            {
+                int endIndex = current.IndexOf("*/", StringComparison.Ordinal);
+                if (endIndex < 0)
+                    return string.Empty;
+
+                current = current[(endIndex + 2)..].TrimStart();
+                continue;
+            }
+
+            return current;
+        }
     }
 
     private void NotifyMutationCommands()

@@ -1024,6 +1024,61 @@
                                 IsCheckedChanged="SettingsEditorMutationGuardToggle_Changed"/>
                     </Grid>
                   </Border>
+
+                  <Border Classes="surface-card"
+                          Padding="12">
+                    <StackPanel Spacing="10">
+                      <TextBlock Text="Resultados do editor - formato de data/hora"
+                                 FontSize="{StaticResource FontSizeTitle}"
+                                 FontWeight="{StaticResource FontWeightTitle}"
+                                 Foreground="{StaticResource TextPrimaryBrush}"/>
+                      <TextBlock Text="Defina como valores datetime aparecem na grade e no detalhe da linha."
+                                 FontSize="{StaticResource FontSizeCaption}"
+                                 Foreground="{StaticResource TextSecondaryBrush}"
+                                 TextWrapping="Wrap"/>
+
+                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center">
+                        <TextBlock Grid.Column="0"
+                                   Text="Ordem:"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <ComboBox Grid.Column="1"
+                                  x:Name="SettingsEditorResultDateOrderCombo"
+                                  Classes="field"
+                                  SelectionChanged="SettingsEditorResultDateTime_Changed">
+                          <ComboBoxItem Tag="YMD" Content="yyyy MM dd"/>
+                          <ComboBoxItem Tag="DMY" Content="dd MM yyyy"/>
+                          <ComboBoxItem Tag="MDY" Content="MM dd yyyy"/>
+                        </ComboBox>
+                      </Grid>
+
+                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center">
+                        <TextBlock Grid.Column="0"
+                                   Text="Separador:"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <ComboBox Grid.Column="1"
+                                  x:Name="SettingsEditorResultDateSeparatorCombo"
+                                  Classes="field"
+                                  SelectionChanged="SettingsEditorResultDateTime_Changed">
+                          <ComboBoxItem Tag="-" Content="-"/>
+                          <ComboBoxItem Tag="/" Content="/"/>
+                        </ComboBox>
+                      </Grid>
+
+                      <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                        <TextBlock Grid.Column="0"
+                                   Text="Exibir valor raw (ISO 8601) ao inves de formatado"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
+                        <CheckBox Grid.Column="1"
+                                  x:Name="SettingsEditorResultPreferRawToggle"
+                                  Margin="10,0,0,0"
+                                  VerticalAlignment="Center"
+                                  IsCheckedChanged="SettingsEditorResultDateTime_Changed"/>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
                 </StackPanel>
 
                 <Border Height="1" Background="{StaticResource BorderSubtleBrush}" IsVisible="{Binding IsEditorSectionSelected}"/>

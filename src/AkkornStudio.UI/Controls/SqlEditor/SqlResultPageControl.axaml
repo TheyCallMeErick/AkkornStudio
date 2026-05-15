@@ -182,7 +182,8 @@
         <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
           <TextBlock Classes="txt-title"
                      Text="Resultado da consulta"/>
-          <TextBlock Text="{Binding SqlText}"
+          <TextBlock Text="{Binding SqlHeaderText}"
+                     ToolTip.Tip="{Binding SqlText}"
                      TextWrapping="NoWrap"
                      TextTrimming="CharacterEllipsis"
                      FontFamily="{StaticResource MonoFont}"
