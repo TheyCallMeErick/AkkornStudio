@@ -298,6 +298,14 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         OpenMessagesTabCommand = new RelayCommand(OpenMessagesTab);
         ClearSearchTextCommand = new RelayCommand(ClearSearchText, () => !string.IsNullOrWhiteSpace(SearchText));
         ClearColumnSearchTextCommand = new RelayCommand(ClearColumnSearchText, () => !string.IsNullOrWhiteSpace(ColumnSearchText));
+        SortColumnAscendingByNameCommand = new RelayCommand<string>(columnName => SortColumnByName(columnName, descending: false));
+        SortColumnDescendingByNameCommand = new RelayCommand<string>(columnName => SortColumnByName(columnName, descending: true));
+        HideColumnByNameCommand = new RelayCommand<string>(HideColumnByName);
+        GroupByColumnNameCommand = new RelayCommand<string>(GroupByColumnName);
+        PrepareFilterForColumnCommand = new RelayCommand<string>(PrepareFilterForColumn);
+        CopyColumnNameCommand = new RelayCommand<string>(CopyColumnName);
+        CopyColumnTypeCommand = new RelayCommand<string>(CopyColumnType);
+        OpenColumnProfileForColumnCommand = new RelayCommand<string>(OpenColumnProfileForColumn);
 
         ReloadSavedSnippets();
     }
@@ -377,6 +385,14 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     public ICommand OpenMessagesTabCommand { get; }
     public ICommand ClearSearchTextCommand { get; }
     public ICommand ClearColumnSearchTextCommand { get; }
+    public ICommand SortColumnAscendingByNameCommand { get; }
+    public ICommand SortColumnDescendingByNameCommand { get; }
+    public ICommand HideColumnByNameCommand { get; }
+    public ICommand GroupByColumnNameCommand { get; }
+    public ICommand PrepareFilterForColumnCommand { get; }
+    public ICommand CopyColumnNameCommand { get; }
+    public ICommand CopyColumnTypeCommand { get; }
+    public ICommand OpenColumnProfileForColumnCommand { get; }
     public event Action<string>? ClipboardCopyRequested;
     public event Action<SqlResultExportRequest>? ExportRequested;
 
@@ -458,6 +474,10 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             RaisePropertyChanged(nameof(HasVisibleRows));
             RaisePropertyChanged(nameof(HasSelectedCell));
             RaisePropertyChanged(nameof(SelectedCellSummary));
+            RaisePropertyChanged(nameof(HasSelectionContext));
+            RaisePropertyChanged(nameof(SelectionContextText));
+            RaisePropertyChanged(nameof(SelectedColumnName));
+            RaisePropertyChanged(nameof(HasSelectedColumnContext));
             RaisePropertyChanged(nameof(CanGenerateWhereClause));
             RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
             RaisePropertyChanged(nameof(RowWindowText));
@@ -558,6 +578,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         : "-";
     public bool HasVisibleRows => _pagedRowsTable?.Rows.Count > 0;
     public bool HasSelectedCell => Session?.ViewState.SelectedCell is not null;
+    public string? SelectedColumnName => Session?.ViewState.SelectedCell?.ColumnName;
+    public bool HasSelectedColumnContext => !string.IsNullOrWhiteSpace(SelectedColumnName);
     public string SelectedCellSummary
     {
         get
@@ -569,6 +591,13 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             return $"R{selection.RowIndex + 1} · {selection.ColumnName}";
         }
     }
+    public bool HasSelectionContext => HasSelectedCell || HasSelectedRow;
+    public string SelectionContextText =>
+        HasSelectedCell
+            ? $"Célula: {SelectedCellSummary}"
+            : HasSelectedRow
+                ? $"{SelectedRowSummary} selecionada"
+                : "Sem seleção";
     public string GeneratedWhereClause
     {
         get => _generatedWhereClause;
@@ -2026,6 +2055,10 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         RaisePropertyChanged(nameof(SelectedRowSummary));
         RaisePropertyChanged(nameof(HasSelectedCell));
         RaisePropertyChanged(nameof(SelectedCellSummary));
+        RaisePropertyChanged(nameof(HasSelectionContext));
+        RaisePropertyChanged(nameof(SelectionContextText));
+        RaisePropertyChanged(nameof(SelectedColumnName));
+        RaisePropertyChanged(nameof(HasSelectedColumnContext));
         RaisePropertyChanged(nameof(CanGenerateWhereClause));
         RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
         RaisePropertyChanged(nameof(HasBottomPanelContent));
@@ -2126,6 +2159,10 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         SelectedRowItem = rowView;
         RaisePropertyChanged(nameof(HasSelectedCell));
         RaisePropertyChanged(nameof(SelectedCellSummary));
+        RaisePropertyChanged(nameof(HasSelectionContext));
+        RaisePropertyChanged(nameof(SelectionContextText));
+        RaisePropertyChanged(nameof(SelectedColumnName));
+        RaisePropertyChanged(nameof(HasSelectedColumnContext));
         RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
         NotifyCommands();
     }
@@ -2248,6 +2285,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             _selectedRowItem = null;
             RaisePropertyChanged(nameof(SelectedRowItem));
             RaisePropertyChanged(nameof(SelectedRowSummary));
+            RaisePropertyChanged(nameof(HasSelectionContext));
+            RaisePropertyChanged(nameof(SelectionContextText));
             return;
         }
 
@@ -2263,6 +2302,10 @@ public sealed class SqlResultPageViewModel : ViewModelBase
                 Session.ViewState.SelectedCell = null;
             RaisePropertyChanged(nameof(HasSelectedCell));
             RaisePropertyChanged(nameof(SelectedCellSummary));
+            RaisePropertyChanged(nameof(HasSelectionContext));
+            RaisePropertyChanged(nameof(SelectionContextText));
+            RaisePropertyChanged(nameof(SelectedColumnName));
+            RaisePropertyChanged(nameof(HasSelectedColumnContext));
             RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
             return;
         }
@@ -2273,6 +2316,10 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         {
             RaisePropertyChanged(nameof(HasSelectedCell));
             RaisePropertyChanged(nameof(SelectedCellSummary));
+            RaisePropertyChanged(nameof(HasSelectionContext));
+            RaisePropertyChanged(nameof(SelectionContextText));
+            RaisePropertyChanged(nameof(SelectedColumnName));
+            RaisePropertyChanged(nameof(HasSelectedColumnContext));
             RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
             return;
         }
@@ -2280,6 +2327,10 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         Session.ViewState.SelectedCell = null;
         RaisePropertyChanged(nameof(HasSelectedCell));
         RaisePropertyChanged(nameof(SelectedCellSummary));
+        RaisePropertyChanged(nameof(HasSelectionContext));
+        RaisePropertyChanged(nameof(SelectionContextText));
+        RaisePropertyChanged(nameof(SelectedColumnName));
+        RaisePropertyChanged(nameof(HasSelectedColumnContext));
         RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
     }
 
@@ -2295,6 +2346,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             GeneratedWhereClause = string.Empty;
             RaisePropertyChanged(nameof(SelectedRowSummary));
             RaisePropertyChanged(nameof(CanGenerateWhereClause));
+            RaisePropertyChanged(nameof(HasSelectionContext));
+            RaisePropertyChanged(nameof(SelectionContextText));
             NotifyCommands();
             return;
         }
@@ -2317,6 +2370,8 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         SelectedRowJson = JsonSerializer.Serialize(jsonObject, RowJsonSerializerOptions);
         RaisePropertyChanged(nameof(SelectedRowSummary));
         RaisePropertyChanged(nameof(CanGenerateWhereClause));
+        RaisePropertyChanged(nameof(HasSelectionContext));
+        RaisePropertyChanged(nameof(SelectionContextText));
         NotifyCommands();
     }
 
@@ -2598,6 +2653,89 @@ public sealed class SqlResultPageViewModel : ViewModelBase
 
         CurrentPage = 1;
         RebuildRowsProjection();
+    }
+
+    private void SortColumnByName(string? columnName, bool descending)
+    {
+        if (Session is null || string.IsNullOrWhiteSpace(columnName))
+            return;
+
+        Session.ViewState.Sorts = Session.ViewState.Sorts
+            .Where(sort => !string.Equals(sort.ColumnName, columnName, StringComparison.Ordinal))
+            .ToList();
+        Session.ViewState.Sorts.Insert(0, new SqlColumnSort(columnName, Descending: descending));
+
+        ActiveSortCriteria = new ObservableCollection<SqlResultSortCriterionItemViewModel>(
+            Session.ViewState.Sorts.Select(sort => new SqlResultSortCriterionItemViewModel(sort.ColumnName, !sort.Descending)));
+
+        CurrentPage = 1;
+        RebuildRowsProjection();
+    }
+
+    private void HideColumnByName(string? columnName)
+    {
+        if (Session is null || string.IsNullOrWhiteSpace(columnName))
+            return;
+
+        if (Session.ViewState.VisibleColumns.Count <= 1 || !Session.ViewState.VisibleColumns.Contains(columnName))
+            return;
+
+        Session.ViewState.VisibleColumns.Remove(columnName);
+        if (Session.ViewState.SelectedCell?.ColumnName.Equals(columnName, StringComparison.Ordinal) == true)
+            Session.ViewState.SelectedCell = null;
+
+        CurrentPage = 1;
+        RebuildRowsProjection();
+    }
+
+    private void GroupByColumnName(string? columnName)
+    {
+        if (Session is null || string.IsNullOrWhiteSpace(columnName))
+            return;
+
+        if (!Session.ViewState.GroupedColumns.Contains(columnName, StringComparer.Ordinal))
+            Session.ViewState.GroupedColumns.Add(columnName);
+
+        ActiveGroupColumns = new ObservableCollection<SqlResultGroupColumnItemViewModel>(
+            Session.ViewState.GroupedColumns.Select(column => new SqlResultGroupColumnItemViewModel(column)));
+        SelectedGroupColumn = columnName;
+        CurrentPage = 1;
+        RebuildRowsProjection();
+    }
+
+    private void PrepareFilterForColumn(string? columnName)
+    {
+        if (string.IsNullOrWhiteSpace(columnName))
+            return;
+
+        SelectedFilterColumn = columnName;
+    }
+
+    private void CopyColumnName(string? columnName)
+    {
+        if (string.IsNullOrWhiteSpace(columnName))
+            return;
+
+        RaiseClipboardCopyRequested(columnName);
+    }
+
+    private void CopyColumnType(string? columnName)
+    {
+        if (Session?.ResultSet.Data is not DataTable table || string.IsNullOrWhiteSpace(columnName))
+            return;
+
+        if (!table.Columns.Contains(columnName))
+            return;
+
+        string typeName = table.Columns[columnName]!.DataType.Name;
+        RaiseClipboardCopyRequested(typeName);
+    }
+
+    private void OpenColumnProfileForColumn(string? columnName)
+    {
+        _ = columnName;
+        IsBottomPanelVisible = true;
+        SelectedBottomPanelTabIndex = 1;
     }
 
     private bool TryBuildWhereClause(out string whereClause)
@@ -4500,6 +4638,10 @@ public sealed class SqlResultPageViewModel : ViewModelBase
             RaisePropertyChanged(nameof(SelectedRowSummary));
             RaisePropertyChanged(nameof(HasSelectedCell));
             RaisePropertyChanged(nameof(SelectedCellSummary));
+            RaisePropertyChanged(nameof(HasSelectionContext));
+            RaisePropertyChanged(nameof(SelectionContextText));
+            RaisePropertyChanged(nameof(SelectedColumnName));
+            RaisePropertyChanged(nameof(HasSelectedColumnContext));
             RaisePropertyChanged(nameof(CanGenerateWhereClause));
             RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
             RaisePropertyChanged(nameof(HasPendingEdits));
@@ -4788,6 +4930,14 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         (OpenMessagesTabCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ClearSearchTextCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ClearColumnSearchTextCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (SortColumnAscendingByNameCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
+        (SortColumnDescendingByNameCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
+        (HideColumnByNameCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
+        (GroupByColumnNameCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
+        (PrepareFilterForColumnCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
+        (CopyColumnNameCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
+        (CopyColumnTypeCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
+        (OpenColumnProfileForColumnCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
     }
 
     public sealed record SqlQuickTemplateOption(

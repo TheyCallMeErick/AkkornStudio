@@ -1,13 +1,14 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Data.Converters;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Material.Icons;
+using Material.Icons.Avalonia;
 using AkkornStudio.UI.Services.SqlEditor.Reports;
 using AkkornStudio.UI.ViewModels;
 using System.ComponentModel;
@@ -18,9 +19,6 @@ namespace AkkornStudio.UI.Controls.SqlEditor;
 
 public partial class SqlResultPageControl : UserControl
 {
-    private static readonly IValueConverter DbNullToTextConverter = new DbNullToTextValueConverter();
-    private static readonly IValueConverter DbNullToVisibilityConverter = new DbNullToVisibilityValueConverter();
-    private static readonly IValueConverter NonDbNullToVisibilityConverter = new NonDbNullToVisibilityValueConverter();
     private SqlResultPageViewModel? _subscribedViewModel;
     private readonly SqlEditorReportExportService _reportExportService = new();
     private readonly IBrush _pendingCellBackgroundBrush = ResolveBrush(
@@ -275,73 +273,164 @@ public partial class SqlResultPageControl : UserControl
         foreach (DataColumn column in table.Columns)
         {
             string columnName = column.ColumnName;
-            var displayBinding = new Binding($"[{columnName}]")
-            {
-                Mode = BindingMode.OneWay,
-                Converter = DbNullToTextConverter,
-            };
-            var isDbNullBinding = new Binding($"[{columnName}]")
-            {
-                Mode = BindingMode.OneWay,
-                Converter = DbNullToVisibilityConverter,
-            };
-            var isNonDbNullBinding = new Binding($"[{columnName}]")
-            {
-                Mode = BindingMode.OneWay,
-                Converter = NonDbNullToVisibilityConverter,
-            };
             string columnType = ResolveColumnTypeLabel(column.DataType);
+            MaterialIconKind columnIcon = ResolveColumnTypeIcon(column.DataType);
 
-            var headerPanel = new StackPanel
-            {
-                Spacing = 1,
-            };
-            headerPanel.Children.Add(new TextBlock
-            {
-                Text = $"▦ {columnName}",
-                FontWeight = FontWeight.SemiBold,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            });
-            headerPanel.Children.Add(new TextBlock
-            {
-                Text = columnType,
-                FontSize = 11,
-                Foreground = ResolveBrush("TextMutedBrush", new SolidColorBrush(Color.Parse("#9AA3B2"))),
-            });
+            Grid headerPanel = BuildColumnHeader(columnName, columnType, columnIcon);
 
             ResultGrid.Columns.Add(new DataGridTemplateColumn
             {
                 Header = headerPanel,
                 SortMemberPath = columnName,
                 IsReadOnly = !viewModel.IsColumnEditable(columnName),
-                CellTemplate = new FuncDataTemplate<DataRowView>((_, _) =>
+                CellTemplate = new FuncDataTemplate<DataRowView>((rowView, _) =>
                 {
-                    var cellRoot = new Grid();
-                    var valueText = new TextBlock
+                    var textBlock = new TextBlock
                     {
+                        Foreground = ResolveBrush("TextPrimaryBrush", new SolidColorBrush(Color.Parse("#E8EAED"))),
                         TextTrimming = TextTrimming.CharacterEllipsis,
                     };
-                    valueText.Bind(TextBlock.TextProperty, displayBinding);
-                    valueText.Bind(Visual.IsVisibleProperty, isNonDbNullBinding);
-                    cellRoot.Children.Add(valueText);
 
-                    var nullText = new TextBlock
+                    object? value = ResolveCellValue(rowView, columnName);
+                    string text = FormatCellText(value);
+                    textBlock.Text = text;
+                    if (string.Equals(text, "NULL", StringComparison.Ordinal))
                     {
-                        Text = "NULL",
-                        Classes = { "sql-null" },
-                    };
-                    nullText.Bind(Visual.IsVisibleProperty, isDbNullBinding);
-                    cellRoot.Children.Add(nullText);
-                    return cellRoot;
+                        textBlock.FontStyle = FontStyle.Italic;
+                        textBlock.Foreground = ResolveBrush("TextMutedBrush", new SolidColorBrush(Color.Parse("#97A2B8")));
+                        textBlock.Opacity = 0.82;
+                    }
+
+                    return textBlock;
                 }),
-                CellEditingTemplate = new FuncDataTemplate<DataRowView>((_, _) =>
+                CellEditingTemplate = new FuncDataTemplate<DataRowView>((rowView, _) =>
                 {
-                    var textBox = new TextBox();
-                    textBox.Bind(TextBox.TextProperty, displayBinding);
+                    var textBox = new TextBox
+                    {
+                        Text = FormatCellText(ResolveCellValue(rowView, columnName)),
+                    };
                     return textBox;
                 }),
             });
         }
+    }
+
+    private static object? ResolveCellValue(DataRowView? rowView, string columnName)
+    {
+        if (rowView?.Row is null || string.IsNullOrWhiteSpace(columnName))
+            return null;
+
+        if (!rowView.Row.Table.Columns.Contains(columnName))
+            return null;
+
+        return rowView.Row[columnName];
+    }
+
+    private static string FormatCellText(object? value)
+    {
+        if (value is null || value == DBNull.Value)
+            return "NULL";
+
+        return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    private static Grid BuildColumnHeader(string columnName, string columnType, MaterialIconKind columnIcon)
+    {
+        var headerRoot = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            ColumnSpacing = 6,
+        };
+
+        var typeIcon = new MaterialIcon
+        {
+            Kind = columnIcon,
+            Width = 13,
+            Height = 13,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            Foreground = ResolveBrush("AccentSecondaryHoverBrush", new SolidColorBrush(Color.Parse("#79A2FF"))),
+            Margin = new Thickness(0, 1, 0, 0),
+        };
+        headerRoot.Children.Add(typeIcon);
+
+        var identityPanel = new StackPanel
+        {
+            Spacing = 1,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        identityPanel.SetValue(Grid.ColumnProperty, 1);
+        identityPanel.Children.Add(new TextBlock
+        {
+            Text = columnName,
+            FontWeight = FontWeight.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        identityPanel.Children.Add(new TextBlock
+        {
+            Text = columnType,
+            FontSize = 11,
+            Foreground = ResolveBrush("TextMutedBrush", new SolidColorBrush(Color.Parse("#9AA3B2"))),
+        });
+        headerRoot.Children.Add(identityPanel);
+
+        var menuButton = new Button
+        {
+            Content = new MaterialIcon
+            {
+                Kind = MaterialIconKind.DotsHorizontal,
+                Width = 14,
+                Height = 14,
+            },
+            Classes = { "secondary", "compact" },
+            Padding = new Thickness(6, 2),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        menuButton.SetValue(Grid.ColumnProperty, 2);
+        menuButton.Flyout = BuildColumnHeaderFlyout(columnName);
+        headerRoot.Children.Add(menuButton);
+
+        return headerRoot;
+    }
+
+    private static Flyout BuildColumnHeaderFlyout(string columnName)
+    {
+        var stack = new StackPanel
+        {
+            Spacing = 6,
+        };
+        stack.Children.Add(CreateHeaderCommandButton("Ordenar ASC", "SortColumnAscendingByNameCommand", columnName));
+        stack.Children.Add(CreateHeaderCommandButton("Ordenar DESC", "SortColumnDescendingByNameCommand", columnName));
+        stack.Children.Add(CreateHeaderCommandButton("Filtrar por esta coluna", "PrepareFilterForColumnCommand", columnName));
+        stack.Children.Add(CreateHeaderCommandButton("Agrupar por esta coluna", "GroupByColumnNameCommand", columnName));
+        stack.Children.Add(CreateHeaderCommandButton("Ocultar coluna", "HideColumnByNameCommand", columnName));
+        stack.Children.Add(CreateHeaderCommandButton("Copiar nome da coluna", "CopyColumnNameCommand", columnName));
+        stack.Children.Add(CreateHeaderCommandButton("Copiar tipo da coluna", "CopyColumnTypeCommand", columnName));
+        stack.Children.Add(CreateHeaderCommandButton("Ver perfil da coluna", "OpenColumnProfileForColumnCommand", columnName));
+
+        return new Flyout
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+            Content = new Border
+            {
+                Classes = { "surface-card" },
+                Padding = new Thickness(8),
+                MinWidth = 210,
+                Child = stack,
+            },
+        };
+    }
+
+    private static Button CreateHeaderCommandButton(string content, string commandBindingPath, string columnName)
+    {
+        var button = new Button
+        {
+            Content = content,
+            Classes = { "secondary", "compact" },
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+        };
+        button.Bind(Button.CommandProperty, new Binding(commandBindingPath));
+        button.CommandParameter = columnName;
+        return button;
     }
 
     private static string ResolveColumnTypeLabel(Type columnType)
@@ -358,6 +447,34 @@ public partial class SqlResultPageControl : UserControl
             return "bool";
 
         return columnType.Name.ToLowerInvariant();
+    }
+
+    private static MaterialIconKind ResolveColumnTypeIcon(Type columnType)
+    {
+        Type normalizedType = Nullable.GetUnderlyingType(columnType) ?? columnType;
+        if (normalizedType == typeof(string))
+            return MaterialIconKind.FormatLetterCase;
+        if (normalizedType == typeof(byte[]) || normalizedType == typeof(ReadOnlyMemory<byte>) || normalizedType == typeof(Memory<byte>))
+            return MaterialIconKind.File;
+        if (normalizedType == typeof(bool))
+            return MaterialIconKind.ToggleSwitchOutline;
+        if (normalizedType == typeof(DateTime) || normalizedType == typeof(DateTimeOffset))
+            return MaterialIconKind.CalendarClockOutline;
+        if (normalizedType == typeof(Guid))
+            return MaterialIconKind.Pound;
+        if (normalizedType == typeof(decimal) || normalizedType == typeof(double) || normalizedType == typeof(float))
+            return MaterialIconKind.Sigma;
+        if (normalizedType == typeof(byte) || normalizedType == typeof(sbyte)
+            || normalizedType == typeof(short) || normalizedType == typeof(ushort)
+            || normalizedType == typeof(int) || normalizedType == typeof(uint)
+            || normalizedType == typeof(long) || normalizedType == typeof(ulong))
+            return MaterialIconKind.Numeric;
+        if (string.Equals(normalizedType.Name, "JsonDocument", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalizedType.Name, "JObject", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalizedType.Name, "JToken", StringComparison.OrdinalIgnoreCase))
+            return MaterialIconKind.CodeJson;
+
+        return MaterialIconKind.TableColumn;
     }
 
     private void SearchBox_OnKeyDown(object? sender, KeyEventArgs e)
@@ -404,67 +521,6 @@ public partial class SqlResultPageControl : UserControl
         ResultGrid.ColumnHeaderHeight = 48;
     }
 
-    private sealed class DbNullToTextValueConverter : IValueConverter
-    {
-        public object? Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        {
-            _ = targetType;
-            _ = parameter;
-            _ = culture;
-            if (value is null || value == DBNull.Value)
-                return string.Empty;
-            return value.ToString();
-        }
-
-        public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        {
-            _ = targetType;
-            _ = parameter;
-            _ = culture;
-            return value;
-        }
-    }
-
-    private sealed class DbNullToVisibilityValueConverter : IValueConverter
-    {
-        public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        {
-            _ = targetType;
-            _ = parameter;
-            _ = culture;
-            return value is null || value == DBNull.Value;
-        }
-
-        public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        {
-            _ = value;
-            _ = targetType;
-            _ = parameter;
-            _ = culture;
-            return BindingOperations.DoNothing;
-        }
-    }
-
-    private sealed class NonDbNullToVisibilityValueConverter : IValueConverter
-    {
-        public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        {
-            _ = targetType;
-            _ = parameter;
-            _ = culture;
-            return value is not null && value != DBNull.Value;
-        }
-
-        public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        {
-            _ = value;
-            _ = targetType;
-            _ = parameter;
-            _ = culture;
-            return BindingOperations.DoNothing;
-        }
-    }
-
     private static FilePickerFileType GetExportFileType(SqlEditorReportType reportType)
     {
         return reportType switch
@@ -500,3 +556,4 @@ public partial class SqlResultPageControl : UserControl
         return fallback;
     }
 }
+

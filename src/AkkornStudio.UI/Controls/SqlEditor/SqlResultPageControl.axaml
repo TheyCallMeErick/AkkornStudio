@@ -19,6 +19,17 @@
     <Style Selector="DataGrid.sql-result-grid DataGridRow:selected">
       <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
     </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridCell">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridCell:current">
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridCell:focus-visible">
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryHoverBrush}"/>
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
+    </Style>
     <Style Selector="TextBlock.sql-null">
       <Setter Property="FontStyle" Value="Italic"/>
       <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
@@ -29,8 +40,46 @@
     </Style>
     <Style Selector="Button.split-tail">
       <Setter Property="CornerRadius" Value="0,5,5,0"/>
+      <Setter Property="Padding" Value="6,4"/>
+      <Setter Property="MinWidth" Value="30"/>
+    </Style>
+    <Style Selector="ToggleButton.secondary:checked">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="ToggleButton.secondary:checked:pointerover">
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
+    </Style>
+    <Style Selector="ToggleButton.secondary:focus-visible">
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryHoverBrush}"/>
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
+    </Style>
+    <Style Selector="Border.result-meta-chip">
+      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="Padding" Value="10,4"/>
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="MinHeight" Value="28"/>
+    </Style>
+    <Style Selector="Border.result-meta-chip.success">
+      <Setter Property="Background" Value="{StaticResource BtnSuccessBgBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource StatusOkBrush}"/>
+    </Style>
+    <Style Selector="Border.result-meta-chip.warning">
+      <Setter Property="Background" Value="{StaticResource BtnWarningBgBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource StatusWarningBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.result-meta-text">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="FontWeight" Value="{StaticResource FontWeightHeading}"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+    <Style Selector="Button.grid-menu-button">
       <Setter Property="Padding" Value="8,4"/>
-      <Setter Property="MinWidth" Value="28"/>
+      <Setter Property="MinWidth" Value="92"/>
     </Style>
   </UserControl.Styles>
 
@@ -68,13 +117,23 @@
                      FontSize="11"/>
         </StackPanel>
 
-        <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" Spacing="6">
-          <Border Classes="badge success"><TextBlock Text="{Binding StatusText}"/></Border>
-          <Border Classes="badge"><TextBlock Text="{Binding RowCountText, StringFormat='Rows: {0}'}"/></Border>
-          <Border Classes="badge"><TextBlock Text="{Binding ColumnCountText, StringFormat='Cols: {0}'}"/></Border>
-          <Border Classes="badge"><TextBlock Text="{Binding EditabilityStatusText}"/></Border>
-          <Border Classes="badge warning"><TextBlock Text="{Binding PendingEditsCount, StringFormat='Pending: {0}'}"/></Border>
-        </StackPanel>
+        <WrapPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" ItemSpacing="6">
+          <Border Classes="result-meta-chip success">
+            <TextBlock Classes="result-meta-text" Text="{Binding StatusText}"/>
+          </Border>
+          <Border Classes="result-meta-chip">
+            <TextBlock Classes="result-meta-text" Text="{Binding RowCountText, StringFormat='Rows: {0}'}"/>
+          </Border>
+          <Border Classes="result-meta-chip">
+            <TextBlock Classes="result-meta-text" Text="{Binding ColumnCountText, StringFormat='Cols: {0}'}"/>
+          </Border>
+          <Border Classes="result-meta-chip" MaxWidth="360">
+            <TextBlock Classes="result-meta-text" Text="{Binding EditabilityStatusText}" ToolTip.Tip="{Binding EditabilityStatusText}"/>
+          </Border>
+          <Border Classes="result-meta-chip warning">
+            <TextBlock Classes="result-meta-text" Text="{Binding PendingEditsCount, StringFormat='Pending: {0}'}"/>
+          </Border>
+        </WrapPanel>
 
         <WrapPanel Grid.Row="1"
                    Grid.Column="0"
@@ -92,7 +151,8 @@
                     Content="Copiar"/>
             <Button Grid.Column="1"
                     Classes="secondary compact split-tail"
-                    Content="?">
+                    ToolTip.Tip="Mais ações de cópia">
+              <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14"/>
               <Button.Flyout>
                 <Flyout Placement="BottomEdgeAlignedLeft">
                   <Border Classes="surface-card" Padding="8" MinWidth="220">
@@ -119,7 +179,8 @@
                     Content="Exportar"/>
             <Button Grid.Column="1"
                     Classes="secondary compact split-tail"
-                    Content="?">
+                    ToolTip.Tip="Mais ações de exportação">
+              <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14"/>
               <Button.Flyout>
                 <Flyout Placement="BottomEdgeAlignedLeft">
                   <Border Classes="surface-card" Padding="8" MinWidth="220">
@@ -141,8 +202,9 @@
                     Content="Pendências"/>
             <Button Grid.Column="1"
                     Classes="secondary compact split-tail"
-                    Content="?"
+                    ToolTip.Tip="Mais ações de pendências"
                     IsEnabled="{Binding HasPendingEdits}">
+              <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14"/>
               <Button.Flyout>
                 <Flyout Placement="BottomEdgeAlignedLeft">
                   <Border Classes="surface-card" Padding="8" MinWidth="260">
@@ -274,7 +336,8 @@
                     <DataTemplate>
                       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4" Margin="0,0,0,4">
                         <CheckBox Grid.Column="0" Content="{Binding ColumnName}" IsChecked="{Binding IsVisible, Mode=TwoWay}"/>
-                        <Button Grid.Column="1" Classes="secondary compact" Content="?">
+                        <Button Grid.Column="1" Classes="secondary compact" ToolTip.Tip="Ações da coluna">
+                          <mi:MaterialIcon Kind="DotsHorizontal" Width="14" Height="14"/>
                           <Button.Flyout>
                             <Flyout Placement="RightEdgeAlignedTop">
                               <Border Classes="surface-card" Padding="8" MinWidth="190">
@@ -362,7 +425,7 @@
       </Border>
 
       <Border Grid.Column="1" Classes="surface-card" Padding="8">
-        <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="8">
+        <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" RowSpacing="8">
           <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
             <Grid Grid.Column="0" ColumnDefinitions="*,Auto" ColumnSpacing="6">
               <TextBox Grid.Column="0"
@@ -373,7 +436,7 @@
               <Button Grid.Column="1" Classes="secondary compact" Command="{Binding ClearSearchTextCommand}" Content="×" IsVisible="{Binding HasSearchText}"/>
             </Grid>
 
-            <Button Grid.Column="1" Classes="secondary compact" Content="Filtros ?">
+            <Button Grid.Column="1" Classes="secondary compact grid-menu-button" Content="Filtros">
               <Button.Flyout>
                 <Flyout Placement="BottomEdgeAlignedLeft">
                   <Border Classes="surface-card" Padding="8" MinWidth="240">
@@ -389,7 +452,7 @@
               </Button.Flyout>
             </Button>
 
-            <Button Grid.Column="2" Classes="secondary compact" Content="Ordenar ?">
+            <Button Grid.Column="2" Classes="secondary compact grid-menu-button" Content="Ordenar">
               <Button.Flyout>
                 <Flyout Placement="BottomEdgeAlignedLeft">
                   <Border Classes="surface-card" Padding="8" MinWidth="220">
@@ -404,7 +467,7 @@
               </Button.Flyout>
             </Button>
 
-            <Button Grid.Column="3" Classes="secondary compact" Content="Agrupar ?">
+            <Button Grid.Column="3" Classes="secondary compact grid-menu-button" Content="Agrupar">
               <Button.Flyout>
                 <Flyout Placement="BottomEdgeAlignedLeft">
                   <Border Classes="surface-card" Padding="8" MinWidth="220">
@@ -418,7 +481,7 @@
               </Button.Flyout>
             </Button>
 
-            <Button Grid.Column="4" Classes="secondary compact" Content="Colunas ?">
+            <Button Grid.Column="4" Classes="secondary compact grid-menu-button" Content="Colunas">
               <Button.Flyout>
                 <Flyout Placement="BottomEdgeAlignedLeft">
                   <Border Classes="surface-card" Padding="8" MinWidth="200">
@@ -476,7 +539,44 @@
             </DataGrid.ContextMenu>
           </DataGrid>
 
-          <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="8">
+          <Border Grid.Row="2"
+                  Classes="surface-card"
+                  Padding="6"
+                  IsVisible="{Binding HasSelectionContext}">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="6">
+              <Border Grid.Column="0" Classes="badge">
+                <TextBlock Text="{Binding SelectionContextText}"/>
+              </Border>
+              <Button Grid.Column="1"
+                      Classes="secondary compact"
+                      Command="{Binding CopySelectedCellCommand}"
+                      Content="Copiar célula"
+                      IsVisible="{Binding HasSelectedCell}"/>
+              <Button Grid.Column="2"
+                      Classes="secondary compact"
+                      Command="{Binding CopySelectedRowAsJsonCommand}"
+                      Content="Copiar linha"
+                      IsVisible="{Binding HasSelectedRow}"/>
+              <Button Grid.Column="3"
+                      Classes="secondary compact"
+                      Command="{Binding FilterBySelectedCellValueCommand}"
+                      Content="Filtrar por valor"
+                      IsVisible="{Binding HasSelectedCell}"/>
+              <Button Grid.Column="4"
+                      Classes="secondary compact"
+                      Command="{Binding NavigateSelectedForeignKeyCommand}"
+                      Content="Abrir FK"
+                      IsVisible="{Binding HasSelectedCell}"/>
+              <Button Grid.Column="5"
+                      Classes="secondary compact"
+                      HorizontalAlignment="Right"
+                      Command="{Binding OpenDetailsTabCommand}"
+                      Content="Detalhes"
+                      IsVisible="{Binding HasSelectedRow}"/>
+            </Grid>
+          </Border>
+
+          <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="8">
             <Button Grid.Column="0" Classes="secondary compact" Command="{Binding FirstPageCommand}" Content="‹‹"/>
             <Button Grid.Column="1" Classes="secondary compact" Command="{Binding PreviousPageCommand}" Content="‹"/>
             <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Página" Foreground="{StaticResource TextSecondaryBrush}"/>
@@ -490,7 +590,7 @@
             </StackPanel>
           </Grid>
 
-          <Border Grid.Row="3"
+          <Border Grid.Row="4"
                   Classes="surface-card"
                   Padding="8"
                   IsVisible="{Binding IsBottomPanelVisible}">

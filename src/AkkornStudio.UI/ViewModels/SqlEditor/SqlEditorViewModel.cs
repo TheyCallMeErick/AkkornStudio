@@ -550,8 +550,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
     public bool ShouldShowResultsSheet =>
         IsResultsSheetOpen
         && CurrentResult is not null;
-    public bool CanReopenResultsSheet => !IsResultsSheetOpen && CurrentResult is not null;
-    public string RestoreResultsButtonText => L("sqlEditor.results.restore", "Abrir resultados");
+    public bool CanReopenResultsSheet => CurrentResult is not null;
+    public string RestoreResultsButtonText => L("sqlEditor.results.restore", "Exibir resultados");
 
     public double ResultsSheetHeight
     {
@@ -1178,10 +1178,15 @@ public sealed class SqlEditorViewModel : ViewModelBase
             if (config is null)
                 return L("sqlEditor.connection.none", "Sem conexao ativa.");
 
-            string provider = GetProviderDisplayName(config.Provider);
-            string profile = ActiveTabConnectionProfile?.DisplayName ?? config.Database;
-            string schema = SharedConnectionManager?.SelectedSchema ?? "default";
-            return $"[{provider}] {profile}/{schema}";
+            string? connectionName = ActiveTabConnectionProfile?.DisplayName;
+            if (!string.IsNullOrWhiteSpace(connectionName))
+                return connectionName;
+
+            ConnectionManagerViewModel? manager = SharedConnectionManager;
+            if (manager is not null && !string.IsNullOrWhiteSpace(manager.ActiveProfileId))
+                return manager.SidebarConnectionName;
+
+            return config.Database;
         }
     }
 
@@ -2203,11 +2208,24 @@ public sealed class SqlEditorViewModel : ViewModelBase
     public void NotifyConnectionContextChanged()
     {
         ConnectionManagerViewModel? manager = SharedConnectionManager;
-        if (manager is not null
-            && string.IsNullOrWhiteSpace(ActiveTabConnectionProfileId)
-            && !string.IsNullOrWhiteSpace(manager.ActiveProfileId))
+        if (manager is not null)
         {
-            ActiveTabConnectionProfileId = manager.ActiveProfileId;
+            string? managerActiveProfileId = string.IsNullOrWhiteSpace(manager.ActiveProfileId)
+                ? null
+                : manager.ActiveProfileId;
+
+            if (string.IsNullOrWhiteSpace(managerActiveProfileId))
+            {
+                if (!string.IsNullOrWhiteSpace(ActiveTabConnectionProfileId))
+                    ActiveTabConnectionProfileId = null;
+            }
+            else if (!string.Equals(ActiveTabConnectionProfileId, managerActiveProfileId, StringComparison.Ordinal))
+            {
+                bool knownProfile = AvailableConnectionProfiles.Any(profile =>
+                    string.Equals(profile.Id, managerActiveProfileId, StringComparison.Ordinal));
+                if (knownProfile)
+                    ActiveTabConnectionProfileId = managerActiveProfileId;
+            }
         }
 
         RaisePropertyChanged(nameof(SharedConnectionManager));
@@ -2775,7 +2793,20 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     private void OpenResultsSheet()
     {
-        IsResultsSheetOpen = true;
+        SqlEditorResultSet? result = CurrentResult;
+        if (result is null)
+            return;
+
+        if (!TryRequestResultPage(result))
+        {
+            PublishStatus(
+                L("sqlEditor.results.open.unsupported", "A nova tela de resultados suporta consultas SELECT com dados."),
+                null,
+                hasError: false);
+            return;
+        }
+
+        IsResultsSheetOpen = false;
         NotifyCommands();
     }
 
@@ -2787,10 +2818,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     private void ShowResultInPreferredSurface(SqlEditorResultSet result)
     {
-        if (TryRequestResultPage(result))
-            return;
-
-        OpenResultsSheet();
+        _ = TryRequestResultPage(result);
+        IsResultsSheetOpen = false;
     }
 
     private bool TryRequestResultPage(SqlEditorResultSet result)

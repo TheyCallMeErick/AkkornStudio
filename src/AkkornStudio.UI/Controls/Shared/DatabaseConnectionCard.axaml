@@ -109,6 +109,7 @@
           <Button Grid.Column="1"
                   Classes="secondary compact"
                   Command="{Binding OpenConnectionManagerCommand, ElementName=Root}"
+                  IsVisible="{Binding ShowConnectionManagerButton, ElementName=Root}"
                   IsEnabled="{Binding IsReloading, ElementName=Root, Converter={x:Static BoolConverters.Not}}"
                   ToolTip.Tip="Abrir conexoes">
             <mi:MaterialIcon Kind="SwapHorizontal" Width="16" Height="16"/>

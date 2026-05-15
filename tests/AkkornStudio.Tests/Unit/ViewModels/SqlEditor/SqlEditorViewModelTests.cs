@@ -136,6 +136,89 @@ public sealed class SqlEditorViewModelTests
     }
 
     [Fact]
+    public void NotifyConnectionContextChanged_WhenManagerActiveProfileChanges_SynchronizesActiveTabProfile()
+    {
+        var manager = new ConnectionManagerViewModel();
+        var profileA = new ConnectionProfile
+        {
+            Id = "profile-a",
+            Name = "Profile A",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_a",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        var profileB = new ConnectionProfile
+        {
+            Id = "profile-b",
+            Name = "Profile B",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_b",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        manager.Profiles.Add(profileA);
+        manager.Profiles.Add(profileB);
+        manager.ActiveProfileId = profileB.Id;
+
+        var sut = new SqlEditorViewModel(
+            sharedConnectionManagerResolver: () => manager,
+            connectionProfilesResolver: () =>
+            [
+                new SqlEditorConnectionProfileOption { Id = profileA.Id, DisplayName = profileA.Name, Provider = profileA.Provider },
+                new SqlEditorConnectionProfileOption { Id = profileB.Id, DisplayName = profileB.Name, Provider = profileB.Provider },
+            ]);
+
+        sut.ActiveTabConnectionProfileId = profileA.Id;
+        sut.NotifyConnectionContextChanged();
+
+        Assert.Equal(profileB.Id, sut.ActiveTabConnectionProfileId);
+    }
+
+    [Fact]
+    public void NotifyConnectionContextChanged_WhenManagerDisconnects_ClearsActiveTabProfile()
+    {
+        var manager = new ConnectionManagerViewModel();
+        var profile = new ConnectionProfile
+        {
+            Id = "profile-a",
+            Name = "Profile A",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_a",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        manager.Profiles.Add(profile);
+        manager.ActiveProfileId = null;
+
+        var sut = new SqlEditorViewModel(
+            sharedConnectionManagerResolver: () => manager,
+            connectionProfilesResolver: () =>
+            [
+                new SqlEditorConnectionProfileOption
+                {
+                    Id = profile.Id,
+                    DisplayName = profile.Name,
+                    Provider = profile.Provider,
+                },
+            ]);
+
+        sut.ActiveTabConnectionProfileId = profile.Id;
+        sut.NotifyConnectionContextChanged();
+
+        Assert.Null(sut.ActiveTabConnectionProfileId);
+    }
+
+    [Fact]
     public void ReceiveFromCanvas_DelegatesToTabManagerAndKeepsActiveTabInSync()
     {
         var sut = new SqlEditorViewModel();
@@ -773,7 +856,7 @@ public sealed class SqlEditorViewModelTests
 
 
     [Fact]
-    public async Task ExecuteSelectionOrCurrent_WhenResultHasNoRows_StillShowsResultsSheet()
+    public async Task ExecuteSelectionOrCurrent_WhenResultHasNoRows_StillKeepsResultAccessible()
     {
         ConnectionConfig config = new(
             DatabaseProvider.Postgres,
@@ -793,7 +876,8 @@ public sealed class SqlEditorViewModelTests
         Assert.True(result.Success);
         Assert.NotNull(sut.ResultRowsView);
         Assert.True(sut.HasResultRows);
-        Assert.True(sut.ShouldShowResultsSheet);
+        Assert.False(sut.ShouldShowResultsSheet);
+        Assert.True(sut.CanReopenResultsSheet);
         Assert.True(sut.CanExportReport);
     }
     [Fact]
@@ -1233,8 +1317,7 @@ public sealed class SqlEditorViewModelTests
         Assert.True(sut.IsProductionConnectionContext);
         Assert.False(sut.IsStagingConnectionContext);
         Assert.False(sut.IsNeutralConnectionContext);
-        Assert.Contains("[PostgreSQL]", sut.ActiveConnectionContextBadgeText, StringComparison.Ordinal);
-        Assert.Contains("prod-main/default", sut.ActiveConnectionContextBadgeText, StringComparison.Ordinal);
+        Assert.Equal("prod-main", sut.ActiveConnectionContextBadgeText);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:AkkornStudio.UI.ViewModels"
              xmlns:ctrl="using:AkkornStudio.UI.Controls"
@@ -54,83 +54,53 @@
                    Classes="section-header-accent"
                    Margin="2,0,0,0"/>
 
-        <Border Classes="connection-card"
-                IsVisible="{Binding HasConnectionProfiles}"
-                Margin="0,0,0,6">
-          <StackPanel Spacing="8">
-            <TextBlock Text="Conexão da aba SQL"
-                       FontSize="{StaticResource FontSizeCaption}"
-                       Foreground="{StaticResource TextSecondaryBrush}"/>
+        <Grid IsVisible="{Binding HasSharedConnectionManager}">
+          <shared:DatabaseConnectionCard
+              IsVisible="{Binding SharedConnectionManager.ActiveProfileId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+              IsConnected="{Binding SharedConnectionManager.ActiveProfileId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+              ConnectionName="{Binding SharedConnectionManager.SidebarConnectionName}"
+              ConnectionSubtitle="{Binding SharedConnectionManager.SidebarConnectionSubtitle}"
+              AvailableConnections="{Binding SharedConnectionManager.Profiles}"
+              SelectedConnection="{Binding SharedConnectionManager.SidebarSelectedConnection}"
+              AvailableDatabases="{Binding SharedConnectionManager.AvailableDatabases}"
+              AvailableDatabaseOptions="{Binding SharedConnectionManager.AvailableDatabaseCatalogs}"
+              SelectedDatabase="{Binding SharedConnectionManager.SelectedDatabase}"
+              IsDatabaseSelectionVisible="{Binding SharedConnectionManager.IsDatabaseSelectionVisible}"
+              AvailableSchemas="{Binding SharedConnectionManager.AvailableSchemas}"
+              SelectedSchema="{Binding SharedConnectionManager.SelectedSchema}"
+              MetadataSummary="{Binding SharedConnectionManager.ActiveMetadataSummary}"
+              MetadataDetails="{Binding SharedConnectionManager.ActiveMetadataDetails}"
+              LatencyMs="{Binding SharedConnectionManager.ActiveLatencyMs}"
+              IsReloading="{Binding SharedConnectionManager.IsBusy}"
+              DisconnectCommand="{Binding SharedConnectionManager.DisconnectCommand}"
+              OpenConnectionManagerCommand="{Binding SharedConnectionManager.ConnectOrOpenManagerCommand}"
+              SwitchConnectionCommand="{Binding SharedConnectionManager.SwitchConnectionCommand}"
+              SwitchDatabaseCommand="{Binding SharedConnectionManager.SwitchDatabaseCommand}"
+              SwitchSchemaCommand="{Binding SharedConnectionManager.SwitchSchemaCommand}"
+              ShowConnectionManagerButton="False"
+              Margin="0,0,0,6"/>
 
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-              <Border Background="{StaticResource Bg0Brush}"
-                      BorderBrush="{StaticResource BorderBrush}"
-                      BorderThickness="1"
-                      CornerRadius="{StaticResource RadiusSM}"
-                      Padding="10,7">
-                <TextBlock Text="{Binding ActiveConnectionDisplayName}"
-                           FontSize="{StaticResource FontSizeLabel}"
-                           Foreground="{StaticResource TextPrimaryBrush}"
-                           TextTrimming="CharacterEllipsis"
-                           MaxLines="1"/>
-              </Border>
-              <Button Grid.Column="1"
-                      Classes="secondary compact"
+          <Border Classes="connection-card"
+                  IsVisible="{Binding SharedConnectionManager.ActiveProfileId, Converter={x:Static StringConverters.IsNullOrEmpty}}"
+                  Margin="0,0,0,6">
+            <StackPanel Spacing="10">
+              <TextBlock Text="{Binding [sqlEditor.sidebar.connection.none], Source={x:Static loc:LocalizationService.Instance}}"
+                         Classes="empty-state"/>
+              <TextBlock Text="{Binding [sqlEditor.sidebar.connection.connectHint], Source={x:Static loc:LocalizationService.Instance}}"
+                         Classes="empty-state"
+                         FontSize="{StaticResource FontSizeCaption}"
+                         TextWrapping="Wrap"/>
+              <Button Content="{Binding [sqlEditor.sidebar.connection.connect], Source={x:Static loc:LocalizationService.Instance}}"
+                      Classes="primary"
                       Command="{Binding SharedConnectionManager.ConnectOrOpenManagerCommand}"
-                      IsEnabled="{Binding HasSharedConnectionManager}"
-                      ToolTip.Tip="Abrir modal de conexoes">
-                <mi:MaterialIcon Kind="SwapHorizontal" Width="16" Height="16"/>
-              </Button>
-            </Grid>
-          </StackPanel>
-        </Border>
-
-      <Grid IsVisible="{Binding HasSharedConnectionManager}">
-        <shared:DatabaseConnectionCard
-            IsVisible="{Binding SharedConnectionManager.ActiveProfileId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-            IsConnected="{Binding SharedConnectionManager.ActiveProfileId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-            ConnectionName="{Binding SharedConnectionManager.SidebarConnectionName}"
-            ConnectionSubtitle="{Binding SharedConnectionManager.SidebarConnectionSubtitle}"
-            AvailableConnections="{Binding SharedConnectionManager.Profiles}"
-            SelectedConnection="{Binding SharedConnectionManager.SidebarSelectedConnection}"
-            AvailableDatabases="{Binding SharedConnectionManager.AvailableDatabases}"
-            AvailableDatabaseOptions="{Binding SharedConnectionManager.AvailableDatabaseCatalogs}"
-            SelectedDatabase="{Binding SharedConnectionManager.SelectedDatabase}"
-            IsDatabaseSelectionVisible="{Binding SharedConnectionManager.IsDatabaseSelectionVisible}"
-            AvailableSchemas="{Binding SharedConnectionManager.AvailableSchemas}"
-            SelectedSchema="{Binding SharedConnectionManager.SelectedSchema}"
-            MetadataSummary="{Binding SharedConnectionManager.ActiveMetadataSummary}"
-            MetadataDetails="{Binding SharedConnectionManager.ActiveMetadataDetails}"
-            LatencyMs="{Binding SharedConnectionManager.ActiveLatencyMs}"
-            IsReloading="{Binding SharedConnectionManager.IsBusy}"
-            DisconnectCommand="{Binding SharedConnectionManager.DisconnectCommand}"
-            OpenConnectionManagerCommand="{Binding SharedConnectionManager.ConnectOrOpenManagerCommand}"
-            SwitchConnectionCommand="{Binding SharedConnectionManager.SwitchConnectionCommand}"
-            SwitchDatabaseCommand="{Binding SharedConnectionManager.SwitchDatabaseCommand}"
-            SwitchSchemaCommand="{Binding SharedConnectionManager.SwitchSchemaCommand}"
-            Margin="0,0,0,6"/>
-
-        <Border Classes="connection-card"
-                IsVisible="{Binding SharedConnectionManager.ActiveProfileId, Converter={x:Static StringConverters.IsNullOrEmpty}}"
-                Margin="0,0,0,6">
-          <StackPanel Spacing="10">
-            <TextBlock Text="{Binding [sqlEditor.sidebar.connection.none], Source={x:Static loc:LocalizationService.Instance}}"
-                       Classes="empty-state"/>
-            <TextBlock Text="{Binding [sqlEditor.sidebar.connection.connectHint], Source={x:Static loc:LocalizationService.Instance}}"
-                       Classes="empty-state"
-                       FontSize="{StaticResource FontSizeCaption}"
-                       TextWrapping="Wrap"/>
-            <Button Content="{Binding [sqlEditor.sidebar.connection.connect], Source={x:Static loc:LocalizationService.Instance}}"
-                    Classes="primary"
-                    Command="{Binding SharedConnectionManager.ConnectOrOpenManagerCommand}"
-                    HorizontalAlignment="Stretch"
-                    Padding="12,8"
-                    CornerRadius="{StaticResource RadiusSM}"
-                    FontSize="{StaticResource FontSizeBody}"
-                    FontWeight="{StaticResource FontWeightStrong}"/>
-          </StackPanel>
-        </Border>
-      </Grid>
+                      HorizontalAlignment="Stretch"
+                      Padding="12,8"
+                      CornerRadius="{StaticResource RadiusSM}"
+                      FontSize="{StaticResource FontSizeBody}"
+                      FontWeight="{StaticResource FontWeightStrong}"/>
+            </StackPanel>
+          </Border>
+        </Grid>
       </StackPanel>
 
       <Grid Grid.Row="1"
@@ -161,4 +131,3 @@
     </Grid>
   </ScrollViewer>
 </UserControl>
-

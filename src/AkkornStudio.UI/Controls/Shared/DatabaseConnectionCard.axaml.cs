@@ -89,6 +89,9 @@ public partial class DatabaseConnectionCard : UserControl
     public static readonly StyledProperty<bool> IsDatabaseSelectionVisibleProperty =
         AvaloniaProperty.Register<DatabaseConnectionCard, bool>(nameof(IsDatabaseSelectionVisible));
 
+    public static readonly StyledProperty<bool> ShowConnectionManagerButtonProperty =
+        AvaloniaProperty.Register<DatabaseConnectionCard, bool>(nameof(ShowConnectionManagerButton), true);
+
     public string? ConnectionName
     {
         get => GetValue(ConnectionNameProperty);
@@ -207,6 +210,12 @@ public partial class DatabaseConnectionCard : UserControl
     {
         get => GetValue(IsDatabaseSelectionVisibleProperty);
         set => SetValue(IsDatabaseSelectionVisibleProperty, value);
+    }
+
+    public bool ShowConnectionManagerButton
+    {
+        get => GetValue(ShowConnectionManagerButtonProperty);
+        set => SetValue(ShowConnectionManagerButtonProperty, value);
     }
 
     public DatabaseConnectionCard()

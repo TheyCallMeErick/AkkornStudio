@@ -144,51 +144,6 @@
         </StackPanel>
       </Border>
 
-      <Panel IsVisible="{Binding ShouldShowResultsSheet}"
-             ZIndex="40">
-        <Border Background="{StaticResource MacroScrimBrush}"
-                PointerPressed="ResultsModalBackdrop_OnPointerPressed"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Stretch"/>
-
-        <Border Width="1040"
-                Classes="surface-floating"
-                MaxWidth="1040"
-                Height="640"
-                MaxHeight="700"
-                MinHeight="340"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                ClipToBounds="True">
-          <Grid RowDefinitions="Auto,*">
-            <Grid Grid.Row="0"
-                  Classes="surface-floating-header"
-                  ColumnDefinitions="*,Auto"
-                  Margin="14,12,14,8">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <mi:MaterialIcon Kind="Table" Width="16" Height="16" VerticalAlignment="Center" Foreground="{StaticResource AccentBlueBrush}"/>
-                <TextBlock Text="{Binding [sqlEditor.results.title], Source={x:Static loc:LocalizationService.Instance}}"
-                           HorizontalAlignment="Left"
-                           Foreground="{StaticResource TextPrimaryBrush}"
-                           FontWeight="{StaticResource FontWeightTitle}"
-                           FontSize="{StaticResource FontSizeBody}"
-                           VerticalAlignment="Center"/>
-              </StackPanel>
-
-              <Button Grid.Column="1"
-                      Classes="icon-ghost"
-                      Width="28"
-                      Height="28"
-                      Command="{Binding CloseResultsSheetCommand}">
-                <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
-              </Button>
-            </Grid>
-
-            <ctrl:SqlEditorResultPanel Grid.Row="1" Margin="12,0,12,12"/>
-          </Grid>
-        </Border>
-      </Panel>
-
       <Panel IsVisible="{Binding IsConnectionSwitcherOpen}"
              ZIndex="60">
         <Border Background="{StaticResource MacroScrimBrush}"
