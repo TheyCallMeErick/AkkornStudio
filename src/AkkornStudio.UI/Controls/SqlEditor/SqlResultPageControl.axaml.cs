@@ -5,6 +5,7 @@ using Avalonia.Data;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Material.Icons;
@@ -22,11 +23,11 @@ public partial class SqlResultPageControl : UserControl
     private SqlResultPageViewModel? _subscribedViewModel;
     private readonly SqlEditorReportExportService _reportExportService = new();
     private readonly IBrush _pendingCellBackgroundBrush = ResolveBrush(
-        "BtnWarningBgBrush",
-        new SolidColorBrush(Color.Parse("#3A2A12")));
+        "PanelActiveBrush",
+        new SolidColorBrush(Color.Parse("#1F2B45")));
     private readonly IBrush _pendingCellBorderBrush = ResolveBrush(
-        "StatusWarningBrush",
-        new SolidColorBrush(Color.Parse("#D9A441")));
+        "AccentPrimaryBrush",
+        new SolidColorBrush(Color.Parse("#5B7CFA")));
 
     public SqlResultPageControl()
     {
@@ -149,6 +150,28 @@ public partial class SqlResultPageControl : UserControl
             e.Cancel = true;
     }
 
+    private void ResultGrid_OnDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        _ = sender;
+        if (DataContext is not SqlResultPageViewModel viewModel || !viewModel.IsEditableSession)
+            return;
+
+        if (e.Source is not Visual sourceVisual)
+            return;
+
+        DataGridCell? cell = sourceVisual.FindAncestorOfType<DataGridCell>();
+        if (cell?.DataContext is not DataRowView rowView)
+            return;
+
+        string? columnName = ResultGrid.CurrentColumn?.SortMemberPath;
+        if (string.IsNullOrWhiteSpace(columnName) || !viewModel.IsColumnEditable(columnName))
+            return;
+
+        viewModel.SelectCell(rowView, columnName);
+        BeginInlineEditOnCurrentCell();
+        e.Handled = true;
+    }
+
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         _ = sender;
@@ -223,6 +246,30 @@ public partial class SqlResultPageControl : UserControl
                 editedText = null;
                 return false;
         }
+    }
+
+    private void BeginInlineEditMenuItem_Click(object? sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        BeginInlineEditOnCurrentCell();
+    }
+
+    private void BeginInlineEditOnCurrentCell()
+    {
+        if (DataContext is not SqlResultPageViewModel viewModel || !viewModel.IsEditableSession)
+            return;
+
+        if (ResultGrid.SelectedItem is not DataRowView selectedRow)
+            return;
+
+        string? columnName = ResultGrid.CurrentColumn?.SortMemberPath;
+        if (string.IsNullOrWhiteSpace(columnName) || !viewModel.IsColumnEditable(columnName))
+            return;
+
+        viewModel.SelectCell(selectedRow, columnName);
+        ResultGrid.Focus();
+        ResultGrid.BeginEdit();
     }
 
     private async void ExportReportButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

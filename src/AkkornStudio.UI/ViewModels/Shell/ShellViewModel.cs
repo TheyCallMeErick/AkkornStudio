@@ -1487,7 +1487,18 @@ public sealed class ShellViewModel : ViewModelBase
                 .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.SqlEditor)
                 ?.DocumentViewModel as SqlEditorViewModel;
 
-            targetEditor?.AppendTextToEditor(sql);
+            if (targetEditor is null)
+                return;
+
+            targetEditor.AppendTextToEditor(sql);
+
+            Guid? targetDocumentId = _workspaceRouter.OpenDocuments
+                .FirstOrDefault(document => ReferenceEquals(document.DocumentViewModel, targetEditor))
+                ?.Descriptor.DocumentId;
+            if (targetDocumentId.HasValue && TryActivateWorkspaceDocument(targetDocumentId.Value))
+                return;
+
+            ActivateDocument(WorkspaceDocumentType.SqlEditor);
         });
         _sqlResultPage.ConfigureBackNavigation(sourceDocumentId =>
         {

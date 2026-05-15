@@ -176,6 +176,9 @@ public partial class SqlEditorControl : UserControl
         {
             RefreshExecutionStatementHighlight();
         }
+
+        if (e.PropertyName == nameof(SqlEditorViewModel.EditorFocusRequestVersion))
+            FocusEditorAtDocumentEnd();
     }
 
     private void SyncEditorTextFromViewModel()
@@ -1614,6 +1617,24 @@ public partial class SqlEditorControl : UserControl
             _editor.Focus();
             _editor.TextArea?.Focus();
         }, DispatcherPriority.Background);
+    }
+
+    private void FocusEditorAtDocumentEnd()
+    {
+        if (_editor is null || !IsVisible)
+            return;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_editor is null || !_editor.IsVisible)
+                return;
+
+            EnsureEditorReady();
+            int endOffset = _editor.Document?.TextLength ?? 0;
+            _editor.CaretOffset = Math.Clamp(endOffset, 0, endOffset);
+            _editor.Focus();
+            _editor.TextArea?.Focus();
+        }, DispatcherPriority.Input);
     }
 
     private void ShowGoToLineOverlay()

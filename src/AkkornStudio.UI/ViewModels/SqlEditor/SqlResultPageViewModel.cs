@@ -7,6 +7,7 @@ using AkkornStudio.UI.Services.SqlEditor.Results;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace AkkornStudio.UI.ViewModels;
 
@@ -817,7 +818,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     public bool HasAvailableTableQuickActions => AvailableTableQuickActions.Count > 0;
     public bool CanNavigateSelectedForeignKey =>
         _appendSqlToEditor is not null
-        && TryResolveForeignKeyNavigationContext(out _, out _);
+        && HasSelectedCell;
     public string EditabilityStatusText
     {
         get
@@ -1895,7 +1896,11 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     private void NavigateSelectedForeignKey()
     {
         if (!TryResolveForeignKeyNavigationContext(out ForeignKeyRelation? relation, out object? value) || relation is null)
+        {
+            UpdatePendingExecutionStatus("Nenhum relacionamento FK pôde ser resolvido para a célula selecionada.", hasError: true);
+            OpenMessagesTab();
             return;
+        }
 
         string parentTable = relation.ParentFullTable;
         string where = value is null
@@ -1906,6 +1911,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         string limitTail = Session.Provider == DatabaseProvider.SqlServer ? string.Empty : " LIMIT 100";
         string sql = $"SELECT {limitClause}*\nFROM {QuoteCompositeIdentifier(Session.Provider, parentTable)}\nWHERE {where}{limitTail};";
         _appendSqlToEditor?.Invoke(_sourceSqlEditorDocumentId, sql);
+        UpdatePendingExecutionStatus($"FK aberta: {relation.ChildFullTable}.{relation.ChildColumn} → {relation.ParentFullTable}.{relation.ParentColumn}", hasError: false);
     }
 
     private bool TryResolveForeignKeyNavigationContext(out ForeignKeyRelation? relation, out object? value)
@@ -1922,21 +1928,115 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         if (!TryGetSelectedCellValue(out string? columnName, out object? selectedValue) || string.IsNullOrWhiteSpace(columnName))
             return false;
 
-        string table = ResolveTemplateTableName(Session);
-        if (string.IsNullOrWhiteSpace(table) || string.Equals(table, "table_name", StringComparison.OrdinalIgnoreCase))
+        IReadOnlyList<string> sourceTables = ResolveForeignKeySourceTables(Session);
+        if (sourceTables.Count == 0)
             return false;
 
         List<ForeignKeyRelation> candidates = metadata.AllForeignKeys
-            .Where(item =>
-                string.Equals(item.ChildFullTable, table, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(item.ChildColumn, columnName, StringComparison.OrdinalIgnoreCase))
+            .Where(item => string.Equals(item.ChildColumn, columnName, StringComparison.OrdinalIgnoreCase))
+            .Where(item => sourceTables.Any(table => TableNameMatches(item.ChildFullTable, table)))
             .ToList();
-        if (candidates.Count != 1)
+        if (candidates.Count == 0)
             return false;
 
-        relation = candidates[0];
+        string? sessionSchema = string.IsNullOrWhiteSpace(Session.SchemaName)
+            ? null
+            : NormalizeIdentifier(Session.SchemaName);
+        relation = candidates
+            .OrderByDescending(item => sourceTables.Any(table => string.Equals(NormalizeTableName(item.ChildFullTable), NormalizeTableName(table), StringComparison.OrdinalIgnoreCase)))
+            .ThenByDescending(item =>
+                !string.IsNullOrWhiteSpace(sessionSchema)
+                && string.Equals(ResolveSchemaName(item.ChildFullTable), sessionSchema, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault();
+        if (relation is null)
+            return false;
+
         value = selectedValue;
         return true;
+    }
+
+    private static IReadOnlyList<string> ResolveForeignKeySourceTables(SqlResultSession session)
+    {
+        var tables = new List<string>();
+        string? tableFromEligibility = session.InlineEditEligibility.TableFullName;
+        if (!string.IsNullOrWhiteSpace(tableFromEligibility) && !string.Equals(tableFromEligibility, "table_name", StringComparison.OrdinalIgnoreCase))
+            tables.Add(tableFromEligibility);
+
+        string? parsedFromSql = TryExtractFirstFromTable(session.SqlText);
+        if (!string.IsNullOrWhiteSpace(parsedFromSql))
+            tables.Add(parsedFromSql);
+
+        if (!string.IsNullOrWhiteSpace(parsedFromSql) && !parsedFromSql.Contains('.', StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(session.SchemaName))
+            tables.Add($"{session.SchemaName}.{parsedFromSql}");
+
+        return tables
+            .Where(table => !string.IsNullOrWhiteSpace(table))
+            .Select(table => table.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string? TryExtractFirstFromTable(string? sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+            return null;
+
+        Match match = Regex.Match(
+            sql,
+            @"\bfrom\s+([a-zA-Z0-9_\.\[\]`""]+)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success)
+            return null;
+
+        string raw = match.Groups[1].Value.Trim();
+        int spaceIndex = raw.IndexOf(' ');
+        if (spaceIndex > 0)
+            raw = raw[..spaceIndex];
+
+        return NormalizeTableName(raw);
+    }
+
+    private static bool TableNameMatches(string left, string right)
+    {
+        string normalizedLeft = NormalizeTableName(left);
+        string normalizedRight = NormalizeTableName(right);
+
+        if (string.Equals(normalizedLeft, normalizedRight, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return normalizedLeft.EndsWith($".{normalizedRight}", StringComparison.OrdinalIgnoreCase)
+            || normalizedRight.EndsWith($".{normalizedLeft}", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeTableName(string? tableName)
+    {
+        if (string.IsNullOrWhiteSpace(tableName))
+            return string.Empty;
+
+        string[] parts = tableName
+            .Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeIdentifier)
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .ToArray();
+        if (parts.Length == 0)
+            return string.Empty;
+
+        if (parts.Length > 2)
+            return $"{parts[^2]}.{parts[^1]}";
+
+        return string.Join(".", parts);
+    }
+
+    private static string NormalizeIdentifier(string? identifier)
+    {
+        return (identifier ?? string.Empty).Trim().Trim('"', '[', ']', '`');
+    }
+
+    private static string ResolveSchemaName(string? tableName)
+    {
+        string normalized = NormalizeTableName(tableName);
+        string[] parts = normalized.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length >= 2 ? parts[0] : string.Empty;
     }
 
     private void MoveFirstPage()

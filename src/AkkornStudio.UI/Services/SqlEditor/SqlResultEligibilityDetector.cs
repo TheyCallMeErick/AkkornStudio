@@ -46,7 +46,11 @@ public sealed class SqlResultEligibilityDetector
         if (table is null || table.Kind != TableKind.Table)
             return SqlInlineEditEligibility.Ineligible("Target source is not a base table.");
 
-        if (!TryParseSelectColumns(sql, out IReadOnlyList<string> selectedColumns))
+        string? sourceAlias = fromMatch.Groups["alias"].Success
+            ? fromMatch.Groups["alias"].Value.Trim()
+            : null;
+
+        if (!TryParseSelectColumns(sql, resultTable, sourceAlias, out IReadOnlyList<string> selectedColumns))
             return SqlInlineEditEligibility.Ineligible("SELECT list cannot be safely mapped to editable columns.");
 
         if (selectedColumns.Count == 0)
@@ -84,7 +88,11 @@ public sealed class SqlResultEligibilityDetector
             editableColumns);
     }
 
-    private static bool TryParseSelectColumns(string sql, out IReadOnlyList<string> columns)
+    private static bool TryParseSelectColumns(
+        string sql,
+        DataTable resultTable,
+        string? sourceAlias,
+        out IReadOnlyList<string> columns)
     {
         columns = [];
         Match match = SelectRegex.Match(sql);
@@ -94,6 +102,20 @@ public sealed class SqlResultEligibilityDetector
         string list = match.Groups["select"].Value;
         if (string.IsNullOrWhiteSpace(list))
             return false;
+
+        string trimmedList = list.Trim();
+        bool isStarProjection =
+            string.Equals(trimmedList, "*", StringComparison.Ordinal)
+            || (!string.IsNullOrWhiteSpace(sourceAlias)
+                && string.Equals(trimmedList, $"{sourceAlias}.*", StringComparison.OrdinalIgnoreCase));
+        if (isStarProjection)
+        {
+            columns = resultTable.Columns
+                .Cast<DataColumn>()
+                .Select(static column => column.ColumnName)
+                .ToList();
+            return columns.Count > 0;
+        }
 
         string[] entries = list
             .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);

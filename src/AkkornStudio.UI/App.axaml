@@ -11,6 +11,15 @@
       <ResourceDictionary.MergedDictionaries>
         <ResourceInclude Source="avares://AkkornStudio.UI/Assets/Themes/DesignTokens.axaml"/>
       </ResourceDictionary.MergedDictionaries>
+
+      <!-- Force Fluent system accent away from default amber/orange hues -->
+      <Color x:Key="SystemAccentColor">#5B7CFA</Color>
+      <Color x:Key="SystemAccentColorLight1">#6C8CFF</Color>
+      <Color x:Key="SystemAccentColorLight2">#8EA7FF</Color>
+      <Color x:Key="SystemAccentColorLight3">#B8C6FF</Color>
+      <Color x:Key="SystemAccentColorDark1">#4E6EE8</Color>
+      <Color x:Key="SystemAccentColorDark2">#3F5BC7</Color>
+      <Color x:Key="SystemAccentColorDark3">#31469B</Color>
     </ResourceDictionary>
   </Application.Resources>
 
@@ -54,7 +63,14 @@
 
   <Application.Styles>
     <!-- Fluent Dark base -->
-    <FluentTheme/>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Dark"
+                               Accent="#5B7CFA"/>
+        <ColorPaletteResources x:Key="Light"
+                               Accent="#5B7CFA"/>
+      </FluentTheme.Palettes>
+    </FluentTheme>
 
 
 

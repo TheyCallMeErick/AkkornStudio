@@ -15,16 +15,43 @@
       <Setter Property="GridLinesVisibility" Value="Horizontal"/>
       <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderSoftBrush}"/>
       <Setter Property="VerticalGridLinesBrush" Value="Transparent"/>
+      <Setter Property="RowBackground" Value="Transparent"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridRow:pointerover">
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
     </Style>
     <Style Selector="DataGrid.sql-result-grid DataGridRow:selected">
       <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
     </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridRow:selected:pointerover">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+    </Style>
     <Style Selector="DataGrid.sql-result-grid DataGridCell">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSoftBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridCell:selected">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderFocusBrush}"/>
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
     </Style>
     <Style Selector="DataGrid.sql-result-grid DataGridCell:current">
       <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
       <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridCell:selected:current">
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryHoverBrush}"/>
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridRowHeader">
+      <Setter Property="Background" Value="{StaticResource Bg0Brush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSoftBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridRow:selected DataGridRowHeader">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
     </Style>
     <Style Selector="DataGrid.sql-result-grid DataGridCell:focus-visible">
       <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryHoverBrush}"/>
@@ -81,6 +108,55 @@
       <Setter Property="Padding" Value="8,4"/>
       <Setter Property="MinWidth" Value="92"/>
     </Style>
+    <Style Selector="ListBox.sql-session-list ListBoxItem">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+    </Style>
+    <Style Selector="ListBox.sql-session-list ListBoxItem:selected">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+    <Style Selector="ListBox.sql-session-list ListBoxItem:selected Border.list-row">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryPressedBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="ListBox.sql-session-list ListBoxItem:pointerover Border.list-row">
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderFocusBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="ContextMenu.sql-result-menu">
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="ContextMenu.sql-result-menu MenuItem">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="ContextMenu.sql-result-menu MenuItem:selected">
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="TabControl.result-bottom-tabs">
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="TabControl.result-bottom-tabs TabItem">
+      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="10,6"/>
+    </Style>
+    <Style Selector="TabControl.result-bottom-tabs TabItem:selected">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderFocusBrush}"/>
+    </Style>
   </UserControl.Styles>
 
   <Grid Margin="8"
@@ -130,7 +206,7 @@
           <Border Classes="result-meta-chip" MaxWidth="360">
             <TextBlock Classes="result-meta-text" Text="{Binding EditabilityStatusText}" ToolTip.Tip="{Binding EditabilityStatusText}"/>
           </Border>
-          <Border Classes="result-meta-chip warning">
+          <Border Classes="result-meta-chip">
             <TextBlock Classes="result-meta-text" Text="{Binding PendingEditsCount, StringFormat='Pending: {0}'}"/>
           </Border>
         </WrapPanel>
@@ -294,7 +370,10 @@
                   <TextBlock Grid.Column="1" Text="{Binding Sessions.Count}" Foreground="{StaticResource TextSecondaryBrush}"/>
                 </Grid>
               </Expander.Header>
-              <ListBox ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession, Mode=TwoWay}" MaxHeight="220">
+              <ListBox Classes="sql-session-list"
+                       ItemsSource="{Binding Sessions}"
+                       SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
+                       MaxHeight="220">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="result:SqlResultSession">
                     <Border Classes="list-row" Margin="0,0,0,6">
@@ -519,9 +598,10 @@
                     FrozenColumnCount="{Binding FrozenColumnCount}"
                     SelectionMode="Extended"
                     CellPointerPressed="ResultGrid_OnCellPointerPressed"
+                    DoubleTapped="ResultGrid_OnDoubleTapped"
                     CellEditEnding="ResultGrid_OnCellEditEnding">
             <DataGrid.ContextMenu>
-              <ContextMenu>
+              <ContextMenu Classes="sql-result-menu">
                 <MenuItem Header="Copiar célula" Command="{Binding CopySelectedCellCommand}"/>
                 <MenuItem Header="Copiar linha JSON" Command="{Binding CopySelectedRowAsJsonCommand}"/>
                 <MenuItem Header="Copiar linha CSV" Command="{Binding CopySelectedRowAsCsvCommand}"/>
@@ -532,6 +612,9 @@
                 <MenuItem Header="Ordenar DESC" Command="{Binding SortSelectedColumnDescendingCommand}"/>
                 <MenuItem Header="Ocultar coluna" Command="{Binding HideSelectedCellColumnCommand}"/>
                 <Separator/>
+                <MenuItem Header="Editar célula (duplo clique)"
+                          IsEnabled="{Binding IsEditableSession}"
+                          Click="BeginInlineEditMenuItem_Click"/>
                 <MenuItem Header="Ver detalhes da linha" Command="{Binding OpenDetailsTabCommand}"/>
                 <MenuItem Header="Gerar WHERE" Command="{Binding GenerateWhereClauseCommand}"/>
                 <MenuItem Header="Abrir FK relacionada" Command="{Binding NavigateSelectedForeignKeyCommand}"/>
@@ -606,7 +689,9 @@
                 <Button Grid.Column="5" Classes="secondary compact" Command="{Binding ToggleBottomPanelCommand}" Content="Fechar"/>
               </Grid>
 
-              <TabControl Grid.Row="1" SelectedIndex="{Binding SelectedBottomPanelTabIndex, Mode=TwoWay}">
+              <TabControl Grid.Row="1"
+                          Classes="result-bottom-tabs"
+                          SelectedIndex="{Binding SelectedBottomPanelTabIndex, Mode=TwoWay}">
                 <TabItem Header="Detalhes" IsVisible="{Binding IsResultDetailVisible}">
                   <Grid ColumnDefinitions="2*,3*" ColumnSpacing="10">
                     <ItemsControl Grid.Column="0" ItemsSource="{Binding SelectedRowFields}">

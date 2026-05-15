@@ -80,6 +80,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private int _activeExecutionStatementEndLine;
     private int _cursorLine = 1;
     private int _cursorColumn = 1;
+    private int _editorFocusRequestVersion;
     private string _signatureHelpText = string.Empty;
     private string _hoverDocumentationText = string.Empty;
     private bool _top1000WithoutWhereEnabled;
@@ -1216,6 +1217,11 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     public string CursorPositionText => $"Ln {CursorLine}, Col {CursorColumn}";
     public string IndentationStatusText => L("sqlEditor.status.indentation", "Espacos: 2");
+    public int EditorFocusRequestVersion
+    {
+        get => _editorFocusRequestVersion;
+        private set => Set(ref _editorFocusRequestVersion, value);
+    }
     public string SignatureHelpText
     {
         get => _signatureHelpText;
@@ -1827,6 +1833,12 @@ public sealed class SqlEditorViewModel : ViewModelBase
         ActiveTab.IsDirty = true;
         NotifyActiveTabEdited();
         RaiseTabStateChanged();
+        RequestEditorFocus();
+    }
+
+    public void RequestEditorFocus()
+    {
+        EditorFocusRequestVersion++;
     }
 
     public bool RequestClearExecutionHistory()

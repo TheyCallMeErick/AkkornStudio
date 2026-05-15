@@ -675,6 +675,19 @@
   <Style Selector="PopupRoot ListBoxItem">
     <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
   </Style>
+  <Style Selector="ListBoxItem:pointerover">
+    <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+  </Style>
+  <Style Selector="ListBoxItem:selected">
+    <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource BorderFocusBrush}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+  </Style>
+  <Style Selector="ListBoxItem:selected:pointerover">
+    <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource BorderFocusBrush}"/>
+  </Style>
 
   <Style Selector="ListBoxItem:focus-visible">
     <Setter Property="BorderBrush"     Value="{StaticResource BorderFocusBrush}"/>
