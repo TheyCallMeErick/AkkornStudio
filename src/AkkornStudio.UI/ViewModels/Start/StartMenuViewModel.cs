@@ -24,6 +24,7 @@ public sealed class StartMenuViewModel : ViewModelBase
         OpenConnectionsCommand = new RelayCommand(() => OpenConnectionsRequested?.Invoke());
         OpenFromDiskCommand = new RelayCommand(() => OpenFromDiskRequested?.Invoke());
         OpenSchemaCompareCommand = new RelayCommand(() => OpenSchemaCompareRequested?.Invoke());
+        OpenStructureAnalysisCommand = new RelayCommand(() => OpenStructureAnalysisRequested?.Invoke());
         OpenSqlEditorCommand = new RelayCommand(() => OpenSqlEditorRequested?.Invoke());
         OpenSavedConnectionCommand = new RelayCommand<StartSavedConnectionItem>(item =>
         {
@@ -112,6 +113,8 @@ public sealed class StartMenuViewModel : ViewModelBase
 
     public RelayCommand OpenSchemaCompareCommand { get; }
 
+    public RelayCommand OpenStructureAnalysisCommand { get; }
+
     public RelayCommand OpenSqlEditorCommand { get; }
 
     public RelayCommand<StartSavedConnectionItem> OpenSavedConnectionCommand { get; }
@@ -131,6 +134,8 @@ public sealed class StartMenuViewModel : ViewModelBase
     public event Action? OpenFromDiskRequested;
 
     public event Action? OpenSchemaCompareRequested;
+
+    public event Action? OpenStructureAnalysisRequested;
 
     public event Action? OpenSqlEditorRequested;
 

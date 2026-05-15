@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:AkkornStudio.UI.ViewModels"
              xmlns:ctrl="using:AkkornStudio.UI.Controls"
-             xmlns:shell="using:AkkornStudio.UI.Controls.Shell"
              xmlns:ae="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
              xmlns:loc="using:AkkornStudio.UI.Services.Localization"
              xmlns:mi="using:Material.Icons.Avalonia"
@@ -75,11 +74,6 @@
                IsVisible="{Binding HasCanvasDiagnostics}"
                Command="{Binding ShowCanvasDiagnosticsTabCommand}"
                Content="{Binding CanvasDiagnosticsTabLabel}"/>
-             <Button Classes="panel-tab"
-               Classes.active="{Binding ShowStructureDiagnosticsContent}"
-               IsVisible="{Binding HasStructureDiagnostics}"
-               Command="{Binding ShowStructureDiagnosticsTabCommand}"
-               Content="{Binding StructureDiagnosticsTabLabel}"/>
           </StackPanel>
         </Border>
 
@@ -138,11 +132,6 @@
             <Border IsVisible="{Binding ShowCanvasDiagnosticsContent}"
               Background="{StaticResource Bg0Brush}">
               <ctrl:SidebarDiagnosticsControl DataContext="{Binding Diagnostics}" />
-            </Border>
-
-            <Border IsVisible="{Binding ShowStructureDiagnosticsContent}"
-              Background="{StaticResource Bg0Brush}">
-              <shell:DdlSchemaAnalysisWorkspaceControl DataContext="{Binding DdlTool}" />
             </Border>
 
           <Border IsVisible="{Binding ShowUnavailablePrimaryContent}"

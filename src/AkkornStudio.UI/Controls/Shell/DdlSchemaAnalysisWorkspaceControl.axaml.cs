@@ -14,7 +14,7 @@ public partial class DdlSchemaAnalysisWorkspaceControl : UserControl
 
     private void OnHostKeyDown(object? sender, KeyEventArgs e)
     {
-        if (DataContext is not LiveDdlBarViewModel vm)
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
             return;
 
         if (e.Source is InputElement source && source is TextBox)
@@ -57,7 +57,7 @@ public partial class DdlSchemaAnalysisWorkspaceControl : UserControl
         if (e.Key != Key.Enter)
             return;
 
-        if (DataContext is not LiveDdlBarViewModel vm)
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
             return;
 
         if (!vm.SchemaAnalysisPanel.AddIgnoredTableCommand.CanExecute(null))
@@ -69,7 +69,7 @@ public partial class DdlSchemaAnalysisWorkspaceControl : UserControl
 
     private void IssueListBox_OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (DataContext is not LiveDdlBarViewModel vm)
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
             return;
 
         if (sender is not ListBox listBox)
@@ -81,7 +81,7 @@ public partial class DdlSchemaAnalysisWorkspaceControl : UserControl
 
     private async void CopySqlButton_OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (DataContext is not LiveDdlBarViewModel vm)
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
             return;
 
         string? sql = vm.SchemaAnalysisPanel.SelectedSqlCandidate?.Sql;
@@ -93,7 +93,27 @@ public partial class DdlSchemaAnalysisWorkspaceControl : UserControl
             return;
 
         await topLevel.Clipboard.SetTextAsync(sql);
-        vm.Canvas.NotifySuccess("SQL candidate copiado para a area de transferencia.");
         e.Handled = true;
     }
+
+    private void PlaygroundScope_OnPointerEntered(object? sender, PointerEventArgs e)
+    {
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
+            return;
+
+        if (sender is not Control control)
+            return;
+
+        string? focusKey = control.Tag?.ToString();
+        vm.HighlightPlaygroundScope(focusKey);
+    }
+
+    private void PlaygroundScope_OnPointerExited(object? sender, PointerEventArgs e)
+    {
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
+            return;
+
+        vm.ClearPlaygroundScopeHighlight();
+    }
 }
+

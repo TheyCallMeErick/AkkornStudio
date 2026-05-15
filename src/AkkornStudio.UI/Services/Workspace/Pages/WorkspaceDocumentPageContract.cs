@@ -5,6 +5,7 @@ public sealed record WorkspaceDocumentPageContract(
     bool ShowsDdlCanvasPage,
     bool ShowsSqlEditorPage,
     bool ShowsSchemaComparePage,
+    bool ShowsSchemaAnalysisPage,
     bool ShowsDiagramSidebar,
     bool ShowsSqlEditorSidebar,
     bool ShowsQueryTabs,

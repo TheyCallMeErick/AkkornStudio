@@ -112,23 +112,21 @@ public sealed partial class QueryExecutorService
     private static string WrapWithPreviewLimit(string query, DatabaseProvider provider, int maxRows)
     {
         if (PreviewExecutionOptions.IsUnlimitedRequested(maxRows))
-            return query.TrimEnd().TrimEnd(';');
+            return TrimTrailingSemicolon(query);
 
         int boundedMaxRows = Math.Clamp(maxRows, 1, 10_000);
-
-        // Remove trailing semicolon if present
-        query = query.TrimEnd().TrimEnd(';');
+        string trimmed = TrimTrailingSemicolon(query);
 
         return provider switch
         {
             DatabaseProvider.SqlServer =>
-                $"SELECT TOP {boundedMaxRows} * FROM ({query}) AS __preview",
+                $"SELECT TOP {boundedMaxRows} * FROM (\n{trimmed}\n) AS __preview",
             DatabaseProvider.MySql =>
-                $"SELECT * FROM ({query}) AS __preview LIMIT {boundedMaxRows}",
+                $"SELECT * FROM (\n{trimmed}\n) AS __preview LIMIT {boundedMaxRows}",
             DatabaseProvider.Postgres =>
-                $"SELECT * FROM ({query}) AS __preview LIMIT {boundedMaxRows}",
+                $"{trimmed}\nLIMIT {boundedMaxRows}",
             DatabaseProvider.SQLite =>
-                $"SELECT * FROM ({query}) AS __preview LIMIT {boundedMaxRows}",
+                $"SELECT * FROM (\n{trimmed}\n) AS __preview LIMIT {boundedMaxRows}",
             _ => throw new NotSupportedException(
                 string.Format(
                     L("queryExecutor.error.providerNotSupported", "Provider {0} is not supported"),
@@ -147,7 +145,7 @@ public sealed partial class QueryExecutorService
         if (semicolon >= 0)
         {
             string trailing = trimmed[(semicolon + 1)..].Trim();
-            if (trailing.Length > 0)
+            if (!IsCommentOnlyOrWhitespace(trailing))
                 throw new ArgumentException(
                     L("queryExecutor.error.singleStatementOnly", "Preview accepts a single SQL statement only."),
                     nameof(query)
@@ -376,6 +374,67 @@ public sealed partial class QueryExecutorService
 
         values = items;
         return true;
+    }
+
+    private static bool IsCommentOnlyOrWhitespace(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+            return true;
+
+        bool inLineComment = false;
+        bool inBlockComment = false;
+
+        for (int i = 0; i < sql.Length; i++)
+        {
+            char c = sql[i];
+            char next = i + 1 < sql.Length ? sql[i + 1] : '\0';
+
+            if (inLineComment)
+            {
+                if (c == '\n')
+                    inLineComment = false;
+                continue;
+            }
+
+            if (inBlockComment)
+            {
+                if (c == '*' && next == '/')
+                {
+                    inBlockComment = false;
+                    i++;
+                }
+                continue;
+            }
+
+            if (char.IsWhiteSpace(c))
+                continue;
+
+            if (c == '-' && next == '-')
+            {
+                inLineComment = true;
+                i++;
+                continue;
+            }
+
+            if (c == '/' && next == '*')
+            {
+                inBlockComment = true;
+                i++;
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string TrimTrailingSemicolon(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+            return string.Empty;
+
+        return sql.Trim().TrimEnd(';').TrimEnd();
     }
 
     /// <summary>

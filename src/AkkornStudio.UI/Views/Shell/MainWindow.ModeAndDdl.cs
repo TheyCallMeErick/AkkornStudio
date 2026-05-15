@@ -358,6 +358,13 @@ public partial class MainWindow
             {
                 _ = ImportSqlToQuerySafeAsync();
             }),
+            NewItem("Diagnóstico de estrutura", MaterialIconKind.Radar, () =>
+            {
+                EnterCanvasMode();
+                CurrentShell.OpenNewDocument(WorkspaceDocumentType.DdlSchemaAnalysis);
+                CurrentShell.ActivateDocument(WorkspaceDocumentType.DdlSchemaAnalysis);
+                SyncModeToggleState();
+            }),
             NewSeparator(),
             NewGroupHeader(L("menu.group.tools", "Ferramentas")),
             NewItem("Exportar baseline de observabilidade (7 dias)", MaterialIconKind.FileOutline, () =>

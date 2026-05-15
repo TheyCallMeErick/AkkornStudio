@@ -13,6 +13,7 @@ using AkkornStudio.UI.Services.Localization;
 using AkkornStudio.UI.Services.Settings;
 using AkkornStudio.UI.Services.SqlEditor;
 using AkkornStudio.UI.Services.SqlEditor.Results;
+using AkkornStudio.UI.Services.Ddl;
 using AkkornStudio.UI.Services.Workspace;
 using AkkornStudio.UI.Services.Workspace.Diagnostics;
 using AkkornStudio.UI.Services.Workspace.Models;
@@ -47,6 +48,7 @@ public sealed class ShellViewModel : ViewModelBase
         SqlResult,
         ErDiagram,
         DdlSchemaCompare,
+        DdlSchemaAnalysis,
     }
 
     public enum ESettingsSection
@@ -99,6 +101,7 @@ public sealed class ShellViewModel : ViewModelBase
     private Guid? _sqlResultDocumentId;
     private Guid? _erDiagramDocumentId;
     private Guid? _ddlSchemaCompareDocumentId;
+    private Guid? _ddlSchemaAnalysisDocumentId;
     private Guid? _connectionModalOwnerDocumentId;
     private Guid? _lastSyncedWorkspaceDocumentId;
     private ProjectConventionSettings _projectConventionSettings = AppSettingsStore.LoadProjectConventionSettings();
@@ -220,6 +223,8 @@ public sealed class ShellViewModel : ViewModelBase
 
     public bool IsDdlSchemaCompareDocumentPageActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.DdlSchemaCompare;
 
+    public bool IsDdlSchemaAnalysisDocumentPageActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.DdlSchemaAnalysis;
+
     public LeftSidebarViewModel LeftSidebar { get; }
 
     public RightSidebarViewModel RightSidebar { get; }
@@ -265,6 +270,7 @@ public sealed class ShellViewModel : ViewModelBase
         WorkspaceDocumentType.SqlResult => AppMode.SqlResult,
         WorkspaceDocumentType.ErDiagram => AppMode.ErDiagram,
         WorkspaceDocumentType.DdlSchemaCompare => AppMode.DdlSchemaCompare,
+        WorkspaceDocumentType.DdlSchemaAnalysis => AppMode.DdlSchemaAnalysis,
         _ => AppMode.Query,
     };
 
@@ -279,6 +285,8 @@ public sealed class ShellViewModel : ViewModelBase
     public bool IsErDiagramModeActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.ErDiagram;
 
     public bool IsDdlSchemaCompareModeActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.DdlSchemaCompare;
+
+    public bool IsDdlSchemaAnalysisModeActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.DdlSchemaAnalysis;
 
     public bool IsDiagramModeActive => IsDiagramDocumentPageActive;
 
@@ -382,6 +390,11 @@ public sealed class ShellViewModel : ViewModelBase
     public DdlSchemaCompareWorkspaceViewModel? ActiveDdlSchemaCompareDocument =>
         ActiveWorkspaceDocumentType == WorkspaceDocumentType.DdlSchemaCompare
             ? ActiveWorkspaceDocument?.DocumentViewModel as DdlSchemaCompareWorkspaceViewModel
+            : null;
+
+    public DdlSchemaAnalysisWorkspaceViewModel? ActiveDdlSchemaAnalysisDocument =>
+        ActiveWorkspaceDocumentType == WorkspaceDocumentType.DdlSchemaAnalysis
+            ? ActiveWorkspaceDocument?.DocumentViewModel as DdlSchemaAnalysisWorkspaceViewModel
             : null;
 
     public CanvasViewModel? DdlCanvas
@@ -570,6 +583,7 @@ public sealed class ShellViewModel : ViewModelBase
             WorkspaceDocumentType.SqlResult => OpenNewSqlResultDocument(),
             WorkspaceDocumentType.ErDiagram => OpenNewErDiagramDocument(),
             WorkspaceDocumentType.DdlSchemaCompare => OpenNewDdlSchemaCompareDocument(),
+            WorkspaceDocumentType.DdlSchemaAnalysis => OpenNewDdlSchemaAnalysisDocument(),
             _ => OpenNewQueryDocument(),
         };
     }
@@ -648,6 +662,7 @@ public sealed class ShellViewModel : ViewModelBase
                 WorkspaceDocumentType.SqlResult => BuildSqlResultDocument(),
                 WorkspaceDocumentType.ErDiagram => BuildErDiagramDocument(),
                 WorkspaceDocumentType.DdlSchemaCompare => BuildDdlSchemaCompareDocument(),
+                WorkspaceDocumentType.DdlSchemaAnalysis => BuildDdlSchemaAnalysisDocument(),
                 _ => BuildCanvasDocument(savedDocument, isDdl: false),
             };
 
@@ -687,6 +702,9 @@ public sealed class ShellViewModel : ViewModelBase
             ?.Descriptor.DocumentId;
         _ddlSchemaCompareDocumentId = _workspaceRouter.OpenDocuments
             .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.DdlSchemaCompare)
+            ?.Descriptor.DocumentId;
+        _ddlSchemaAnalysisDocumentId = _workspaceRouter.OpenDocuments
+            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.DdlSchemaAnalysis)
             ?.Descriptor.DocumentId;
 
         Canvas = _workspaceRouter.OpenDocuments
@@ -1019,6 +1037,7 @@ public sealed class ShellViewModel : ViewModelBase
             WorkspaceDocumentType.SqlEditor => ResolveSqlEditorConnectionManager(),
             WorkspaceDocumentType.SqlResult => ResolveSqlEditorConnectionManager(),
             WorkspaceDocumentType.DdlSchemaCompare => ResolveSqlEditorConnectionManager(),
+            WorkspaceDocumentType.DdlSchemaAnalysis => ResolveSqlEditorConnectionManager(),
             _ => ActiveCanvas?.ConnectionManager ?? ResolveSharedConnectionManager(),
         };
 
@@ -1108,6 +1127,7 @@ public sealed class ShellViewModel : ViewModelBase
             WorkspaceDocumentType.SqlResult => TryActivateLastDocumentByType(WorkspaceDocumentType.SqlResult),
             WorkspaceDocumentType.ErDiagram => TryActivateLastDocumentByType(WorkspaceDocumentType.ErDiagram),
             WorkspaceDocumentType.DdlSchemaCompare => TryActivateLastDocumentByType(WorkspaceDocumentType.DdlSchemaCompare),
+            WorkspaceDocumentType.DdlSchemaAnalysis => TryActivateLastDocumentByType(WorkspaceDocumentType.DdlSchemaAnalysis),
             _ => false,
         };
 
@@ -1158,6 +1178,7 @@ public sealed class ShellViewModel : ViewModelBase
             case WorkspaceDocumentType.SqlResult:
             case WorkspaceDocumentType.ErDiagram:
             case WorkspaceDocumentType.DdlSchemaCompare:
+            case WorkspaceDocumentType.DdlSchemaAnalysis:
                 HideDiagramOnlyOverlays();
                 break;
         }
@@ -1189,18 +1210,21 @@ public sealed class ShellViewModel : ViewModelBase
         RaisePropertyChanged(nameof(ActiveSqlResultDocument));
         RaisePropertyChanged(nameof(ActiveErDiagramDocument));
         RaisePropertyChanged(nameof(ActiveDdlSchemaCompareDocument));
+        RaisePropertyChanged(nameof(ActiveDdlSchemaAnalysisDocument));
         RaisePropertyChanged(nameof(IsQueryDocumentPageActive));
         RaisePropertyChanged(nameof(IsDdlDocumentPageActive));
         RaisePropertyChanged(nameof(IsSqlEditorDocumentPageActive));
         RaisePropertyChanged(nameof(IsSqlResultDocumentPageActive));
         RaisePropertyChanged(nameof(IsErDiagramDocumentPageActive));
         RaisePropertyChanged(nameof(IsDdlSchemaCompareDocumentPageActive));
+        RaisePropertyChanged(nameof(IsDdlSchemaAnalysisDocumentPageActive));
         RaisePropertyChanged(nameof(IsQueryModeActive));
         RaisePropertyChanged(nameof(IsDdlModeActive));
         RaisePropertyChanged(nameof(IsSqlEditorModeActive));
         RaisePropertyChanged(nameof(IsSqlResultModeActive));
         RaisePropertyChanged(nameof(IsErDiagramModeActive));
         RaisePropertyChanged(nameof(IsDdlSchemaCompareModeActive));
+        RaisePropertyChanged(nameof(IsDdlSchemaAnalysisModeActive));
         RaisePropertyChanged(nameof(IsDiagramDocumentPageActive));
         RaisePropertyChanged(nameof(IsDiagramModeActive));
         RaisePropertyChanged(nameof(IsDiagramOverlayLayerVisible));
@@ -1381,6 +1405,21 @@ public sealed class ShellViewModel : ViewModelBase
         return documentId;
     }
 
+    private Guid OpenNewDdlSchemaAnalysisDocument()
+    {
+        int nextOrdinal = _workspaceRouter.OpenDocuments.Count(document =>
+            document.Descriptor.DocumentType == WorkspaceDocumentType.DdlSchemaAnalysis) + 1;
+        string title = nextOrdinal == 1 ? "Structure Analysis" : $"Structure Analysis {nextOrdinal}";
+        DdlSchemaAnalysisWorkspaceViewModel analysisDocument = BuildDdlSchemaAnalysisDocument();
+        Guid documentId = Guid.NewGuid();
+        RegisterOrUpdateDocument(documentId, WorkspaceDocumentType.DdlSchemaAnalysis, title, analysisDocument, activate: true);
+        _ddlSchemaAnalysisDocumentId ??= documentId;
+        SyncStateFromActiveDocument();
+        RaiseActiveDocumentPropertiesChanged();
+        SyncExtractedPanels();
+        return documentId;
+    }
+
     private void RegisterOrUpdateDocument(
         Guid documentId,
         WorkspaceDocumentType documentType,
@@ -1408,6 +1447,84 @@ public sealed class ShellViewModel : ViewModelBase
     private DdlSchemaCompareWorkspaceViewModel BuildDdlSchemaCompareDocument()
     {
         return new DdlSchemaCompareWorkspaceViewModel(_sqlEditorConnectionManager);
+    }
+
+    private DdlSchemaAnalysisWorkspaceViewModel BuildDdlSchemaAnalysisDocument()
+    {
+        var viewModel = new DdlSchemaAnalysisWorkspaceViewModel(
+            _sqlEditorConnectionManager,
+            OpenMetadataInDdlCanvas);
+        viewModel.OpenConnectionManagerRequested += () =>
+        {
+            ConnectionManagerViewModel? manager = ResolveSqlEditorConnectionManager();
+            if (manager is not null)
+                manager.IsVisible = true;
+        };
+        return viewModel;
+    }
+
+    private void OpenMetadataInDdlCanvas(DdlSchemaAnalysisOpenDdlRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        DbMetadata metadata = request.Metadata;
+        ArgumentNullException.ThrowIfNull(metadata);
+        CanvasViewModel ddlCanvas = EnsureDdlCanvas();
+
+        var scratch = new CanvasViewModel(
+            nodeManager: null,
+            pinManager: null,
+            selectionManager: null,
+            localizationService: null,
+            domainStrategy: new DdlDomainStrategy(),
+            toastCenter: Toasts,
+            connectionManagerFactory: _connectionManagerViewModelFactory)
+        {
+            Provider = metadata.Provider,
+        };
+
+        var importer = new DdlSchemaImporter();
+        DdlImportResult result = importer.Import(metadata, scratch);
+
+        ConnectionProfile? sourceProfile = !string.IsNullOrWhiteSpace(request.ProfileId)
+            ? _sqlEditorConnectionManager.Profiles.FirstOrDefault(profile =>
+                string.Equals(profile.Id, request.ProfileId, StringComparison.OrdinalIgnoreCase))
+            : null;
+
+        ConnectionConfig? ddlConnectionConfig = sourceProfile?.ToConnectionConfig();
+        if (ddlConnectionConfig is not null && !string.IsNullOrWhiteSpace(request.DatabaseName))
+            ddlConnectionConfig = ddlConnectionConfig with { Database = request.DatabaseName! };
+
+        ddlCanvas.Provider = metadata.Provider;
+        ddlCanvas.SetDatabaseContext(metadata, ddlConnectionConfig);
+        ddlCanvas.ReplaceGraph(scratch.Nodes.ToList(), scratch.Connections.ToList());
+
+        if (sourceProfile is not null)
+        {
+            ConnectionManagerViewModel ddlConnectionManager = ddlCanvas.ConnectionManager;
+            ConnectionProfile? ddlProfile = ddlConnectionManager.Profiles.FirstOrDefault(profile =>
+                string.Equals(profile.Id, sourceProfile.Id, StringComparison.OrdinalIgnoreCase));
+            if (ddlProfile is not null)
+            {
+                ddlConnectionManager.SelectedProfile = ddlProfile;
+                ddlConnectionManager.ActiveProfileId = ddlProfile.Id;
+                if (!string.IsNullOrWhiteSpace(request.DatabaseName))
+                    ddlConnectionManager.SelectedDatabase = request.DatabaseName;
+                if (!string.IsNullOrWhiteSpace(request.SchemaName))
+                    ddlConnectionManager.SelectedSchema = request.SchemaName;
+            }
+        }
+
+        ActivateDocument(WorkspaceDocumentType.DdlCanvas);
+        if (result.TableCount > 0)
+        {
+            Toasts.ShowSuccess(
+                "Schema aberto no modo DDL.",
+                $"{result.TableCount} tabela(s), {result.ColumnCount} coluna(s), {result.ForeignKeyCount} FK(s).");
+        }
+        else
+        {
+            Toasts.ShowWarning("Nenhuma tabela encontrada para abrir no modo DDL.");
+        }
     }
 
     private void LogShellConnectionOverlay(string message)

@@ -20,7 +20,6 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
     {
         Primary,
         CanvasDiagnostics,
-        StructureDiagnostics,
     }
 
     private bool _isVisible;
@@ -36,7 +35,6 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
     private string _unavailableMessage = "Preview is unavailable for this document.";
     private BenchmarkViewModel? _benchmarkTool;
     private ExplainPlanViewModel? _explainPlanTool;
-    private LiveDdlBarViewModel? _ddlTool;
     private PropertyChangedEventHandler? _benchmarkToolPropertyChanged;
     private PropertyChangedEventHandler? _explainPlanToolPropertyChanged;
 
@@ -45,14 +43,12 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
         CloseCommand = new RelayCommand(Close);
         ShowPrimaryTabCommand = new RelayCommand(() => ActiveTab = EOutputPreviewTab.Primary);
         ShowCanvasDiagnosticsTabCommand = new RelayCommand(() => ActiveTab = EOutputPreviewTab.CanvasDiagnostics);
-        ShowStructureDiagnosticsTabCommand = new RelayCommand(() => ActiveTab = EOutputPreviewTab.StructureDiagnostics);
         ShowDiagnosticsTabCommand = new RelayCommand(() => ActiveTab = EOutputPreviewTab.CanvasDiagnostics);
     }
 
     public RelayCommand CloseCommand { get; }
     public RelayCommand ShowPrimaryTabCommand { get; }
     public RelayCommand ShowCanvasDiagnosticsTabCommand { get; }
-    public RelayCommand ShowStructureDiagnosticsTabCommand { get; }
     public RelayCommand ShowDiagnosticsTabCommand { get; }
 
     public bool IsVisible
@@ -77,12 +73,9 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
             RaisePropertyChanged(nameof(Title));
             RaisePropertyChanged(nameof(PrimaryTabLabel));
             RaisePropertyChanged(nameof(CanvasDiagnosticsTabLabel));
-            RaisePropertyChanged(nameof(StructureDiagnosticsTabLabel));
             RaisePropertyChanged(nameof(HasCanvasDiagnostics));
-            RaisePropertyChanged(nameof(HasStructureDiagnostics));
             RaisePropertyChanged(nameof(ShowPrimaryContent));
             RaisePropertyChanged(nameof(ShowCanvasDiagnosticsContent));
-            RaisePropertyChanged(nameof(ShowStructureDiagnosticsContent));
             RaisePropertyChanged(nameof(ShowQueryPrimaryContent));
             RaisePropertyChanged(nameof(ShowDdlPrimaryContent));
             RaisePropertyChanged(nameof(ShowSqlBenchmarkPrimaryContent));
@@ -108,7 +101,6 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
 
             RaisePropertyChanged(nameof(ShowPrimaryContent));
             RaisePropertyChanged(nameof(ShowCanvasDiagnosticsContent));
-            RaisePropertyChanged(nameof(ShowStructureDiagnosticsContent));
             RaisePropertyChanged(nameof(ShowQueryPrimaryContent));
             RaisePropertyChanged(nameof(ShowDdlPrimaryContent));
             RaisePropertyChanged(nameof(ShowSqlBenchmarkPrimaryContent));
@@ -132,11 +124,8 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
 
     public string CanvasDiagnosticsTabLabel => "Diagnosticos do canvas";
 
-    public string StructureDiagnosticsTabLabel => "Diagnosticos de estrutura";
-
     public bool ShowPrimaryContent => ActiveTab == EOutputPreviewTab.Primary;
     public bool ShowCanvasDiagnosticsContent => HasCanvasDiagnostics && ActiveTab == EOutputPreviewTab.CanvasDiagnostics;
-    public bool ShowStructureDiagnosticsContent => HasStructureDiagnostics && ActiveTab == EOutputPreviewTab.StructureDiagnostics;
     public bool ShowQueryPrimaryContent => IsQueryMode && ShowPrimaryContent;
     public bool ShowDdlPrimaryContent => IsDdlMode && ShowPrimaryContent;
     public bool ShowSqlBenchmarkPrimaryContent => IsSqlBenchmarkMode && ShowPrimaryContent;
@@ -158,8 +147,6 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
     }
 
     public bool HasCanvasDiagnostics => Diagnostics is not null;
-
-    public bool HasStructureDiagnostics => IsDdlMode && DdlTool is not null;
 
     public string QuerySqlText
     {
@@ -209,19 +196,6 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
         private set => Set(ref _explainPlanTool, value);
     }
 
-    public LiveDdlBarViewModel? DdlTool
-    {
-        get => _ddlTool;
-        private set
-        {
-            if (!Set(ref _ddlTool, value))
-                return;
-
-            RaisePropertyChanged(nameof(HasStructureDiagnostics));
-            RaisePropertyChanged(nameof(ShowStructureDiagnosticsContent));
-        }
-    }
-
     public string UnavailableMessage
     {
         get => _unavailableMessage;
@@ -244,7 +218,6 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
         DdlProviderLabel = string.Empty;
         BenchmarkTool = null;
         ExplainPlanTool = null;
-        DdlTool = null;
         ActiveTab = EOutputPreviewTab.Primary;
         IsVisible = true;
         Diagnostics?.RunChecksCommand.Execute(null);
@@ -263,7 +236,6 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
         DdlProviderLabel = providerLabel;
         BenchmarkTool = null;
         ExplainPlanTool = null;
-        DdlTool = liveDdl;
         ActiveTab = EOutputPreviewTab.Primary;
         IsVisible = true;
         Diagnostics?.RunChecksCommand.Execute(null);
@@ -285,7 +257,6 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
         DdlProviderLabel = string.Empty;
         BenchmarkTool = null;
         ExplainPlanTool = null;
-        DdlTool = null;
         ActiveTab = EOutputPreviewTab.Primary;
         IsVisible = true;
     }
@@ -307,7 +278,6 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
         DdlProviderLabel = string.Empty;
         BenchmarkTool = benchmark;
         ExplainPlanTool = null;
-        DdlTool = null;
         ActiveTab = EOutputPreviewTab.Primary;
         IsVisible = true;
     }
@@ -333,7 +303,6 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
         DdlProviderLabel = string.Empty;
         BenchmarkTool = null;
         ExplainPlanTool = explain;
-        DdlTool = null;
         ActiveTab = EOutputPreviewTab.Primary;
         IsVisible = true;
     }
@@ -349,7 +318,6 @@ public sealed class OutputPreviewModalViewModel : ViewModelBase
         UnwireToolHandlers();
         BenchmarkTool = null;
         ExplainPlanTool = null;
-        DdlTool = null;
         IsVisible = false;
     }
 

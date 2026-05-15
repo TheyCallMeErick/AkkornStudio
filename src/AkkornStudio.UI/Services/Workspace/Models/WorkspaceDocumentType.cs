@@ -8,4 +8,5 @@ public enum WorkspaceDocumentType
     SqlResult,
     ErDiagram,
     DdlSchemaCompare,
+    DdlSchemaAnalysis,
 }

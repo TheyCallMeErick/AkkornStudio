@@ -501,6 +501,11 @@
                                               DataContext="{ReflectionBinding DataContext.ActiveDdlSchemaCompareDocument, ElementName=RootWindow}"
                                               IsVisible="{ReflectionBinding DataContext.ActivePageContract.ShowsSchemaComparePage, ElementName=RootWindow}"/>
 
+      <shell:DdlSchemaAnalysisWorkspaceControl Grid.Column="2"
+                                               Margin="8"
+                                               DataContext="{ReflectionBinding DataContext.ActiveDdlSchemaAnalysisDocument, ElementName=RootWindow}"
+                                               IsVisible="{ReflectionBinding DataContext.ActivePageContract.ShowsSchemaAnalysisPage, ElementName=RootWindow}"/>
+
       <!-- ╠═ LEFT: Mode-aware Sidebar (floating in Query, docked in SQL) ═════╣ -->
       <Border x:Name="LeftSidebarHost"
               Grid.Column="0"
