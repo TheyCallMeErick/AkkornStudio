@@ -1291,7 +1291,7 @@
             </Border>
 
             <Border Grid.Column="1" Classes="issue-shell-card" Padding="10">
-              <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,*" RowSpacing="8">
+              <Grid RowDefinitions="Auto,*" RowSpacing="8">
                 <Border Grid.Row="0" Classes="surface-section-title">
                   <StackPanel Orientation="Horizontal" Spacing="6">
                     <mi:MaterialIcon Kind="TextBoxSearchOutline" Width="14" Height="14" Foreground="{StaticResource TextMutedBrush}"/>
@@ -1299,82 +1299,91 @@
                   </StackPanel>
                 </Border>
 
-                <Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="0,8,0,8">
-                  <Border Grid.Column="0" Classes="issue-inspector-card" Margin="0,0,6,0" Padding="10">
-                    <StackPanel>
-                      <TextBlock Text="Path" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                      <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssuePath}" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                  </Border>
-                  <Border Grid.Column="1" Classes="issue-inspector-card" Padding="10">
-                    <StackPanel>
-                      <TextBlock Text="Confidence" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                      <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssueConfidencePercent}"/>
-                    </StackPanel>
-                  </Border>
-                </Grid>
-
-                <Border Grid.Row="2" Classes="issue-inspector-card">
-                  <StackPanel Spacing="6">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                      <mi:MaterialIcon Kind="Radar" Width="13" Height="13" Foreground="{StaticResource StatusInfoBrush}"/>
-                      <TextBlock Text="O que foi detectado" FontWeight="{StaticResource FontWeightStrong}"/>
-                    </StackPanel>
-                    <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.Title}" FontWeight="{StaticResource FontWeightStrong}" IsVisible="{Binding SchemaAnalysisPanel.HasSelectedIssue}"/>
-                    <WrapPanel Orientation="Horizontal" IsVisible="{Binding SchemaAnalysisPanel.HasSelectedIssue}">
-                      <Border Classes="issue-badge"
-                              Classes.critical="{Binding SchemaAnalysisPanel.SelectedIssue.Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"
-                              Classes.warning="{Binding SchemaAnalysisPanel.SelectedIssue.Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"
-                              Classes.info="{Binding SchemaAnalysisPanel.SelectedIssue.Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}"
-                              Margin="0,0,4,4">
-                        <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.Severity}" FontSize="{StaticResource FontSizeCaption}"/>
-                      </Border>
-                      <Border Classes="issue-badge" Margin="0,0,4,4">
-                        <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.TargetType}" FontSize="{StaticResource FontSizeCaption}"/>
-                      </Border>
-                      <Border Classes="issue-badge" Margin="0,0,4,4">
-                        <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.RuleCode}" FontSize="{StaticResource FontSizeCaption}"/>
-                      </Border>
-                    </WrapPanel>
-                    <TextBlock Text="{Binding SchemaAnalysisPanel.DetailsMessage}" TextWrapping="Wrap"/>
-                  </StackPanel>
-                </Border>
-
-                <ListBox Grid.Row="3" ItemsSource="{Binding SchemaAnalysisPanel.SelectedIssueEvidence}">
-                  <ListBox.ItemTemplate>
-                    <DataTemplate>
-                      <Border Classes="issue-evidence-item">
-                        <Grid ColumnDefinitions="Auto,120,*" ColumnSpacing="6">
-                          <mi:MaterialIcon Grid.Column="0" Kind="CheckDecagramOutline" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
-                          <TextBlock Grid.Column="1" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" Text="{Binding Key}"/>
-                          <TextBlock Grid.Column="2" FontSize="{StaticResource FontSizeCaption}" Text="{Binding Value}" TextTrimming="CharacterEllipsis"/>
+                <TabControl Grid.Row="1" Classes="issue-inspector-tabs">
+                  <TabItem Header="Descricao">
+                    <ScrollViewer Margin="0,6,0,0" VerticalScrollBarVisibility="Auto">
+                      <StackPanel Spacing="8">
+                        <Grid ColumnDefinitions="*,*" Margin="0,2,0,2">
+                          <Border Grid.Column="0" Classes="issue-inspector-card" Margin="0,0,6,0" Padding="10">
+                            <StackPanel>
+                              <TextBlock Text="Path" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                              <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssuePath}" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                          </Border>
+                          <Border Grid.Column="1" Classes="issue-inspector-card" Padding="10">
+                            <StackPanel>
+                              <TextBlock Text="Confidence" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                              <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssueConfidencePercent}"/>
+                            </StackPanel>
+                          </Border>
                         </Grid>
-                      </Border>
-                    </DataTemplate>
-                  </ListBox.ItemTemplate>
-                </ListBox>
 
-                <Grid Grid.Row="4" ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="6" Margin="0,8,0,8">
-                  <Button Grid.Column="0" Classes="secondary compact" Content="Preview SQL"/>
-                  <Button Grid.Column="1" Classes="secondary compact" Content="Apply" Command="{Binding SchemaAnalysisPanel.ApplyToCanvasCommand}"/>
-                  <Button Grid.Column="2" Classes="secondary compact" Content="Copy SQL" Command="{Binding SchemaAnalysisPanel.CopySqlCommand}" Click="CopySqlButton_OnClick"/>
-                  <Button Grid.Column="3" Classes="secondary compact" Content="Open in DDL" Command="{Binding OpenInDdlCommand}"/>
-                  <Button Grid.Column="4" Classes="secondary compact" HorizontalAlignment="Right" Content="Mais acoes">
-                    <Button.Flyout>
-                      <Flyout Placement="BottomEdgeAlignedRight">
-                        <Border Classes="issue-filter-flyout">
+                        <Border Classes="issue-inspector-card">
                           <StackPanel Spacing="6">
-                            <Button Classes="secondary compact" Content="Ignore Rule"/>
-                            <Button Classes="secondary compact" Content="Mark Reviewed"/>
-                            <Button Classes="secondary compact" Content="Reanalisar" Command="{Binding RunAnalysisCommand}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <mi:MaterialIcon Kind="Radar" Width="13" Height="13" Foreground="{StaticResource StatusInfoBrush}"/>
+                              <TextBlock Text="O que foi detectado" FontWeight="{StaticResource FontWeightStrong}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.Title}" FontWeight="{StaticResource FontWeightStrong}" IsVisible="{Binding SchemaAnalysisPanel.HasSelectedIssue}"/>
+                            <WrapPanel Orientation="Horizontal" IsVisible="{Binding SchemaAnalysisPanel.HasSelectedIssue}">
+                              <Border Classes="issue-badge"
+                                      Classes.critical="{Binding SchemaAnalysisPanel.SelectedIssue.Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"
+                                      Classes.warning="{Binding SchemaAnalysisPanel.SelectedIssue.Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"
+                                      Classes.info="{Binding SchemaAnalysisPanel.SelectedIssue.Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}"
+                                      Margin="0,0,4,4">
+                                <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.Severity}" FontSize="{StaticResource FontSizeCaption}"/>
+                              </Border>
+                              <Border Classes="issue-badge" Margin="0,0,4,4">
+                                <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.TargetType}" FontSize="{StaticResource FontSizeCaption}"/>
+                              </Border>
+                              <Border Classes="issue-badge" Margin="0,0,4,4">
+                                <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.RuleCode}" FontSize="{StaticResource FontSizeCaption}"/>
+                              </Border>
+                            </WrapPanel>
+                            <TextBlock Text="{Binding SchemaAnalysisPanel.DetailsMessage}" TextWrapping="Wrap"/>
                           </StackPanel>
                         </Border>
-                      </Flyout>
-                    </Button.Flyout>
-                  </Button>
-                </Grid>
 
-                <TabControl Grid.Row="5" Classes="issue-inspector-tabs">
+                        <ListBox ItemsSource="{Binding SchemaAnalysisPanel.SelectedIssueEvidence}">
+                          <ListBox.ItemTemplate>
+                            <DataTemplate>
+                              <Border Classes="issue-evidence-item">
+                                <Grid ColumnDefinitions="Auto,120,*" ColumnSpacing="6">
+                                  <mi:MaterialIcon Grid.Column="0" Kind="CheckDecagramOutline" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                  <TextBlock Grid.Column="1" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" Text="{Binding Key}"/>
+                                  <TextBlock Grid.Column="2" FontSize="{StaticResource FontSizeCaption}" Text="{Binding Value}" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ListBox.ItemTemplate>
+                        </ListBox>
+                      </StackPanel>
+                    </ScrollViewer>
+                  </TabItem>
+
+                  <TabItem Header="Resolucao">
+                    <Grid RowDefinitions="Auto,*" RowSpacing="8" Margin="0,6,0,0">
+                      <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="6">
+                        <Button Grid.Column="0" Classes="secondary compact" Content="Preview SQL"/>
+                        <Button Grid.Column="1" Classes="secondary compact" Content="Apply" Command="{Binding SchemaAnalysisPanel.ApplyToCanvasCommand}"/>
+                        <Button Grid.Column="2" Classes="secondary compact" Content="Copy SQL" Command="{Binding SchemaAnalysisPanel.CopySqlCommand}" Click="CopySqlButton_OnClick"/>
+                        <Button Grid.Column="3" Classes="secondary compact" Content="Open in DDL" Command="{Binding OpenInDdlCommand}"/>
+                        <Button Grid.Column="4" Classes="secondary compact" HorizontalAlignment="Right" Content="Mais acoes">
+                          <Button.Flyout>
+                            <Flyout Placement="BottomEdgeAlignedRight">
+                              <Border Classes="issue-filter-flyout">
+                                <StackPanel Spacing="6">
+                                  <Button Classes="secondary compact" Content="Ignore Rule"/>
+                                  <Button Classes="secondary compact" Content="Mark Reviewed"/>
+                                  <Button Classes="secondary compact" Content="Reanalisar" Command="{Binding RunAnalysisCommand}"/>
+                                </StackPanel>
+                              </Border>
+                            </Flyout>
+                          </Button.Flyout>
+                        </Button>
+                      </Grid>
+
+                      <TabControl Grid.Row="1" Classes="issue-inspector-tabs">
                   <TabItem Header="SQL">
                     <Border Classes="issue-sql-pane" Margin="0,6,0,0">
                       <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
@@ -1447,6 +1456,9 @@
                         <TextBlock Text="Confirme objetos dependentes (views, procedures e jobs) antes de executar a correcao." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                       </StackPanel>
                     </Border>
+                  </TabItem>
+                </TabControl>
+                    </Grid>
                   </TabItem>
                 </TabControl>
               </Grid>
