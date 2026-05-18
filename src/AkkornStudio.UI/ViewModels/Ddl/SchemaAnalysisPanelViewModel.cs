@@ -321,6 +321,22 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
 
     public int FilteredCriticalCount => VisibleIssues.Count(static i => i.Severity == SchemaIssueSeverity.Critical);
 
+    public int FilteredAffectedTablesCount => VisibleIssues
+        .Select(static issue =>
+        {
+            string schema = issue.SchemaName ?? string.Empty;
+            string table = issue.TableName ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(schema) && string.IsNullOrWhiteSpace(table))
+                return string.Empty;
+
+            return string.IsNullOrWhiteSpace(schema) ? table : $"{schema}.{table}";
+        })
+        .Where(static value => !string.IsNullOrWhiteSpace(value))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Count();
+
+    public int FilteredQuickWinIssuesCount => VisibleIssues.Count(IsQuickWinIssue);
+
     public bool CanSelectNextIssue => TryGetSelectionIndex(out int index) && index < VisibleIssues.Count - 1;
 
     public bool CanSelectPreviousIssue => TryGetSelectionIndex(out int index) && index > 0;
@@ -831,6 +847,18 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
         RaisePropertyChanged(nameof(FilteredInfoCount));
         RaisePropertyChanged(nameof(FilteredWarningCount));
         RaisePropertyChanged(nameof(FilteredCriticalCount));
+        RaisePropertyChanged(nameof(FilteredAffectedTablesCount));
+        RaisePropertyChanged(nameof(FilteredQuickWinIssuesCount));
+    }
+
+    private static bool IsQuickWinIssue(SchemaIssue issue)
+    {
+        if (issue.Suggestions.Count == 0)
+            return false;
+
+        return issue.Suggestions.Any(static suggestion =>
+            suggestion.SqlCandidates.Any(candidate =>
+                candidate.Visibility is CandidateVisibility.VisibleActionable or CandidateVisibility.VisibleReadOnly));
     }
 
     private void RebuildSeverityFilterFromFlags(bool applyFilters = true)

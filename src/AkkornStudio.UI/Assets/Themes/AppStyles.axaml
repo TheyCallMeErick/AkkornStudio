@@ -980,8 +980,21 @@
     <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
   </Style>
 
+  <Style Selector="ListBox">
+    <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
+    <Setter Property="Padding" Value="2"/>
+  </Style>
+  <Style Selector="ListBox:focus-within">
+    <Setter Property="BorderBrush" Value="{StaticResource BorderFocusBrush}"/>
+  </Style>
+
   <Style Selector="CheckBox">
     <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}"/>
   </Style>
   <Style Selector="RadioButton">
     <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>

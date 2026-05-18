@@ -422,6 +422,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             RaisePropertyChanged(nameof(IsConnectionFormStepVisible));
             SelectProviderForNewProfileCommand.NotifyCanExecuteChanged();
             BackToProviderSelectionCommand.NotifyCanExecuteChanged();
+            SaveProfileCommand?.NotifyCanExecuteChanged();
         }
     }
 
@@ -622,6 +623,19 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         }
     }
 
+    private bool _isSavingProfile;
+    public bool IsSavingProfile
+    {
+        get => _isSavingProfile;
+        set
+        {
+            if (!Set(ref _isSavingProfile, value))
+                return;
+
+            SaveProfileCommand?.NotifyCanExecuteChanged();
+        }
+    }
+
     private string _testStatus = "";
     public string TestStatus { get => _testStatus; set => Set(ref _testStatus, value); }
 
@@ -757,7 +771,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         };
 
         NewProfileCommand     = new RelayCommand(BeginNewProfile);
-        SaveProfileCommand    = new RelayCommand(StartSaveProfileSafe);
+        SaveProfileCommand    = new RelayCommand(StartSaveProfileSafe, () => IsEditing && !IsSavingProfile);
         DeleteProfileCommand  = new RelayCommand(StartDeleteProfileSafe, () => SelectedProfile is not null);
         TestConnectionCommand = new RelayCommand(StartTestConnectionSafe, () => !IsTesting && IsEditing);
         ImportFromUrlCommand  = new RelayCommand(StartImportFromUrlSafe, () => !string.IsNullOrWhiteSpace(EditConnectionUrl));
@@ -995,32 +1009,53 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
 
     private async Task SaveProfileAsync()
     {
-        if (!TryValidateForm(requireName: true, out string? validationError))
-        {
-            ApplyTestStatus(_statusPresenter.Failed(validationError));
+        if (IsSavingProfile)
             return;
-        }
 
-        ConnectionProfile profile = _formMapper.ToProfile(CaptureFormData());
-        OperationResultDto<ConnectionDetailsDto> result = await _connectionCatalogService.SaveAsync(
-            ConnectionContractMapper.ToDetails(profile),
-            CancellationToken.None);
-        if (!result.Success || result.Payload is null)
+        IsSavingProfile = true;
+        try
         {
-            ApplyTestStatus(_statusPresenter.Failed(result.UserMessage));
-            return;
+            if (!TryValidateForm(requireName: true, out string? validationError))
+            {
+                ApplyTestStatus(_statusPresenter.Failed(validationError));
+                return;
+            }
+
+            ConnectionProfile profile = _formMapper.ToProfile(CaptureFormData());
+            OperationResultDto<ConnectionDetailsDto> result = await _connectionCatalogService.SaveAsync(
+                ConnectionContractMapper.ToDetails(profile),
+                CancellationToken.None);
+            if (!result.Success || result.Payload is null)
+            {
+                ApplyTestStatus(_statusPresenter.Failed(result.UserMessage));
+                return;
+            }
+
+            await ReloadProfilesFromCatalogAsync(result.Payload.Id);
+
+            if (string.Equals(_activeProfileId, result.Payload.Id, StringComparison.Ordinal))
+            {
+                RaisePropertyChanged(nameof(ActiveConnectionLabel));
+                RaisePropertyChanged(nameof(ConnectionHealthTooltip));
+            }
+
+            // Keep the modal open and return to picker with explicit success feedback.
+            ApplyTestStatus(new ConnectionStatusViewState(
+                L("connection.status.saved", "Conexao salva com sucesso."),
+                UiColorConstants.C_4ADE80));
+            ModalMode = ConnectionModalMode.Picker;
+            IsEditing = false;
+            IsNewProfileFlow = false;
+            WizardStep = ConnectionWizardStep.ConfigureConnection;
+            BackToConnectionPickerCommand.NotifyCanExecuteChanged();
+
+            RebuildConnectionCards();
+            ProfilesChanged?.Invoke();
         }
-
-        await ReloadProfilesFromCatalogAsync(result.Payload.Id);
-
-        if (string.Equals(_activeProfileId, result.Payload.Id, StringComparison.Ordinal))
+        finally
         {
-            RaisePropertyChanged(nameof(ActiveConnectionLabel));
-            RaisePropertyChanged(nameof(ConnectionHealthTooltip));
+            IsSavingProfile = false;
         }
-
-        RebuildConnectionCards();
-        ProfilesChanged?.Invoke();
     }
 
     private async Task DeleteProfileAsync()

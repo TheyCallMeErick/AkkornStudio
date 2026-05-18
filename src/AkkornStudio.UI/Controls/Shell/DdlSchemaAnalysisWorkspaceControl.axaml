@@ -1,12 +1,85 @@
 ﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:AkkornStudio.UI.ViewModels"
+             xmlns:conv="using:AkkornStudio.UI.Converters"
              xmlns:loc="using:AkkornStudio.UI.Services.Localization"
              xmlns:mi="using:Material.Icons.Avalonia"
              x:Name="Root"
              x:Class="AkkornStudio.UI.Controls.Shell.DdlSchemaAnalysisWorkspaceControl"
              KeyDown="OnHostKeyDown"
              x:DataType="vm:DdlSchemaAnalysisWorkspaceViewModel">
+  <UserControl.Resources>
+    <conv:EnumEqualsConverter x:Key="EnumEqualsConverter"/>
+
+    <DataTemplate x:Key="PlaygroundBadgeTemplate" x:DataType="vm:NamingPlaygroundBadgeViewModel">
+      <Border Classes="playground-badge"
+              Classes.pk="{Binding IsPk}"
+              Classes.fk="{Binding IsFk}"
+              Classes.idx="{Binding IsIdx}"
+              Classes.view="{Binding IsView}"
+              Classes.unique="{Binding IsUnique}"
+              Classes.check="{Binding IsCheck}"
+              Classes.constraint="{Binding IsConstraint}">
+        <TextBlock Text="{Binding Text}" FontSize="{StaticResource FontSizeCaption}"/>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate x:Key="PlaygroundLineTemplate" x:DataType="vm:NamingPlaygroundLineViewModel">
+      <Border Classes="playground-line"
+              Classes.playground-highlight="{Binding IsHighlighted}"
+              CornerRadius="6"
+              Padding="6"
+              Tag="{Binding FocusKey}"
+              PointerEntered="PlaygroundScope_OnPointerEntered"
+              PointerExited="PlaygroundScope_OnPointerExited"
+              Margin="0,0,0,4">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+          <TextBlock Grid.Column="0" Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+          <ItemsControl Grid.Column="1" ItemsSource="{Binding Badges}" ItemTemplate="{StaticResource PlaygroundBadgeTemplate}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="4"/>
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+          </ItemsControl>
+        </Grid>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate x:Key="PlaygroundEntityTemplate" x:DataType="vm:NamingPlaygroundEntityCardViewModel">
+      <Border Classes="playground-preview-card"
+              Classes.playground-highlight="{Binding IsHighlighted}"
+              Padding="10"
+              Tag="{Binding FocusKey}"
+              PointerEntered="PlaygroundScope_OnPointerEntered"
+              PointerExited="PlaygroundScope_OnPointerExited">
+        <StackPanel Spacing="8">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="{Binding EntityName}" FontWeight="{StaticResource FontWeightStrong}" TextTrimming="CharacterEllipsis"/>
+            <Border Grid.Column="1" Classes="playground-badge" Classes.view="{Binding IsViewKind}">
+              <TextBlock Text="{Binding EntityKind}" FontSize="{StaticResource FontSizeCaption}"/>
+            </Border>
+          </Grid>
+          <ItemsControl ItemsSource="{Binding Lines}" ItemTemplate="{StaticResource PlaygroundLineTemplate}"/>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate x:Key="TrendPatternRowTemplate" x:DataType="vm:SchemaTrendPatternItemViewModel">
+      <Button Classes="trend-pattern-button"
+              Classes.selected="{Binding IsSelected}"
+              Command="{Binding DataContext.SelectTrendContributionCommand, ElementName=Root}"
+              CommandParameter="{Binding}">
+        <Grid ColumnDefinitions="140,*,44,50" ColumnSpacing="6">
+          <TextBlock Grid.Column="0" Text="{Binding Label}" TextTrimming="CharacterEllipsis"/>
+          <ProgressBar Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Percent}" Height="10"/>
+          <TextBlock Grid.Column="2" Text="{Binding CountText}" HorizontalAlignment="Right" Foreground="{StaticResource TextSecondaryBrush}"/>
+          <TextBlock Grid.Column="3" Text="{Binding PercentText}" HorizontalAlignment="Right"/>
+        </Grid>
+      </Button>
+    </DataTemplate>
+  </UserControl.Resources>
+
   <UserControl.Styles>
     <Style Selector="Border.playground-config-card">
       <Setter Property="BorderThickness" Value="1"/>
@@ -107,50 +180,407 @@
     <Style Selector="Border.playground-issue-item.playground-highlight">
       <Setter Property="BorderBrush" Value="#4F87D8"/>
     </Style>
+    <Style Selector="Border.playground-issue-status-badge">
+      <Setter Property="Padding" Value="8,3"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Background" Value="#1B2433"/>
+      <Setter Property="BorderBrush" Value="#33425B"/>
+    </Style>
+    <Style Selector="Border.playground-issue-status-badge.issue-warning">
+      <Setter Property="Background" Value="#2D261A"/>
+      <Setter Property="BorderBrush" Value="#8C6E3A"/>
+    </Style>
+    <Style Selector="Border.playground-issue-status-badge.issue-success">
+      <Setter Property="Background" Value="#1A2B22"/>
+      <Setter Property="BorderBrush" Value="#3E7C5A"/>
+    </Style>
+    <Style Selector="Border.playground-issue-status-badge.issue-error">
+      <Setter Property="Background" Value="#2A1E25"/>
+      <Setter Property="BorderBrush" Value="#9D5D69"/>
+    </Style>
+
+    <Style Selector="Border.playground-flow-shell">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#273247"/>
+      <Setter Property="Background" Value="#0F1727"/>
+      <Setter Property="CornerRadius" Value="14"/>
+    </Style>
+
+    <Style Selector="Border.playground-step-item">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="Background" Value="#141C2C"/>
+      <Setter Property="BorderBrush" Value="#2C3850"/>
+    </Style>
+    <Style Selector="Border.playground-step-item.completed">
+      <Setter Property="Background" Value="#182335"/>
+      <Setter Property="BorderBrush" Value="#3A6BA3"/>
+    </Style>
+    <Style Selector="Border.playground-step-item.active">
+      <Setter Property="Background" Value="#1A2840"/>
+      <Setter Property="BorderBrush" Value="#4B88D8"/>
+    </Style>
+
+    <Style Selector="Border.playground-page-header">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#263148"/>
+      <Setter Property="Background" Value="#111A2A"/>
+      <Setter Property="CornerRadius" Value="12"/>
+    </Style>
+
+    <Style Selector="Border.playground-config-card, Border.playground-preview-shell, Border.playground-validation-shell">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#2A364E"/>
+      <Setter Property="Background" Value="#111A2A"/>
+      <Setter Property="CornerRadius" Value="12"/>
+    </Style>
+
+    <Style Selector="TextBlock.playground-card-title">
+      <Setter Property="FontSize" Value="{StaticResource FontSizeTitle}"/>
+      <Setter Property="FontWeight" Value="{StaticResource FontWeightTitle}"/>
+    </Style>
+
+    <Style Selector="Border.playground-field">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#28334A"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="8"/>
+      <Setter Property="Background" Value="#0E1522"/>
+    </Style>
+    <Style Selector="Border.playground-field.playground-highlight">
+      <Setter Property="BorderBrush" Value="#4D87E4"/>
+      <Setter Property="Background" Value="#15233A"/>
+    </Style>
+    <Style Selector="Border.playground-field.playground-invalid">
+      <Setter Property="BorderBrush" Value="#A6636C"/>
+      <Setter Property="Background" Value="#2A1B21"/>
+    </Style>
+
+    <Style Selector="ComboBox.playground-input, TextBox.playground-input">
+      <Setter Property="MinHeight" Value="36"/>
+    </Style>
+    <Style Selector="TextBox.playground-invalid">
+      <Setter Property="BorderBrush" Value="#A6636C"/>
+      <Setter Property="Background" Value="#2A1B21"/>
+    </Style>
+
+    <Style Selector="Button.playground-primary">
+      <Setter Property="Background" Value="#2E4F7D"/>
+      <Setter Property="BorderBrush" Value="#4D7FC2"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Foreground" Value="#E8F0FF"/>
+    </Style>
+
+    <Style Selector="Border.playground-connector-line">
+      <Setter Property="Background" Value="#2E3A52"/>
+      <Setter Property="Height" Value="1"/>
+    </Style>
+
+    <Style Selector="Border.issues-list-card">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#2F3A4F"/>
+      <Setter Property="Background" Value="#141B28"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="10"/>
+      <Setter Property="Margin" Value="0,0,0,8"/>
+    </Style>
+    <Style Selector="ListBox#IssuesCardsList ListBoxItem:selected Border.issues-list-card">
+      <Setter Property="BorderBrush" Value="#4C79BD"/>
+      <Setter Property="Background" Value="#1A2740"/>
+    </Style>
+
+    <Style Selector="Border.trends-section-card">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#2B364B"/>
+      <Setter Property="Background" Value="#131B2A"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="12"/>
+    </Style>
+    <Style Selector="Border.trends-kpi-card">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#2C3951"/>
+      <Setter Property="Background" Value="#172134"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="10"/>
+    </Style>
+    <Style Selector="Border.trends-kpi-card.emphasis">
+      <Setter Property="BorderBrush" Value="#3E5F93"/>
+      <Setter Property="Background" Value="#1B2940"/>
+    </Style>
+    <Style Selector="TextBlock.trends-section-title">
+      <Setter Property="FontWeight" Value="{StaticResource FontWeightTitle}"/>
+      <Setter Property="FontSize" Value="{StaticResource FontSizeBody}"/>
+    </Style>
+    <Style Selector="TextBlock.trends-section-subtitle">
+      <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+    </Style>
+    <Style Selector="Border.trends-mini-chip">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#32405A"/>
+      <Setter Property="Background" Value="#1A2437"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="8,2"/>
+    </Style>
+    <Style Selector="Border.trends-mini-chip.unidentified">
+      <Setter Property="BorderBrush" Value="#8A6A3A"/>
+      <Setter Property="Background" Value="#2A2318"/>
+    </Style>
+    <Style Selector="Border.trend-group-card">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#2A364A"/>
+      <Setter Property="Background" Value="#121B2B"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="10"/>
+    </Style>
+    <Style Selector="Button.trend-pattern-button">
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Background" Value="#101827"/>
+      <Setter Property="BorderBrush" Value="#2A364A"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="Padding" Value="6,4"/>
+      <Setter Property="Margin" Value="0,0,0,4"/>
+    </Style>
+    <Style Selector="Button.trend-pattern-button:pointerover">
+      <Setter Property="BorderBrush" Value="#47648E"/>
+      <Setter Property="Background" Value="#152134"/>
+    </Style>
+    <Style Selector="Button.trend-pattern-button.selected">
+      <Setter Property="BorderBrush" Value="#5C8ED0"/>
+      <Setter Property="Background" Value="#1A2A41"/>
+    </Style>
+
+    <Style Selector="Border.issue-shell-card">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#31415F"/>
+      <Setter Property="Background" Value="#10192C"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="12"/>
+    </Style>
+    <Style Selector="TextBlock.issue-card-label">
+      <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.issue-card-value">
+      <Setter Property="FontWeight" Value="{StaticResource FontWeightTitle}"/>
+      <Setter Property="FontSize" Value="{StaticResource FontSizeTitle}"/>
+    </Style>
+    <Style Selector="Border.issue-metric-card">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#2D3A55"/>
+      <Setter Property="Background" Value="#172133"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="10"/>
+    </Style>
+    <Style Selector="Border.issue-metric-card.critical">
+      <Setter Property="BorderBrush" Value="#7B3A48"/>
+      <Setter Property="Background" Value="#271A22"/>
+    </Style>
+    <Style Selector="Border.issue-metric-card.warning">
+      <Setter Property="BorderBrush" Value="#84653B"/>
+      <Setter Property="Background" Value="#2A2318"/>
+    </Style>
+    <Style Selector="Border.issue-metric-card.info">
+      <Setter Property="BorderBrush" Value="#345A84"/>
+      <Setter Property="Background" Value="#192536"/>
+    </Style>
+    <Style Selector="Border.issue-metric-card.quickwin">
+      <Setter Property="BorderBrush" Value="#3D7A58"/>
+      <Setter Property="Background" Value="#1A2B22"/>
+    </Style>
+    <Style Selector="Border.issue-metric-card.health">
+      <Setter Property="BorderBrush" Value="#5B4A88"/>
+      <Setter Property="Background" Value="#211C32"/>
+    </Style>
+    <Style Selector="Border.issue-filter-chip">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#31415D"/>
+      <Setter Property="Background" Value="#192436"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="8,2"/>
+    </Style>
+    <Style Selector="Button.issue-filter-select">
+      <Setter Property="Background" Value="#152238"/>
+      <Setter Property="BorderBrush" Value="#324563"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="10,6"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="MinWidth" Value="140"/>
+    </Style>
+    <Style Selector="Button.issue-filter-select:pointerover">
+      <Setter Property="Background" Value="#1A2B45"/>
+      <Setter Property="BorderBrush" Value="#4B74B1"/>
+    </Style>
+    <Style Selector="Border.issue-filter-flyout">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#334965"/>
+      <Setter Property="Background" Value="#0F1728"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="10"/>
+      <Setter Property="MinWidth" Value="240"/>
+    </Style>
+    <Style Selector="Border.issue-filter-modal-overlay">
+      <Setter Property="Background" Value="#70070B14"/>
+    </Style>
+    <Style Selector="Border.issue-filter-modal-card">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#334966"/>
+      <Setter Property="Background" Value="#0D1423"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="14"/>
+      <Setter Property="MaxWidth" Value="720"/>
+      <Setter Property="MinWidth" Value="560"/>
+      <Setter Property="MaxHeight" Value="560"/>
+    </Style>
+    <Style Selector="Border.issue-group-card">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#2A3550"/>
+      <Setter Property="Background" Value="#131D2D"/>
+      <Setter Property="CornerRadius" Value="9"/>
+      <Setter Property="Padding" Value="8"/>
+      <Setter Property="Margin" Value="0,0,0,8"/>
+    </Style>
+    <Style Selector="Border.issue-item-card">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#2F3C58"/>
+      <Setter Property="Background" Value="#171F30"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="8"/>
+      <Setter Property="Margin" Value="0,0,0,6"/>
+    </Style>
+    <Style Selector="Border.issue-item-card.critical">
+      <Setter Property="BorderBrush" Value="#8D4F62"/>
+      <Setter Property="Background" Value="#261B28"/>
+    </Style>
+    <Style Selector="Border.issue-item-card.warning">
+      <Setter Property="BorderBrush" Value="#8F7042"/>
+      <Setter Property="Background" Value="#292317"/>
+    </Style>
+    <Style Selector="Border.issue-item-card.info">
+      <Setter Property="BorderBrush" Value="#476E9A"/>
+      <Setter Property="Background" Value="#182536"/>
+    </Style>
+    <Style Selector="ListBox#IssuesCardsList ListBoxItem:selected Border.issue-item-card">
+      <Setter Property="BorderBrush" Value="#4E81C8"/>
+      <Setter Property="Background" Value="#1D2A42"/>
+    </Style>
+    <Style Selector="Border.issue-badge">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#3A4764"/>
+      <Setter Property="Background" Value="#1A2538"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="8,2"/>
+    </Style>
+    <Style Selector="Border.issue-badge.critical">
+      <Setter Property="BorderBrush" Value="#985268"/>
+      <Setter Property="Background" Value="#2C1D27"/>
+    </Style>
+    <Style Selector="Border.issue-badge.warning">
+      <Setter Property="BorderBrush" Value="#A47A42"/>
+      <Setter Property="Background" Value="#2C2418"/>
+    </Style>
+    <Style Selector="Border.issue-badge.info">
+      <Setter Property="BorderBrush" Value="#4E84C5"/>
+      <Setter Property="Background" Value="#1A2940"/>
+    </Style>
+    <Style Selector="Border.issue-inspector-card">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#2B3650"/>
+      <Setter Property="Background" Value="#111B2B"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="10"/>
+    </Style>
+    <Style Selector="Border.issue-evidence-item">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#2B3650"/>
+      <Setter Property="Background" Value="#0F1727"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="8,6"/>
+      <Setter Property="Margin" Value="0,0,0,4"/>
+    </Style>
+    <Style Selector="TextBox.issue-sql-preview">
+      <Setter Property="FontFamily" Value="Consolas, Cascadia Code, Menlo, monospace"/>
+      <Setter Property="AcceptsReturn" Value="True"/>
+      <Setter Property="TextWrapping" Value="NoWrap"/>
+      <Setter Property="MinHeight" Value="180"/>
+    </Style>
+    <Style Selector="TabControl.issue-inspector-tabs">
+      <Setter Property="Background" Value="#0F1727"/>
+      <Setter Property="BorderBrush" Value="#2B3650"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+    </Style>
+    <Style Selector="TabControl.issue-inspector-tabs TabItem">
+      <Setter Property="Background" Value="#132037"/>
+      <Setter Property="BorderBrush" Value="#2F3F5B"/>
+    </Style>
+    <Style Selector="TabControl.issue-inspector-tabs TabItem:selected">
+      <Setter Property="Background" Value="#1C2B45"/>
+      <Setter Property="BorderBrush" Value="#4B74B1"/>
+    </Style>
+    <Style Selector="Border.issue-sql-pane">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#2F4360"/>
+      <Setter Property="Background" Value="#0D1626"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="10"/>
+    </Style>
+    <Style Selector="Border.issue-sql-meta-chip">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#385072"/>
+      <Setter Property="Background" Value="#14233A"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="8,2"/>
+    </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*" Margin="8">
-    <Border Grid.Row="0" Classes="surface-panel" Padding="12" Margin="0,0,0,8">
-      <StackPanel Spacing="10">
-        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-          <mi:MaterialIcon Grid.Column="0" Kind="Radar" Width="16" Height="16" VerticalAlignment="Center" Foreground="{StaticResource StatusInfoBrush}"/>
-          <StackPanel Grid.Column="1" Spacing="2">
-            <TextBlock Text="Diagnostico de estrutura" FontWeight="{StaticResource FontWeightTitle}"/>
-            <TextBlock Text="{Binding StatusMessage}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+    <Border Grid.Row="0" Classes="playground-flow-shell" Padding="14" Margin="0,0,0,8">
+      <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <StackPanel Grid.Column="0" Spacing="4">
+            <TextBlock Text="Diagnostico de estrutura" FontWeight="{StaticResource FontWeightTitle}" FontSize="{StaticResource FontSizeTitle}"/>
+            <TextBlock Text="{Binding MetadataLoadedSummary}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
           </StackPanel>
-          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
             <Button Command="{Binding PreviousStepCommand}" Classes="secondary compact" Content="Voltar"/>
             <Button Command="{Binding NextStepCommand}" Classes="secondary compact" Content="Proximo"/>
           </StackPanel>
         </Grid>
 
-        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="6">
-          <Border Grid.Column="0" Classes="surface-card" Padding="8" Background="{StaticResource PanelActiveBrush}" IsVisible="{Binding IsConnectionStepCurrent}">
-            <TextBlock Text="1. Conexao" FontWeight="{StaticResource FontWeightStrong}"/>
+        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+          <Border Grid.Column="0" Classes="playground-step-item"
+                  Classes.completed="{Binding IsConnectionStepCompleted}"
+                  Classes.active="{Binding IsConnectionStepCurrent}">
+            <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6">
+              <mi:MaterialIcon Grid.Column="0" Kind="CheckCircleOutline" Width="14" Height="14" Foreground="#6EA7E6" IsVisible="{Binding IsConnectionStepCompleted}"/>
+              <TextBlock Grid.Column="1" Text="1" Width="14" Height="14" TextAlignment="Center"/>
+              <TextBlock Grid.Column="2" Text="1. Conexao" FontWeight="{StaticResource FontWeightStrong}"/>
+            </Grid>
           </Border>
-          <Border Grid.Column="0" Classes="surface-card" Padding="8" IsVisible="{Binding IsConnectionStepCompleted}">
-            <Button Command="{Binding OpenConnectionStepCommand}" Classes="secondary compact" Content="1. Conexao"/>
+          <Border Grid.Column="1" Classes="playground-step-item"
+                  Classes.completed="{Binding IsTrendsStepCompleted}"
+                  Classes.active="{Binding IsTrendsStepCurrent}">
+            <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6">
+              <mi:MaterialIcon Grid.Column="0" Kind="CheckCircleOutline" Width="14" Height="14" Foreground="#6EA7E6" IsVisible="{Binding IsTrendsStepCompleted}"/>
+              <TextBlock Grid.Column="1" Text="2" Width="14" Height="14" TextAlignment="Center"/>
+              <TextBlock Grid.Column="2" Text="2. Tendencias" FontWeight="{StaticResource FontWeightStrong}"/>
+            </Grid>
           </Border>
-
-          <Border Grid.Column="1" Classes="surface-card" Padding="8" Background="{StaticResource PanelActiveBrush}" IsVisible="{Binding IsTrendsStepCurrent}">
-            <TextBlock Text="2. Tendencias" FontWeight="{StaticResource FontWeightStrong}"/>
-          </Border>
-          <Border Grid.Column="1" Classes="surface-card" Padding="8" IsVisible="{Binding IsTrendsStepCompleted}">
-            <Button Command="{Binding OpenTrendsStepCommand}" Classes="secondary compact" Content="2. Tendencias"/>
-          </Border>
-
-          <Border Grid.Column="2" Classes="surface-card" Padding="8" Background="{StaticResource PanelActiveBrush}" IsVisible="{Binding IsDesiredNamingStepCurrent}">
-            <TextBlock Text="3. Padroes" FontWeight="{StaticResource FontWeightStrong}"/>
-          </Border>
-          <Border Grid.Column="2" Classes="surface-card" Padding="8" IsVisible="{Binding IsDesiredNamingStepCompleted}">
-            <Button Command="{Binding OpenDesiredNamingStepCommand}" Classes="secondary compact" Content="3. Padroes"/>
-          </Border>
-
-          <Border Grid.Column="3" Classes="surface-card" Padding="8" Background="{StaticResource PanelActiveBrush}" IsVisible="{Binding IsIssuesStepCurrent}">
-            <TextBlock Text="4. Issues" FontWeight="{StaticResource FontWeightStrong}"/>
-          </Border>
-          <Border Grid.Column="3" Classes="surface-card" Padding="8" IsVisible="{Binding IsIssuesStepCompleted}">
-            <Button Command="{Binding OpenIssuesStepCommand}" Classes="secondary compact" Content="4. Issues"/>
+          <Border Grid.Column="2" Classes="playground-step-item"
+                  Classes.completed="{Binding IsDesiredNamingStepCompleted}"
+                  Classes.active="{Binding IsDesiredNamingStepCurrent}">
+            <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6">
+              <mi:MaterialIcon Grid.Column="0" Kind="CheckCircleOutline" Width="14" Height="14" Foreground="#6EA7E6" IsVisible="{Binding IsDesiredNamingStepCompleted}"/>
+              <TextBlock Grid.Column="1" Text="3" Width="14" Height="14" TextAlignment="Center"/>
+              <TextBlock Grid.Column="2" Text="3. Padroes" FontWeight="{StaticResource FontWeightStrong}"/>
+            </Grid>
           </Border>
         </Grid>
       </StackPanel>
@@ -185,97 +615,225 @@
         </ScrollViewer>
 
         <ScrollViewer VerticalScrollBarVisibility="Auto" IsVisible="{Binding IsTrendsStep}">
-          <StackPanel Spacing="10">
-            <TextBlock Text="Estado atual (sem issues)" FontWeight="{StaticResource FontWeightTitle}"/>
-            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
-              <Border Classes="surface-card" Padding="10">
-                <StackPanel>
+          <StackPanel Spacing="12">
+            <Border Classes="trends-section-card">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <StackPanel Grid.Column="0" Spacing="2">
+                  <TextBlock Text="Tendencias da estrutura atual" FontWeight="{StaticResource FontWeightTitle}" FontSize="{StaticResource FontSizeTitle}"/>
+                  <TextBlock Text="Visao consolidada dos padroes detectados para orientar a definicao de naming." Classes="trends-section-subtitle"/>
+                </StackPanel>
+                <Button Grid.Column="1" Classes="secondary compact" Content="Exportar tendencias" Click="ExportTrendsButton_OnClick" VerticalAlignment="Top"/>
+              </Grid>
+            </Border>
+
+            <Border Classes="trends-section-card">
+              <StackPanel Spacing="10">
+                <TextBlock Text="Resumo da base analisada" Classes="trends-section-title"/>
+                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                  <Border Classes="trends-kpi-card">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Tabelas" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                      <TextBlock Text="{Binding TotalTables}" FontWeight="{StaticResource FontWeightTitle}"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Classes="trends-kpi-card">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Colunas" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                      <TextBlock Text="{Binding TotalColumns}" FontWeight="{StaticResource FontWeightTitle}"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Classes="trends-kpi-card">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="FKs" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                      <TextBlock Text="{Binding TotalForeignKeys}" FontWeight="{StaticResource FontWeightTitle}"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Classes="trends-kpi-card">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Views / Schemas" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="{Binding TotalViews}" FontWeight="{StaticResource FontWeightTitle}"/>
+                        <TextBlock Text="/" FontWeight="{StaticResource FontWeightTitle}"/>
+                        <TextBlock Text="{Binding TotalSchemas}" FontWeight="{StaticResource FontWeightTitle}"/>
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="trends-section-card">
+              <StackPanel Spacing="10">
+                <TextBlock Text="Padroes dominantes por categoria" Classes="trends-section-title"/>
+                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                  <Border Classes="trends-kpi-card emphasis">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Naming dominante (geral)" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                      <TextBlock Text="{Binding DominantNaming}" FontWeight="{StaticResource FontWeightStrong}"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Classes="trends-kpi-card">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Tabelas" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                      <TextBlock Text="{Binding DominantTableNamingPattern}" FontWeight="{StaticResource FontWeightStrong}"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Classes="trends-kpi-card">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Colunas" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                      <TextBlock Text="{Binding DominantColumnNamingPattern}" FontWeight="{StaticResource FontWeightStrong}"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Classes="trends-kpi-card">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Constraints" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                      <TextBlock Text="{Binding DominantConstraintNamingPattern}" FontWeight="{StaticResource FontWeightStrong}" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </Border>
+
+            <Grid ColumnDefinitions="1.05*,1*" ColumnSpacing="10">
+              <Border Classes="trends-section-card">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="Dominancia de naming por objeto" Classes="trends-section-title"/>
+                  <TextBlock Text="Mostra o peso relativo de cada convencao por tipo de objeto." Classes="trends-section-subtitle"/>
                   <TextBlock Text="Tabelas" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                  <TextBlock Text="{Binding TotalTables}" FontWeight="{StaticResource FontWeightTitle}"/>
+                  <ItemsControl ItemsSource="{Binding TableNamingTrendItems}" ItemTemplate="{StaticResource TrendPatternRowTemplate}"/>
+
+                  <TextBlock Text="Colunas" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0"/>
+                  <ItemsControl ItemsSource="{Binding ColumnNamingTrendItems}" ItemTemplate="{StaticResource TrendPatternRowTemplate}"/>
+
+                  <TextBlock Text="Constraints" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0"/>
+                  <ItemsControl ItemsSource="{Binding ConstraintNamingTrendItems}" ItemTemplate="{StaticResource TrendPatternRowTemplate}"/>
+
+                  <TextBlock Text="Indices" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0"/>
+                  <ItemsControl ItemsSource="{Binding IndexNamingTrendItems}" ItemTemplate="{StaticResource TrendPatternRowTemplate}"/>
                 </StackPanel>
               </Border>
-              <Border Classes="surface-card" Padding="10">
-                <StackPanel>
-                  <TextBlock Text="Colunas" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                  <TextBlock Text="{Binding TotalColumns}" FontWeight="{StaticResource FontWeightTitle}"/>
-                </StackPanel>
-              </Border>
-              <Border Classes="surface-card" Padding="10">
-                <StackPanel>
-                  <TextBlock Text="FKs" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                  <TextBlock Text="{Binding TotalForeignKeys}" FontWeight="{StaticResource FontWeightTitle}"/>
-                </StackPanel>
-              </Border>
-            </Grid>
-            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
-              <Border Classes="surface-card" Padding="10">
-                <StackPanel>
-                  <TextBlock Text="Naming dominante" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                  <TextBlock Text="{Binding DominantNaming}" FontWeight="{StaticResource FontWeightStrong}"/>
-                </StackPanel>
-              </Border>
-              <Border Classes="surface-card" Padding="10">
-                <StackPanel>
-                  <TextBlock Text="Padrao PK dominante" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                  <TextBlock Text="{Binding DominantPkPattern}" FontWeight="{StaticResource FontWeightStrong}"/>
-                </StackPanel>
-              </Border>
-              <Border Classes="surface-card" Padding="10">
-                <StackPanel>
-                  <TextBlock Text="Padrao FK dominante" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                  <TextBlock Text="{Binding DominantFkPattern}" FontWeight="{StaticResource FontWeightStrong}"/>
+
+              <Border Grid.Column="1" Classes="trends-section-card">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="Dominancia de templates de chaves" Classes="trends-section-title"/>
+                  <TextBlock Text="Padroes de PK/FK em colunas e constraints." Classes="trends-section-subtitle"/>
+                  <TextBlock Text="PK (coluna)" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                  <ItemsControl ItemsSource="{Binding PrimaryKeyColumnPatternItems}" ItemTemplate="{StaticResource TrendPatternRowTemplate}"/>
+
+                  <TextBlock Text="PK (constraint)" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0"/>
+                  <ItemsControl ItemsSource="{Binding PrimaryKeyConstraintPatternItems}" ItemTemplate="{StaticResource TrendPatternRowTemplate}"/>
+
+                  <TextBlock Text="FK (coluna)" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0"/>
+                  <ItemsControl ItemsSource="{Binding ForeignKeyColumnPatternItems}" ItemTemplate="{StaticResource TrendPatternRowTemplate}"/>
+
+                  <TextBlock Text="FK (constraint)" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0"/>
+                  <ItemsControl ItemsSource="{Binding ForeignKeyConstraintPatternItems}" ItemTemplate="{StaticResource TrendPatternRowTemplate}"/>
                 </StackPanel>
               </Border>
             </Grid>
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <Button Command="{Binding PreviousStepCommand}" Classes="secondary compact" Content="Voltar"/>
-              <Button Command="{Binding NextStepCommand}" Classes="secondary compact" Content="Definir padroes"/>
-            </StackPanel>
+
+            <Border Classes="trends-section-card">
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <TextBlock Grid.Column="0" Text="Estado atual filtrado pela predominancia" Classes="trends-section-title"/>
+                  <Button Grid.Column="1"
+                          Classes="secondary compact"
+                          Content="Limpar selecao"
+                          Command="{Binding ClearSelectedTrendContributionCommand}"/>
+                </Grid>
+                <TextBlock Text="{Binding SelectedTrendContributionTitle}" FontWeight="{StaticResource FontWeightStrong}"/>
+                <TextBlock Text="{Binding SelectedTrendContributionSummary}" Classes="trends-section-subtitle"/>
+
+                <Border Classes="trend-group-card" IsVisible="{Binding HasSelectedTrendContribution}">
+                  <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding SelectedTrendContributionItems}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SchemaTrendContributionEntryViewModel">
+                          <Grid ColumnDefinitions="110,*,*" ColumnSpacing="8" Margin="0,0,0,4">
+                            <TextBlock Grid.Column="0" Text="{Binding ObjectType}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Path}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Grid.Column="2" Text="{Binding Detail}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </ScrollViewer>
+                </Border>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="trends-section-card">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Padroes nao identificados" Classes="trends-section-title"/>
+                <TextBlock Text="Objetos que nao encaixam nos templates mais recorrentes." Classes="trends-section-subtitle"/>
+                <WrapPanel Orientation="Horizontal">
+                  <Border Classes="trends-mini-chip unidentified" Margin="0,0,6,6">
+                    <TextBlock Text="{Binding UnidentifiedTableNamingCount, StringFormat=Tabelas: {0}}"/>
+                  </Border>
+                  <Border Classes="trends-mini-chip unidentified" Margin="0,0,6,6">
+                    <TextBlock Text="{Binding UnidentifiedColumnNamingCount, StringFormat=Colunas: {0}}"/>
+                  </Border>
+                  <Border Classes="trends-mini-chip unidentified" Margin="0,0,6,6">
+                    <TextBlock Text="{Binding UnidentifiedConstraintNamingCount, StringFormat=Constraints: {0}}"/>
+                  </Border>
+                  <Border Classes="trends-mini-chip unidentified" Margin="0,0,6,6">
+                    <TextBlock Text="{Binding UnidentifiedIndexNamingCount, StringFormat=Indices: {0}}"/>
+                  </Border>
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="trends-section-card" Padding="10">
+              <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6">
+                <Button Grid.Column="0" Command="{Binding PreviousStepCommand}" Classes="secondary compact" Content="Voltar"/>
+                <Button Grid.Column="1" Command="{Binding NextStepCommand}" Classes="secondary compact" Content="Definir padroes"/>
+              </Grid>
+            </Border>
           </StackPanel>
         </ScrollViewer>
 
         <ScrollViewer VerticalScrollBarVisibility="Auto" IsVisible="{Binding IsDesiredNamingStep}">
           <StackPanel Spacing="10">
-            <Border Classes="surface-card" Padding="12">
+            <Border Classes="playground-page-header" Padding="14">
               <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
                 <Button Grid.Column="0" Command="{Binding PreviousStepCommand}" Classes="secondary compact" Content="Voltar"/>
                 <StackPanel Grid.Column="1" Spacing="2">
                   <TextBlock Text="Naming Standards Playground" FontWeight="{StaticResource FontWeightTitle}" FontSize="{StaticResource FontSizeDisplay}"/>
                   <TextBlock Text="Configure e valide padroes de nomenclatura com preview reativo do modelo de dados." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                 </StackPanel>
-                <Button Grid.Column="2" Command="{Binding GenerateIssuesCommand}" Classes="secondary compact" Content="Gerar issues de padronizacao"/>
+                <Button Grid.Column="2" Command="{Binding GenerateIssuesCommand}" Classes="secondary compact playground-primary" Content="Gerar issues de padronizacao"/>
               </Grid>
             </Border>
 
-            <Grid ColumnDefinitions="1.15*,1*" ColumnSpacing="10">
+            <Grid ColumnDefinitions="1.05*,1.2*" ColumnSpacing="12">
               <StackPanel Grid.Column="0" Spacing="10">
                 <Border Classes="playground-config-card" Padding="12"
                         Tag="tables"
                         PointerEntered="PlaygroundScope_OnPointerEntered"
                         PointerExited="PlaygroundScope_OnPointerExited">
                   <StackPanel Spacing="8">
-                    <TextBlock Text="Tabelas e colunas" FontWeight="{StaticResource FontWeightTitle}"/>
+                    <TextBlock Classes="playground-card-title" Text="Tabelas e colunas"/>
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Naming de tabela" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                        <ComboBox ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding TableNamingConvention, Mode=TwoWay}"/>
+                        <ComboBox Classes="playground-input" Tag="tables" GotFocus="PlaygroundField_OnGotFocus" LostFocus="PlaygroundField_OnLostFocus" ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding TableNamingConvention, Mode=TwoWay}"/>
                         <TextBlock Text="{Binding TableNamingExample, StringFormat=Ex.: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
                       </StackPanel>
-                      <StackPanel Spacing="4">
+                      <StackPanel Grid.Column="1" Spacing="4">
                         <TextBlock Text="Naming de coluna" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                        <ComboBox ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding ColumnNamingConvention, Mode=TwoWay}"/>
+                        <ComboBox Classes="playground-input" Tag="columns" GotFocus="PlaygroundField_OnGotFocus" LostFocus="PlaygroundField_OnLostFocus" ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding ColumnNamingConvention, Mode=TwoWay}"/>
                         <TextBlock Text="{Binding ColumnNamingExample, StringFormat=Ex.: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
                       </StackPanel>
                     </Grid>
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Padrao da coluna PK" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                        <TextBox Text="{Binding PrimaryKeyPattern, Mode=TwoWay}" Watermark="id"/>
+                        <TextBox Classes="playground-input" Tag="columns" GotFocus="PlaygroundField_OnGotFocus" LostFocus="PlaygroundField_OnLostFocus" Text="{Binding PrimaryKeyPattern, Mode=TwoWay}" Watermark="id"/>
                         <TextBlock Text="{Binding PrimaryKeyTemplateExample, StringFormat=Ex.: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
                       </StackPanel>
-                      <StackPanel Spacing="4">
-                        <TextBlock Text="Template da constraint PK" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                        <TextBox Text="{Binding PrimaryKeyConstraintPattern, Mode=TwoWay}" Watermark="pk_[table]"/>
+                      <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock Text="Template PK (constraint)" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                        <TextBox Classes="playground-input" Classes.playground-invalid="{Binding IsPrimaryKeyConstraintTemplateInvalid}" Tag="templates" GotFocus="PlaygroundField_OnGotFocus" LostFocus="PlaygroundField_OnLostFocus" Text="{Binding PrimaryKeyConstraintPattern, Mode=TwoWay}" Watermark="pk_[table]"/>
                         <TextBlock Text="{Binding PrimaryKeyConstraintTemplateExample, StringFormat=Ex.: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
                       </StackPanel>
                     </Grid>
@@ -287,16 +845,16 @@
                         PointerEntered="PlaygroundScope_OnPointerEntered"
                         PointerExited="PlaygroundScope_OnPointerExited">
                   <StackPanel Spacing="8">
-                    <TextBlock Text="Indices" FontWeight="{StaticResource FontWeightTitle}"/>
+                    <TextBlock Classes="playground-card-title" Text="Indices"/>
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Naming de indice" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                        <ComboBox ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding IndexNamingConvention, Mode=TwoWay}"/>
+                        <ComboBox Classes="playground-input" Tag="indexes" GotFocus="PlaygroundField_OnGotFocus" LostFocus="PlaygroundField_OnLostFocus" ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding IndexNamingConvention, Mode=TwoWay}"/>
                         <TextBlock Text="{Binding IndexNamingExample, StringFormat=Ex.: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
                       </StackPanel>
-                      <StackPanel Spacing="4">
+                      <StackPanel Grid.Column="1" Spacing="4">
                         <TextBlock Text="Template de indice" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                        <TextBox Text="{Binding IndexPattern, Mode=TwoWay}" Watermark="idx_[table]_[column]"/>
+                        <TextBox Classes="playground-input" Classes.playground-invalid="{Binding IsIndexTemplateInvalid}" Tag="indexes" GotFocus="PlaygroundField_OnGotFocus" LostFocus="PlaygroundField_OnLostFocus" Text="{Binding IndexPattern, Mode=TwoWay}" Watermark="idx_[table]_[column]"/>
                         <TextBlock Text="{Binding IndexTemplateExample, StringFormat=Ex.: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
                       </StackPanel>
                     </Grid>
@@ -308,22 +866,22 @@
                         PointerEntered="PlaygroundScope_OnPointerEntered"
                         PointerExited="PlaygroundScope_OnPointerExited">
                   <StackPanel Spacing="8">
-                    <TextBlock Text="Constraints" FontWeight="{StaticResource FontWeightTitle}"/>
+                    <TextBlock Classes="playground-card-title" Text="Constraints"/>
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Naming de constraint" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                        <ComboBox ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding ConstraintNamingConvention, Mode=TwoWay}"/>
+                        <ComboBox Classes="playground-input" Tag="constraints" GotFocus="PlaygroundField_OnGotFocus" LostFocus="PlaygroundField_OnLostFocus" ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding ConstraintNamingConvention, Mode=TwoWay}"/>
                         <TextBlock Text="{Binding ConstraintNamingExample, StringFormat=Ex.: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
                       </StackPanel>
-                      <StackPanel Spacing="4">
-                        <TextBlock Text="Template da coluna FK" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                        <TextBox Text="{Binding ForeignKeyPattern, Mode=TwoWay}" Watermark="[target]_id"/>
+                      <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock Text="Template FK (coluna)" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                        <TextBox Classes="playground-input" Classes.playground-invalid="{Binding IsForeignKeyTemplateInvalid}" Tag="constraints" GotFocus="PlaygroundField_OnGotFocus" LostFocus="PlaygroundField_OnLostFocus" Text="{Binding ForeignKeyPattern, Mode=TwoWay}" Watermark="[target]_id"/>
                         <TextBlock Text="{Binding ForeignKeyTemplateExample, StringFormat=Ex.: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
                       </StackPanel>
                     </Grid>
                     <StackPanel Spacing="4">
-                      <TextBlock Text="Template da constraint FK" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                      <TextBox Text="{Binding ConstraintPattern, Mode=TwoWay}" Watermark="fk_[table]_[target]"/>
+                      <TextBlock Text="Template constraint FK" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                      <TextBox Classes="playground-input" Classes.playground-invalid="{Binding IsConstraintTemplateInvalid}" Tag="constraints" GotFocus="PlaygroundField_OnGotFocus" LostFocus="PlaygroundField_OnLostFocus" Text="{Binding ConstraintPattern, Mode=TwoWay}" Watermark="fk_[table]_[target]"/>
                       <TextBlock Text="{Binding ConstraintTemplateExample, StringFormat=Ex.: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
                     </StackPanel>
                   </StackPanel>
@@ -334,16 +892,16 @@
                         PointerEntered="PlaygroundScope_OnPointerEntered"
                         PointerExited="PlaygroundScope_OnPointerExited">
                   <StackPanel Spacing="8">
-                    <TextBlock Text="Views" FontWeight="{StaticResource FontWeightTitle}"/>
+                    <TextBlock Classes="playground-card-title" Text="Views"/>
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Naming de view" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                        <ComboBox ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding ViewNamingConvention, Mode=TwoWay}"/>
+                        <ComboBox Classes="playground-input" Tag="views" GotFocus="PlaygroundField_OnGotFocus" LostFocus="PlaygroundField_OnLostFocus" ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding ViewNamingConvention, Mode=TwoWay}"/>
                         <TextBlock Text="{Binding ViewNamingExample, StringFormat=Ex.: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
                       </StackPanel>
-                      <StackPanel Spacing="4">
+                      <StackPanel Grid.Column="1" Spacing="4">
                         <TextBlock Text="Naming de colunas em view" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                        <ComboBox ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding ViewColumnNamingConvention, Mode=TwoWay}"/>
+                        <ComboBox Classes="playground-input" Tag="views" GotFocus="PlaygroundField_OnGotFocus" LostFocus="PlaygroundField_OnLostFocus" ItemsSource="{Binding NamingConventionOptions}" SelectedItem="{Binding ViewColumnNamingConvention, Mode=TwoWay}"/>
                         <TextBlock Text="{Binding ViewColumnNamingExample, StringFormat=Ex.: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
                       </StackPanel>
                     </Grid>
@@ -355,7 +913,12 @@
                         PointerEntered="PlaygroundScope_OnPointerEntered"
                         PointerExited="PlaygroundScope_OnPointerExited">
                   <StackPanel Spacing="8">
-                    <TextBlock Text="Templates de nomes" FontWeight="{StaticResource FontWeightTitle}"/>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                      <TextBlock Grid.Column="0" Classes="playground-card-title" Text="Templates validos"/>
+                      <Border Grid.Column="1" Classes="playground-badge" IsVisible="{Binding HasAllTemplatesValid}">
+                        <TextBlock Text="OK" FontSize="{StaticResource FontSizeCaption}"/>
+                      </Border>
+                    </Grid>
                     <TextBlock Text="{Binding PlaygroundValidationSummary}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                     <ItemsControl ItemsSource="{Binding TemplateValidationItems}">
                       <ItemsControl.ItemTemplate>
@@ -381,80 +944,39 @@
               </StackPanel>
 
               <StackPanel Grid.Column="1" Spacing="10">
-                <Border Classes="surface-card" Padding="12">
-                  <StackPanel Spacing="8">
-                    <TextBlock Text="Preview do padrao" FontWeight="{StaticResource FontWeightTitle}"/>
-                    <TextBlock Text="Modelo de exemplo com customer, order, order_item e vw_customer_orders." FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
-                    <ItemsControl ItemsSource="{Binding PlaygroundPreviewEntities}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:NamingPlaygroundEntityCardViewModel">
-                          <Border Classes="playground-preview-card"
-                                  Classes.playground-highlight="{Binding IsHighlighted}"
-                                  Margin="0,0,0,8"
-                                  Padding="10"
-                                  Tag="{Binding FocusKey}"
-                                  PointerEntered="PlaygroundScope_OnPointerEntered"
-                                  PointerExited="PlaygroundScope_OnPointerExited">
-                            <StackPanel Spacing="8">
-                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBlock Grid.Column="0" Text="{Binding EntityName}" FontWeight="{StaticResource FontWeightStrong}" TextTrimming="CharacterEllipsis"/>
-                                <Border Grid.Column="1" Classes="playground-badge" Classes.view="{Binding IsViewKind}">
-                                  <TextBlock Text="{Binding EntityKind}" FontSize="{StaticResource FontSizeCaption}"/>
-                                </Border>
-                              </Grid>
-                              <ItemsControl ItemsSource="{Binding Lines}">
-                                <ItemsControl.ItemTemplate>
-                                  <DataTemplate x:DataType="vm:NamingPlaygroundLineViewModel">
-                                    <Border Classes="playground-line"
-                                            Classes.playground-highlight="{Binding IsHighlighted}"
-                                            CornerRadius="6"
-                                            Padding="6"
-                                            Tag="{Binding FocusKey}"
-                                            PointerEntered="PlaygroundScope_OnPointerEntered"
-                                            PointerExited="PlaygroundScope_OnPointerExited"
-                                            Margin="0,0,0,4">
-                                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                                        <TextBlock Grid.Column="0" Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                        <ItemsControl Grid.Column="1" ItemsSource="{Binding Badges}">
-                                          <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                              <StackPanel Orientation="Horizontal" Spacing="4"/>
-                                            </ItemsPanelTemplate>
-                                          </ItemsControl.ItemsPanel>
-                                          <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:NamingPlaygroundBadgeViewModel">
-                                              <Border Classes="playground-badge"
-                                                      Classes.pk="{Binding IsPk}"
-                                                      Classes.fk="{Binding IsFk}"
-                                                      Classes.idx="{Binding IsIdx}"
-                                                      Classes.view="{Binding IsView}"
-                                                      Classes.unique="{Binding IsUnique}"
-                                                      Classes.check="{Binding IsCheck}"
-                                                      Classes.constraint="{Binding IsConstraint}">
-                                                <TextBlock Text="{Binding Text}" FontSize="{StaticResource FontSizeCaption}"/>
-                                              </Border>
-                                            </DataTemplate>
-                                          </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                      </Grid>
-                                    </Border>
-                                  </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                              </ItemsControl>
-                            </StackPanel>
-                          </Border>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
+                <Border Classes="playground-preview-shell" Padding="12">
+                  <StackPanel Spacing="10">
+                    <TextBlock Classes="playground-card-title" Text="Preview do padrao"/>
+                    <TextBlock Text="Modelo de exemplo com preview reativo de nomes gerados." FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <ItemsControl ItemsSource="{Binding PlaygroundLegendBadges}" ItemTemplate="{StaticResource PlaygroundBadgeTemplate}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <StackPanel Orientation="Horizontal" Spacing="6"/>
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
                     </ItemsControl>
+                    <Border Classes="playground-preview-card" Padding="10">
+                      <Grid RowDefinitions="Auto,24,Auto" ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                        <ContentControl Grid.Row="0" Grid.Column="0" Content="{Binding CustomerPreviewEntity}" ContentTemplate="{StaticResource PlaygroundEntityTemplate}"/>
+                        <ContentControl Grid.Row="0" Grid.Column="1" Content="{Binding OrderPreviewEntity}" ContentTemplate="{StaticResource PlaygroundEntityTemplate}"/>
+                        <ContentControl Grid.Row="0" Grid.Column="2" Content="{Binding OrderItemPreviewEntity}" ContentTemplate="{StaticResource PlaygroundEntityTemplate}"/>
+                        <Border Grid.Row="1" Grid.Column="0" Classes="playground-connector-line" HorizontalAlignment="Right" VerticalAlignment="Center" Width="42" Margin="0,0,-20,0"/>
+                        <Border Grid.Row="1" Grid.Column="1" Classes="playground-connector-line" HorizontalAlignment="Right" VerticalAlignment="Center" Width="42" Margin="0,0,-20,0"/>
+                        <Border Grid.Row="0" Grid.Column="1" Width="1" Height="24" Background="#2E3A52" HorizontalAlignment="Center" VerticalAlignment="Bottom"/>
+                        <Border Grid.Row="0" Grid.Column="2" Width="1" Height="24" Background="#2E3A52" HorizontalAlignment="Center" VerticalAlignment="Bottom"/>
+                        <ContentControl Grid.Row="2" Grid.Column="1" Content="{Binding ViewPreviewEntity}" ContentTemplate="{StaticResource PlaygroundEntityTemplate}"/>
+                      </Grid>
+                    </Border>
                   </StackPanel>
                 </Border>
 
-                <Border Classes="surface-card" Padding="12">
+                <Border Classes="playground-validation-shell" Padding="12">
                   <StackPanel Spacing="8">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Grid.Column="0" Text="Previa de issues e validacao" FontWeight="{StaticResource FontWeightTitle}"/>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                      <TextBlock Grid.Column="0" Classes="playground-card-title" Text="Previa de issues e validacao"/>
                       <Button Grid.Column="1" Command="{Binding GenerateIssuesCommand}" Classes="secondary compact" Content="Analisar padroes do projeto"/>
                     </Grid>
+                    <TextBlock Text="Analise dos nomes atuais do projeto em relacao aos padroes definidos." FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                     <TextBlock IsVisible="{Binding HasNoPlaygroundIssuePreviewItems}" Text="{Binding PlaygroundIssueEmptyMessage}" Foreground="{StaticResource TextSecondaryBrush}"/>
                     <ItemsControl ItemsSource="{Binding PlaygroundIssuePreviewItems}" IsVisible="{Binding HasPlaygroundIssuePreviewItems}">
                       <ItemsControl.ItemTemplate>
@@ -468,15 +990,36 @@
                                   Tag="{Binding FocusKey}"
                                   PointerEntered="PlaygroundScope_OnPointerEntered"
                                   PointerExited="PlaygroundScope_OnPointerExited">
-                            <StackPanel Spacing="4">
-                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBlock Grid.Column="0" Text="{Binding ObjectType}" FontWeight="{StaticResource FontWeightStrong}"/>
-                                <TextBlock Grid.Column="1" Text="{Binding SeverityLabel}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
-                              </Grid>
-                              <TextBlock Text="{Binding CurrentName, StringFormat=Atual: {0}}" TextWrapping="Wrap"/>
-                              <TextBlock Text="{Binding ExpectedName, StringFormat=Esperado: {0}}" TextWrapping="Wrap"/>
-                              <TextBlock Text="{Binding Suggestion}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
-                            </StackPanel>
+                            <Grid ColumnDefinitions="1.4*,1*,1*,Auto" ColumnSpacing="10">
+                              <StackPanel Grid.Column="0" Spacing="2">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                  <mi:MaterialIcon Kind="AlertOutline" Width="14" Height="14" Foreground="#BE8D3F" IsVisible="{Binding IsWarning}"/>
+                                  <mi:MaterialIcon Kind="CheckCircleOutline" Width="14" Height="14" Foreground="#4FA46C" IsVisible="{Binding IsSuccess}"/>
+                                  <mi:MaterialIcon Kind="CloseCircleOutline" Width="14" Height="14" Foreground="#B56B78" IsVisible="{Binding IsError}"/>
+                                  <TextBlock Text="{Binding ObjectType}" FontWeight="{StaticResource FontWeightStrong}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding Suggestion}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                              </StackPanel>
+
+                              <StackPanel Grid.Column="1" Spacing="2">
+                                <TextBlock Text="Atual:" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                                <TextBlock Text="{Binding CurrentName}" TextTrimming="CharacterEllipsis"/>
+                              </StackPanel>
+
+                              <StackPanel Grid.Column="2" Spacing="2">
+                                <TextBlock Text="Esperado:" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                                <TextBlock Text="{Binding ExpectedName}" TextTrimming="CharacterEllipsis"/>
+                              </StackPanel>
+
+                              <Border Grid.Column="3"
+                                      Classes="playground-issue-status-badge"
+                                      Classes.issue-success="{Binding IsSuccess}"
+                                      Classes.issue-warning="{Binding IsWarning}"
+                                      Classes.issue-error="{Binding IsError}"
+                                      VerticalAlignment="Center">
+                                <TextBlock Text="{Binding SeverityLabel}" FontSize="{StaticResource FontSizeCaption}" FontWeight="{StaticResource FontWeightStrong}"/>
+                              </Border>
+                            </Grid>
                           </Border>
                         </DataTemplate>
                       </ItemsControl.ItemTemplate>
@@ -488,126 +1031,282 @@
           </StackPanel>
         </ScrollViewer>
 
-        <Grid IsVisible="{Binding IsIssuesStep}" ColumnDefinitions="320,*" ColumnSpacing="8">
-          <Border Grid.Column="0" Classes="surface-panel" Padding="10">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-              <StackPanel Spacing="8">
-                <Border Classes="surface-card" Padding="10">
-                  <StackPanel Spacing="6">
-                    <TextBlock Text="Resumo" FontWeight="{StaticResource FontWeightStrong}"/>
-                    <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredTotalIssues, StringFormat=Issues: {0}}"/>
-                    <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredCriticalCount, StringFormat=Criticas: {0}}"/>
-                    <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredWarningCount, StringFormat=Warnings: {0}}"/>
-                    <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredInfoCount, StringFormat=Info: {0}}"/>
-                    <TextBlock Text="{Binding SchemaAnalysisPanel.OverallScore, StringFormat=Score: {0:F1}}"/>
-                  </StackPanel>
-                </Border>
-
-                <Expander Classes="app-accordion" IsExpanded="True">
-                  <Expander.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                      <mi:MaterialIcon Kind="FilterVariant" Width="14" Height="14" Foreground="{StaticResource TextMutedBrush}"/>
-                      <TextBlock Text="Filtros"/>
-                    </StackPanel>
-                  </Expander.Header>
-                  <StackPanel Margin="0,8,0,0" Spacing="8">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <Button Grid.Column="0" Command="{Binding SchemaAnalysisPanel.ClearFiltersCommand}" Classes="secondary compact" Content="Limpar"/>
-                      <ToggleButton Grid.Column="1" Margin="6,0,0,0" Classes="secondary" Content="Quick Wins" IsChecked="{Binding SchemaAnalysisPanel.QuickWinsOnly, Mode=TwoWay}"/>
-                    </Grid>
-                    <WrapPanel Orientation="Horizontal" ItemHeight="28" ItemWidth="96">
-                      <CheckBox Content="Info" IsChecked="{Binding SchemaAnalysisPanel.IncludeInfo, Mode=TwoWay}"/>
-                      <CheckBox Content="Warning" IsChecked="{Binding SchemaAnalysisPanel.IncludeWarning, Mode=TwoWay}"/>
-                      <CheckBox Content="Critical" IsChecked="{Binding SchemaAnalysisPanel.IncludeCritical, Mode=TwoWay}"/>
-                    </WrapPanel>
-                    <TextBox Watermark="Filtro por tabela" Text="{Binding SchemaAnalysisPanel.TableTextFilter, Mode=TwoWay}"/>
-                    <Grid ColumnDefinitions="*,Auto">
-                      <Slider Grid.Column="0" Minimum="0" Maximum="1" Value="{Binding SchemaAnalysisPanel.MinConfidenceFilter, Mode=TwoWay}"/>
-                      <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding SchemaAnalysisPanel.MinConfidenceFilter, StringFormat={}{0:F2}}" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}"/>
-                    </Grid>
-                  </StackPanel>
-                </Expander>
-
-                <Expander Classes="app-accordion" IsExpanded="False">
-                  <Expander.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                      <mi:MaterialIcon Kind="EyeOffOutline" Width="14" Height="14" Foreground="{StaticResource TextMutedBrush}"/>
-                      <TextBlock Text="Ignorar"/>
-                    </StackPanel>
-                  </Expander.Header>
-                  <StackPanel Margin="0,8,0,0" Spacing="8">
-                    <CheckBox Content="Ignorar views" IsChecked="{Binding SchemaAnalysisPanel.IgnoreViews, Mode=TwoWay}"/>
-                    <Grid ColumnDefinitions="*,Auto">
-                      <TextBox Grid.Column="0" Name="IgnoredTableInput" KeyDown="IgnoredTableInput_OnKeyDown" Watermark="{Binding SchemaAnalysisPanel.IgnoredTableInputPlaceholder}" Text="{Binding SchemaAnalysisPanel.IgnoredTableInput, Mode=TwoWay}"/>
-                      <Button Grid.Column="1" Margin="6,0,0,0" Command="{Binding SchemaAnalysisPanel.AddIgnoredTableCommand}" Classes="secondary compact" Content="Adicionar"/>
-                    </Grid>
-                    <ListBox Name="IgnoredTablesList" MaxHeight="140" ItemsSource="{Binding SchemaAnalysisPanel.IgnoredTables}" SelectedItem="{Binding SchemaAnalysisPanel.SelectedIgnoredTable, Mode=TwoWay}"/>
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                      <Button Command="{Binding SchemaAnalysisPanel.RemoveSelectedIgnoredTableCommand}" Classes="secondary compact" Content="Remover"/>
-                      <Button Command="{Binding SchemaAnalysisPanel.ClearIgnoredTablesCommand}" Classes="secondary compact" Content="Limpar"/>
-                    </StackPanel>
-                  </StackPanel>
-                </Expander>
+        <Grid IsVisible="{Binding IsIssuesStep}" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="10">
+          <Border Grid.Row="0" Classes="issue-shell-card">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+              <StackPanel Grid.Column="0" Spacing="2">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="DatabaseSearchOutline" Width="16" Height="16" Foreground="{StaticResource StatusInfoBrush}"/>
+                  <TextBlock Text="Diagnostico de estrutura" FontWeight="{StaticResource FontWeightTitle}" FontSize="{StaticResource FontSizeTitle}"/>
+                </StackPanel>
+                <TextBlock Text="{Binding MetadataLoadedSummary}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{StaticResource FontSizeCaption}"/>
               </StackPanel>
-            </ScrollViewer>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+                <Button Classes="secondary compact" Content="Exportar" Click="ExportIssuesButton_OnClick"/>
+                <Button Classes="secondary compact" Content="Salvar visao"/>
+                <Button Classes="secondary compact" Content="Reanalisar" Command="{Binding RunAnalysisCommand}"/>
+                <Button Classes="secondary compact" Content="Gerar relatorio" Click="ExportIssuesButton_OnClick"/>
+              </StackPanel>
+            </Grid>
           </Border>
 
-          <Grid Grid.Column="1" ColumnDefinitions="1.2*,1*" ColumnSpacing="8">
-            <Border Grid.Column="0" Classes="surface-panel" Padding="10">
-              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <ItemsControl ItemsSource="{Binding SchemaAnalysisPanel.GroupedIssues}">
-                  <ItemsControl.ItemsPanel>
+          <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*,*,*,*" ColumnSpacing="8">
+            <Border Grid.Column="0" Classes="issue-metric-card">
+              <StackPanel Spacing="2">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="FormatListChecks" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}"/>
+                  <TextBlock Text="Total Issues" Classes="issue-card-label"/>
+                </StackPanel>
+                <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredTotalIssues}" Classes="issue-card-value"/>
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Classes="issue-metric-card critical">
+              <StackPanel Spacing="2">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="AlertOctagonOutline" Width="12" Height="12" Foreground="#C97A90"/>
+                  <TextBlock Text="Critical" Classes="issue-card-label"/>
+                </StackPanel>
+                <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredCriticalCount}" Classes="issue-card-value"/>
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Classes="issue-metric-card warning">
+              <StackPanel Spacing="2">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="AlertCircleOutline" Width="12" Height="12" Foreground="#D3A45C"/>
+                  <TextBlock Text="Warnings" Classes="issue-card-label"/>
+                </StackPanel>
+                <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredWarningCount}" Classes="issue-card-value"/>
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="3" Classes="issue-metric-card info">
+              <StackPanel Spacing="2">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="InformationOutline" Width="12" Height="12" Foreground="#6FA9E8"/>
+                  <TextBlock Text="Info" Classes="issue-card-label"/>
+                </StackPanel>
+                <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredInfoCount}" Classes="issue-card-value"/>
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="4" Classes="issue-metric-card quickwin">
+              <StackPanel Spacing="2">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="FlashOutline" Width="12" Height="12" Foreground="#6CCF95"/>
+                  <TextBlock Text="Quick Wins" Classes="issue-card-label"/>
+                </StackPanel>
+                <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredQuickWinIssuesCount}" Classes="issue-card-value"/>
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="5" Classes="issue-metric-card">
+              <StackPanel Spacing="2">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="TableLarge" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}"/>
+                  <TextBlock Text="Tabelas afetadas" Classes="issue-card-label"/>
+                </StackPanel>
+                <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredAffectedTablesCount}" Classes="issue-card-value"/>
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="6" Classes="issue-metric-card health">
+              <StackPanel Spacing="2">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="Target" Width="12" Height="12" Foreground="#A088E6"/>
+                  <TextBlock Text="Health Score" Classes="issue-card-label"/>
+                </StackPanel>
+                <TextBlock Text="{Binding SchemaAnalysisPanel.OverallScore, StringFormat={}{0:F1}}" Classes="issue-card-value"/>
+              </StackPanel>
+            </Border>
+          </Grid>
+
+          <Border Grid.Row="2" Classes="issue-shell-card">
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="2.2*,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="6">
+                <TextBox Grid.Column="0"
+                         Watermark="Buscar issue, tabela, coluna ou regra..."
+                         Text="{Binding SchemaAnalysisPanel.TableTextFilter, Mode=TwoWay}"/>
+                <Button Grid.Column="1" Classes="issue-filter-select compact" Content="Severidade">
+                  <Button.Flyout>
+                    <Flyout Placement="BottomEdgeAlignedLeft">
+                      <Border Classes="issue-filter-flyout">
+                        <StackPanel Spacing="8">
+                          <TextBlock Text="Selecionar severidades" FontWeight="{StaticResource FontWeightStrong}"/>
+                          <CheckBox Content="Critical" IsChecked="{Binding SchemaAnalysisPanel.IncludeCritical, Mode=TwoWay}"/>
+                          <CheckBox Content="Warning" IsChecked="{Binding SchemaAnalysisPanel.IncludeWarning, Mode=TwoWay}"/>
+                          <CheckBox Content="Info" IsChecked="{Binding SchemaAnalysisPanel.IncludeInfo, Mode=TwoWay}"/>
+                        </StackPanel>
+                      </Border>
+                    </Flyout>
+                  </Button.Flyout>
+                </Button>
+                <Button Grid.Column="2" Classes="issue-filter-select compact" Content="Categorias">
+                  <Button.Flyout>
+                    <Flyout Placement="BottomEdgeAlignedLeft">
+                      <Border Classes="issue-filter-flyout">
+                        <StackPanel Spacing="8">
+                          <TextBlock Text="Selecionar categorias" FontWeight="{StaticResource FontWeightStrong}"/>
+                          <CheckBox Content="Missing FK" IsChecked="{Binding SchemaAnalysisPanel.IncludeMissingFk, Mode=TwoWay}"/>
+                          <CheckBox Content="Naming" IsChecked="{Binding SchemaAnalysisPanel.IncludeNamingConventionViolation, Mode=TwoWay}"/>
+                          <CheckBox Content="FK Catalog" IsChecked="{Binding SchemaAnalysisPanel.IncludeFkCatalogInconsistent, Mode=TwoWay}"/>
+                          <CheckBox Content="Low semantic" IsChecked="{Binding SchemaAnalysisPanel.IncludeLowSemanticName, Mode=TwoWay}"/>
+                          <CheckBox Content="Comment" IsChecked="{Binding SchemaAnalysisPanel.IncludeMissingRequiredComment, Mode=TwoWay}"/>
+                          <CheckBox Content="NF1" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf1HintMultiValued, Mode=TwoWay}"/>
+                          <CheckBox Content="NF2/NF3" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf2HintPartialDependency, Mode=TwoWay}"/>
+                        </StackPanel>
+                      </Border>
+                    </Flyout>
+                  </Button.Flyout>
+                </Button>
+                <Button Grid.Column="3" Classes="issue-filter-select compact" Content="Confianca">
+                  <Button.Flyout>
+                    <Flyout Placement="BottomEdgeAlignedLeft">
+                      <Border Classes="issue-filter-flyout">
+                        <StackPanel Spacing="8">
+                          <TextBlock Text="Confianca minima" FontWeight="{StaticResource FontWeightStrong}"/>
+                          <Slider Minimum="0" Maximum="1" Value="{Binding SchemaAnalysisPanel.MinConfidenceFilter, Mode=TwoWay}"/>
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Classes="secondary compact" Content="95%+" Click="Confidence95Button_OnClick"/>
+                            <Button Classes="secondary compact" Content="80%+" Click="Confidence80Button_OnClick"/>
+                          </StackPanel>
+                        </StackPanel>
+                      </Border>
+                    </Flyout>
+                  </Button.Flyout>
+                </Button>
+                <ToggleButton Grid.Column="4" Classes="secondary compact" Content="Quick Win" IsChecked="{Binding SchemaAnalysisPanel.QuickWinsOnly, Mode=TwoWay}"/>
+                <Button Grid.Column="5" Classes="secondary compact" Content="Limpar" Command="{Binding SchemaAnalysisPanel.ClearFiltersCommand}"/>
+                <Button Grid.Column="6" Classes="secondary compact" Click="OpenAdvancedFiltersModal_OnClick">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <mi:MaterialIcon Kind="FilterVariant" Width="14" Height="14"/>
+                    <TextBlock Text="Filtros"/>
+                  </StackPanel>
+                </Button>
+              </Grid>
+              <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="6">
+                <Border Grid.Column="0" Classes="issue-filter-chip">
+                  <TextBlock Text="{Binding SchemaAnalysisPanel.MinConfidenceFilter, StringFormat=Confianca: {0:P0}}"/>
+                </Border>
+                <Border Grid.Column="1" Classes="issue-filter-chip">
+                  <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredTotalIssues, StringFormat=Resultado: {0} issues}"/>
+                </Border>
+                <Border Grid.Column="2" Classes="issue-filter-chip">
+                  <TextBlock Text="Multi-selecao ativa"/>
+                </Border>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <Grid Grid.Row="3" ColumnDefinitions="1.35*,1*" ColumnSpacing="8">
+            <Border Grid.Column="0" Classes="issue-shell-card" Padding="10">
+              <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
+                <Border Grid.Row="0" Classes="surface-section-title">
+                  <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                      <mi:MaterialIcon Kind="FormatListBulletedSquare" Width="14" Height="14" Foreground="{StaticResource TextMutedBrush}"/>
+                      <TextBlock Text="Issues Explorer" FontWeight="{StaticResource FontWeightTitle}"/>
+                      <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredTotalIssues, StringFormat='{}{0} issues'}" Foreground="{StaticResource TextMutedBrush}"/>
+                    </StackPanel>
+                    <ComboBox Grid.Column="1" Width="130" SelectedIndex="0">
+                      <ComboBoxItem Content="Agrupar: Severidade"/>
+                      <ComboBoxItem Content="Agrupar: Tabela"/>
+                      <ComboBoxItem Content="Agrupar: Tipo"/>
+                      <ComboBoxItem Content="Agrupar: Schema"/>
+                    </ComboBox>
+                    <ComboBox Grid.Column="2" Width="130" SelectedIndex="0">
+                      <ComboBoxItem Content="Ordenar: Severidade"/>
+                      <ComboBoxItem Content="Ordenar: Confianca"/>
+                      <ComboBoxItem Content="Ordenar: Frequencia"/>
+                      <ComboBoxItem Content="Ordenar: Tabela"/>
+                    </ComboBox>
+                    <ToggleButton Grid.Column="3" Classes="secondary compact" Content="Compacto" IsChecked="True"/>
+                    <Button Grid.Column="4" Classes="secondary compact" Content="Bulk actions"/>
+                  </Grid>
+                </Border>
+
+                <Border Grid.Row="1" Classes="issue-inspector-card">
+                  <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="6">
+                    <Border Grid.Column="0" Classes="issue-filter-chip"><TextBlock Text="{Binding SchemaAnalysisPanel.FilteredCriticalCount, StringFormat=Critical: {0}}"/></Border>
+                    <Border Grid.Column="1" Classes="issue-filter-chip"><TextBlock Text="{Binding SchemaAnalysisPanel.FilteredWarningCount, StringFormat=Warning: {0}}"/></Border>
+                    <Border Grid.Column="2" Classes="issue-filter-chip"><TextBlock Text="{Binding SchemaAnalysisPanel.FilteredInfoCount, StringFormat=Info: {0}}"/></Border>
+                    <Border Grid.Column="3" Classes="issue-filter-chip"><TextBlock Text="{Binding SchemaAnalysisPanel.FilteredQuickWinIssuesCount, StringFormat=Quick wins: {0}}"/></Border>
+                    <TextBlock Grid.Column="4" Text="0 selecionadas" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                  </Grid>
+                </Border>
+
+                <ListBox Grid.Row="2"
+                         Name="IssuesCardsList"
+                         ItemsSource="{Binding SchemaAnalysisPanel.VisibleIssues}"
+                         SelectedItem="{Binding SchemaAnalysisPanel.SelectedIssue, Mode=TwoWay}"
+                         SelectionChanged="IssueListBox_OnSelectionChanged">
+                  <ListBox.ItemsPanel>
                     <ItemsPanelTemplate>
                       <VirtualizingStackPanel/>
                     </ItemsPanelTemplate>
-                  </ItemsControl.ItemsPanel>
-                  <ItemsControl.ItemTemplate>
+                  </ListBox.ItemsPanel>
+                  <ListBox.ItemTemplate>
                     <DataTemplate>
-                      <Expander Classes="app-accordion" IsExpanded="True" Margin="0,0,0,8">
-                        <Expander.Header>
-                          <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="{Binding Title}" FontWeight="{StaticResource FontWeightTitle}"/>
-                            <TextBlock Text="{Binding Count}" Foreground="{StaticResource TextMutedBrush}"/>
+                      <Border Classes="issue-item-card"
+                              Classes.critical="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"
+                              Classes.warning="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"
+                              Classes.info="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                          <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Top">
+                            <mi:MaterialIcon Kind="AlertOctagonOutline" Width="16" Height="16" Foreground="#C97A90"
+                                             IsVisible="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"/>
+                            <mi:MaterialIcon Kind="AlertCircleOutline" Width="16" Height="16" Foreground="#D3A45C"
+                                             IsVisible="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"/>
+                            <mi:MaterialIcon Kind="InformationOutline" Width="16" Height="16" Foreground="#6FA9E8"
+                                             IsVisible="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}"/>
                           </StackPanel>
-                        </Expander.Header>
-                        <ListBox ItemsSource="{Binding Items}" SelectionChanged="IssueListBox_OnSelectionChanged">
-                          <ListBox.ItemTemplate>
-                            <DataTemplate>
-                              <StackPanel Margin="0,3" Spacing="2">
-                                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
-                                <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}">
-                                  <Run Text="{Binding RuleCode}"/>
-                                  <Run Text=" • "/>
-                                  <Run Text="{Binding Confidence, StringFormat={}{0:P0}}"/>
-                                </TextBlock>
-                              </StackPanel>
-                            </DataTemplate>
-                          </ListBox.ItemTemplate>
-                        </ListBox>
-                      </Expander>
+                          <StackPanel Grid.Column="1" Spacing="3">
+                            <TextBlock Text="{Binding Title}" FontWeight="{StaticResource FontWeightStrong}" TextTrimming="CharacterEllipsis"/>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <mi:MaterialIcon Kind="SitemapOutline" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}"/>
+                              <TextBlock Text="{Binding RuleCode}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <mi:MaterialIcon Kind="TableLarge" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}"/>
+                              <TextBlock Text="{Binding TableName, StringFormat=Tabela: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding Message}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" MaxLines="1" TextTrimming="CharacterEllipsis"/>
+                            <WrapPanel Orientation="Horizontal">
+                              <Border Classes="issue-badge"
+                                      Classes.critical="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"
+                                      Classes.warning="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"
+                                      Classes.info="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}"
+                                      Margin="0,0,4,4"><TextBlock Text="{Binding Severity}" FontSize="{StaticResource FontSizeCaption}"/></Border>
+                              <Border Classes="issue-badge" Margin="0,0,4,4"><TextBlock Text="{Binding TargetType}" FontSize="{StaticResource FontSizeCaption}"/></Border>
+                              <Border Classes="issue-badge" Margin="0,0,4,4"><TextBlock Text="{Binding RuleCode}" FontSize="{StaticResource FontSizeCaption}"/></Border>
+                              <Border Classes="issue-badge" Margin="0,0,4,4"><TextBlock Text="{Binding Confidence, StringFormat={}{0:P0}}" FontSize="{StaticResource FontSizeCaption}"/></Border>
+                            </WrapPanel>
+                          </StackPanel>
+                          <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Right">
+                            <Button Classes="secondary compact" Content="Details"/>
+                            <Button Classes="secondary compact" Content="Copy SQL" Command="{Binding DataContext.SchemaAnalysisPanel.CopySqlCommand, ElementName=Root}"/>
+                            <Button Classes="secondary compact" Content="Open DDL" Command="{Binding DataContext.OpenInDdlCommand, ElementName=Root}"/>
+                          </StackPanel>
+                        </Grid>
+                      </Border>
                     </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </ScrollViewer>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </Grid>
             </Border>
 
-            <Border Grid.Column="1" Classes="surface-panel" Padding="10">
-              <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,*">
+            <Border Grid.Column="1" Classes="issue-shell-card" Padding="10">
+              <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,*" RowSpacing="8">
                 <Border Grid.Row="0" Classes="surface-section-title">
                   <StackPanel Orientation="Horizontal" Spacing="6">
                     <mi:MaterialIcon Kind="TextBoxSearchOutline" Width="14" Height="14" Foreground="{StaticResource TextMutedBrush}"/>
-                    <TextBlock Text="Detalhes" FontWeight="{StaticResource FontWeightTitle}"/>
+                    <TextBlock Text="Issue Inspector" FontWeight="{StaticResource FontWeightTitle}"/>
                   </StackPanel>
                 </Border>
 
                 <Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="0,8,0,8">
-                  <Border Grid.Column="0" Classes="surface-card" Margin="0,0,6,0" Padding="10">
+                  <Border Grid.Column="0" Classes="issue-inspector-card" Margin="0,0,6,0" Padding="10">
                     <StackPanel>
                       <TextBlock Text="Path" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
                       <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssuePath}" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
                   </Border>
-                  <Border Grid.Column="1" Classes="surface-card" Padding="10">
+                  <Border Grid.Column="1" Classes="issue-inspector-card" Padding="10">
                     <StackPanel>
                       <TextBlock Text="Confidence" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
                       <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssueConfidencePercent}"/>
@@ -615,45 +1314,233 @@
                   </Border>
                 </Grid>
 
-                <TextBlock Grid.Row="2" Text="{Binding SchemaAnalysisPanel.DetailsMessage}" TextWrapping="Wrap"/>
+                <Border Grid.Row="2" Classes="issue-inspector-card">
+                  <StackPanel Spacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <mi:MaterialIcon Kind="Radar" Width="13" Height="13" Foreground="{StaticResource StatusInfoBrush}"/>
+                      <TextBlock Text="O que foi detectado" FontWeight="{StaticResource FontWeightStrong}"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.Title}" FontWeight="{StaticResource FontWeightStrong}" IsVisible="{Binding SchemaAnalysisPanel.HasSelectedIssue}"/>
+                    <WrapPanel Orientation="Horizontal" IsVisible="{Binding SchemaAnalysisPanel.HasSelectedIssue}">
+                      <Border Classes="issue-badge"
+                              Classes.critical="{Binding SchemaAnalysisPanel.SelectedIssue.Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"
+                              Classes.warning="{Binding SchemaAnalysisPanel.SelectedIssue.Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"
+                              Classes.info="{Binding SchemaAnalysisPanel.SelectedIssue.Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}"
+                              Margin="0,0,4,4">
+                        <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.Severity}" FontSize="{StaticResource FontSizeCaption}"/>
+                      </Border>
+                      <Border Classes="issue-badge" Margin="0,0,4,4">
+                        <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.TargetType}" FontSize="{StaticResource FontSizeCaption}"/>
+                      </Border>
+                      <Border Classes="issue-badge" Margin="0,0,4,4">
+                        <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssue.RuleCode}" FontSize="{StaticResource FontSizeCaption}"/>
+                      </Border>
+                    </WrapPanel>
+                    <TextBlock Text="{Binding SchemaAnalysisPanel.DetailsMessage}" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Border>
 
                 <ListBox Grid.Row="3" ItemsSource="{Binding SchemaAnalysisPanel.SelectedIssueEvidence}">
                   <ListBox.ItemTemplate>
                     <DataTemplate>
-                      <TextBlock FontSize="{StaticResource FontSizeCaption}" TextTrimming="CharacterEllipsis">
-                        <Run Text="{Binding Key}"/>
-                        <Run Text=": "/>
-                        <Run Text="{Binding Value}"/>
-                      </TextBlock>
+                      <Border Classes="issue-evidence-item">
+                        <Grid ColumnDefinitions="Auto,120,*" ColumnSpacing="6">
+                          <mi:MaterialIcon Grid.Column="0" Kind="CheckDecagramOutline" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
+                          <TextBlock Grid.Column="1" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" Text="{Binding Key}"/>
+                          <TextBlock Grid.Column="2" FontSize="{StaticResource FontSizeCaption}" Text="{Binding Value}" TextTrimming="CharacterEllipsis"/>
+                        </Grid>
+                      </Border>
                     </DataTemplate>
                   </ListBox.ItemTemplate>
                 </ListBox>
 
-                <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="6" Margin="0,8,0,8">
-                  <Button Command="{Binding SchemaAnalysisPanel.SelectPreviousIssueCommand}" Classes="secondary compact" Content="?"/>
-                  <Button Command="{Binding SchemaAnalysisPanel.SelectNextIssueCommand}" Classes="secondary compact" Content="?"/>
-                  <Button Command="{Binding SchemaAnalysisPanel.CopySqlCommand}" Click="CopySqlButton_OnClick" ToolTip.Tip="{Binding SchemaAnalysisPanel.ActionBlockedTooltip}" Classes="secondary compact" Content="Copiar SQL"/>
-                  <Button Command="{Binding OpenInDdlCommand}" Classes="secondary compact" Content="Abrir no DDL"/>
-                  <Button Command="{Binding RunAnalysisCommand}" Classes="secondary compact" Content="Reanalisar"/>
-                </StackPanel>
+                <Grid Grid.Row="4" ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="6" Margin="0,8,0,8">
+                  <Button Grid.Column="0" Classes="secondary compact" Content="Preview SQL"/>
+                  <Button Grid.Column="1" Classes="secondary compact" Content="Apply" Command="{Binding SchemaAnalysisPanel.ApplyToCanvasCommand}"/>
+                  <Button Grid.Column="2" Classes="secondary compact" Content="Copy SQL" Command="{Binding SchemaAnalysisPanel.CopySqlCommand}" Click="CopySqlButton_OnClick"/>
+                  <Button Grid.Column="3" Classes="secondary compact" Content="Open in DDL" Command="{Binding OpenInDdlCommand}"/>
+                  <Button Grid.Column="4" Classes="secondary compact" HorizontalAlignment="Right" Content="Mais acoes">
+                    <Button.Flyout>
+                      <Flyout Placement="BottomEdgeAlignedRight">
+                        <Border Classes="issue-filter-flyout">
+                          <StackPanel Spacing="6">
+                            <Button Classes="secondary compact" Content="Ignore Rule"/>
+                            <Button Classes="secondary compact" Content="Mark Reviewed"/>
+                            <Button Classes="secondary compact" Content="Reanalisar" Command="{Binding RunAnalysisCommand}"/>
+                          </StackPanel>
+                        </Border>
+                      </Flyout>
+                    </Button.Flyout>
+                  </Button>
+                </Grid>
 
-                <ListBox Grid.Row="5" ItemsSource="{Binding SchemaAnalysisPanel.VisibleCandidates}" SelectedItem="{Binding SchemaAnalysisPanel.SelectedSqlCandidate, Mode=TwoWay}">
-                  <ListBox.ItemTemplate>
-                    <DataTemplate>
-                      <StackPanel Spacing="2" Margin="0,4">
-                        <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}">
-                          <Run Text="{Binding Safety}"/>
-                          <Run Text=" | "/>
-                          <Run Text="{Binding Visibility}"/>
-                        </TextBlock>
+                <TabControl Grid.Row="5" Classes="issue-inspector-tabs">
+                  <TabItem Header="SQL">
+                    <Border Classes="issue-sql-pane" Margin="0,6,0,0">
+                      <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
+                        <ListBox Grid.Row="0" ItemsSource="{Binding SchemaAnalysisPanel.VisibleCandidates}" SelectedItem="{Binding SchemaAnalysisPanel.SelectedSqlCandidate, Mode=TwoWay}" MaxHeight="110">
+                          <ListBox.ItemTemplate>
+                            <DataTemplate>
+                              <StackPanel Spacing="2" Margin="0,4">
+                                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}">
+                                  <Run Text="{Binding Safety}"/>
+                                  <Run Text=" | "/>
+                                  <Run Text="{Binding Visibility}"/>
+                                </TextBlock>
+                              </StackPanel>
+                            </DataTemplate>
+                          </ListBox.ItemTemplate>
+                        </ListBox>
+                        <WrapPanel Grid.Row="1" Orientation="Horizontal">
+                          <Border Classes="issue-sql-meta-chip" Margin="0,0,6,6">
+                            <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedSqlCandidate.Safety, StringFormat=Risco: {0}}" FontSize="{StaticResource FontSizeCaption}"/>
+                          </Border>
+                          <Border Classes="issue-sql-meta-chip" Margin="0,0,6,6">
+                            <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedSqlCandidate.Visibility, StringFormat=Visibilidade: {0}}" FontSize="{StaticResource FontSizeCaption}"/>
+                          </Border>
+                        </WrapPanel>
+                        <TextBox Grid.Row="2" Classes="issue-sql-preview" IsReadOnly="True" Text="{Binding SchemaAnalysisPanel.SelectedSqlCandidate.Sql}"/>
+                      </Grid>
+                    </Border>
+                  </TabItem>
+                  <TabItem Header="Before/After">
+                    <Border Classes="issue-sql-pane" Margin="0,6,0,0">
+                      <StackPanel Spacing="8">
+                        <TextBlock Text="Before / After" FontWeight="{StaticResource FontWeightStrong}"/>
+                        <TextBlock Text="Aplique o preview SQL para comparar o estado anterior e o estado proposto do schema." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                          <Border Classes="issue-inspector-card">
+                            <StackPanel Spacing="4">
+                              <TextBlock Text="Before" FontWeight="{StaticResource FontWeightStrong}"/>
+                              <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedIssuePath}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+                            </StackPanel>
+                          </Border>
+                          <Border Grid.Column="1" Classes="issue-inspector-card">
+                            <StackPanel Spacing="4">
+                              <TextBlock Text="After" FontWeight="{StaticResource FontWeightStrong}"/>
+                              <TextBlock Text="Constraint/indice sugerido sera anexado ao objeto alvo." FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                          </Border>
+                        </Grid>
                       </StackPanel>
-                    </DataTemplate>
-                  </ListBox.ItemTemplate>
-                </ListBox>
+                    </Border>
+                  </TabItem>
+                  <TabItem Header="Impact">
+                    <Border Classes="issue-sql-pane" Margin="0,6,0,0">
+                      <StackPanel Spacing="8">
+                        <TextBlock Text="Impacto estimado" FontWeight="{StaticResource FontWeightStrong}"/>
+                        <Border Classes="issue-sql-meta-chip" HorizontalAlignment="Left">
+                          <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedSqlCandidate.Safety, StringFormat=Nivel de risco: {0}}" FontSize="{StaticResource FontSizeCaption}"/>
+                        </Border>
+                        <TextBlock Text="Revise lock, custo de validacao e janela de deploy antes de aplicar em producao." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                      </StackPanel>
+                    </Border>
+                  </TabItem>
+                  <TabItem Header="Dependencies">
+                    <Border Classes="issue-sql-pane" Margin="0,6,0,0">
+                      <StackPanel Spacing="8">
+                        <TextBlock Text="Dependencias" FontWeight="{StaticResource FontWeightStrong}"/>
+                        <Border Classes="issue-sql-meta-chip" HorizontalAlignment="Left">
+                          <TextBlock Text="{Binding SchemaAnalysisPanel.SelectedSqlCandidate.Visibility, StringFormat=Visibilidade: {0}}" FontSize="{StaticResource FontSizeCaption}"/>
+                        </Border>
+                        <TextBlock Text="Confirme objetos dependentes (views, procedures e jobs) antes de executar a correcao." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                      </StackPanel>
+                    </Border>
+                  </TabItem>
+                </TabControl>
               </Grid>
             </Border>
           </Grid>
+
+          <Border Grid.RowSpan="4"
+                  x:Name="AdvancedFiltersModalOverlay"
+                  IsVisible="False"
+                  Classes="issue-filter-modal-overlay"
+                  ZIndex="40"
+                  PointerPressed="AdvancedFiltersOverlay_OnPointerPressed">
+            <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
+              <Border Classes="issue-filter-modal-card" PointerPressed="AdvancedFiltersModalCard_OnPointerPressed">
+                <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                  <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                      <TextBlock Text="Filtros avancados" FontWeight="{StaticResource FontWeightTitle}" FontSize="{StaticResource FontSizeTitle}"/>
+                      <TextBlock Text="Refine o escopo de analise sem poluir o painel principal." FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Classes="secondary compact" Content="Fechar" Click="CloseAdvancedFiltersModal_OnClick"/>
+                  </Grid>
+
+                  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="10">
+                      <Expander Classes="app-accordion" IsExpanded="True">
+                        <Expander.Header>
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <mi:MaterialIcon Kind="FilterVariant" Width="14" Height="14" Foreground="{StaticResource TextMutedBrush}"/>
+                            <TextBlock Text="Escopo e severidade"/>
+                          </StackPanel>
+                        </Expander.Header>
+                        <StackPanel Margin="0,8,0,0" Spacing="8">
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <Button Grid.Column="0" Command="{Binding SchemaAnalysisPanel.ClearFiltersCommand}" Classes="secondary compact" Content="Limpar"/>
+                            <ToggleButton Grid.Column="1" Classes="secondary compact" Content="Quick Wins" IsChecked="{Binding SchemaAnalysisPanel.QuickWinsOnly, Mode=TwoWay}"/>
+                          </Grid>
+                          <WrapPanel Orientation="Horizontal" ItemHeight="28" ItemWidth="96">
+                            <CheckBox Content="Info" IsChecked="{Binding SchemaAnalysisPanel.IncludeInfo, Mode=TwoWay}"/>
+                            <CheckBox Content="Warning" IsChecked="{Binding SchemaAnalysisPanel.IncludeWarning, Mode=TwoWay}"/>
+                            <CheckBox Content="Critical" IsChecked="{Binding SchemaAnalysisPanel.IncludeCritical, Mode=TwoWay}"/>
+                          </WrapPanel>
+                          <TextBox Watermark="Filtro por tabela" Text="{Binding SchemaAnalysisPanel.TableTextFilter, Mode=TwoWay}"/>
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <Slider Grid.Column="0" Minimum="0" Maximum="1" Value="{Binding SchemaAnalysisPanel.MinConfidenceFilter, Mode=TwoWay}"/>
+                            <TextBlock Grid.Column="1" Text="{Binding SchemaAnalysisPanel.MinConfidenceFilter, StringFormat={}{0:P0}}" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}"/>
+                          </Grid>
+                        </StackPanel>
+                      </Expander>
+
+                      <Expander Classes="app-accordion" IsExpanded="False">
+                        <Expander.Header>
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <mi:MaterialIcon Kind="EyeOffOutline" Width="14" Height="14" Foreground="{StaticResource TextMutedBrush}"/>
+                            <TextBlock Text="Ignorar e views salvas"/>
+                          </StackPanel>
+                        </Expander.Header>
+                        <StackPanel Margin="0,8,0,0" Spacing="8">
+                          <CheckBox Content="Ignorar views" IsChecked="{Binding SchemaAnalysisPanel.IgnoreViews, Mode=TwoWay}"/>
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <TextBox Grid.Column="0" Name="IgnoredTableInput" KeyDown="IgnoredTableInput_OnKeyDown" Watermark="{Binding SchemaAnalysisPanel.IgnoredTableInputPlaceholder}" Text="{Binding SchemaAnalysisPanel.IgnoredTableInput, Mode=TwoWay}"/>
+                            <Button Grid.Column="1" Command="{Binding SchemaAnalysisPanel.AddIgnoredTableCommand}" Classes="secondary compact" Content="Adicionar"/>
+                          </Grid>
+                          <ListBox Name="IgnoredTablesList" MaxHeight="140" ItemsSource="{Binding SchemaAnalysisPanel.IgnoredTables}" SelectedItem="{Binding SchemaAnalysisPanel.SelectedIgnoredTable, Mode=TwoWay}"/>
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Command="{Binding SchemaAnalysisPanel.RemoveSelectedIgnoredTableCommand}" Classes="secondary compact" Content="Remover"/>
+                            <Button Command="{Binding SchemaAnalysisPanel.ClearIgnoredTablesCommand}" Classes="secondary compact" Content="Limpar"/>
+                          </StackPanel>
+                        </StackPanel>
+                      </Expander>
+
+                      <Expander Classes="app-accordion" IsExpanded="False">
+                        <Expander.Header>
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <mi:MaterialIcon Kind="SitemapOutline" Width="14" Height="14" Foreground="{StaticResource TextMutedBrush}"/>
+                            <TextBlock Text="Tipo de regra"/>
+                          </StackPanel>
+                        </Expander.Header>
+                        <StackPanel Margin="0,8,0,0" Spacing="6">
+                          <CheckBox Content="Missing FK" IsChecked="{Binding SchemaAnalysisPanel.IncludeMissingFk, Mode=TwoWay}"/>
+                          <CheckBox Content="FK catalog inconsistent" IsChecked="{Binding SchemaAnalysisPanel.IncludeFkCatalogInconsistent, Mode=TwoWay}"/>
+                          <CheckBox Content="Naming violation" IsChecked="{Binding SchemaAnalysisPanel.IncludeNamingConventionViolation, Mode=TwoWay}"/>
+                          <CheckBox Content="Low semantic name" IsChecked="{Binding SchemaAnalysisPanel.IncludeLowSemanticName, Mode=TwoWay}"/>
+                          <CheckBox Content="Missing required comment" IsChecked="{Binding SchemaAnalysisPanel.IncludeMissingRequiredComment, Mode=TwoWay}"/>
+                          <CheckBox Content="NF1 / NF2 / NF3 hints" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf1HintMultiValued, Mode=TwoWay}"/>
+                          <CheckBox Content="NF3 hint transitive dependency" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf3HintTransitiveDependency, Mode=TwoWay}"/>
+                        </StackPanel>
+                      </Expander>
+                    </StackPanel>
+                  </ScrollViewer>
+                </Grid>
+              </Border>
+            </Grid>
+          </Border>
         </Grid>
       </Grid>
     </Border>

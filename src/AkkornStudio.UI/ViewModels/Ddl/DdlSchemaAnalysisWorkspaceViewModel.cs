@@ -43,6 +43,8 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
     private int _totalTables;
     private int _totalColumns;
     private int _totalForeignKeys;
+    private int _totalViews;
+    private int _totalSchemas;
     private string _dominantNaming = "-";
     private string _dominantPkPattern = "-";
     private string _dominantFkPattern = "-";
@@ -82,6 +84,12 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
         OpenDesiredNamingStepCommand = new RelayCommand(() => WizardStep = DdlSchemaAnalysisWizardStep.DesiredNaming, () => HasMetadata && WizardStep != DdlSchemaAnalysisWizardStep.DesiredNaming);
         OpenIssuesStepCommand = new RelayCommand(() => WizardStep = DdlSchemaAnalysisWizardStep.Issues, () => HasMetadata && WizardStep != DdlSchemaAnalysisWizardStep.Issues);
         GenerateIssuesCommand = new RelayCommand(() => _ = GenerateIssuesAndOpenStepAsync(), () => !IsBusy && HasMetadata && !HasTemplateValidationErrors);
+        SelectTrendContributionCommand = new RelayCommand<SchemaTrendPatternItemViewModel>(
+            SelectTrendContribution,
+            item => item is not null);
+        ClearSelectedTrendContributionCommand = new RelayCommand(
+            ClearSelectedTrendContribution,
+            () => HasSelectedTrendContribution);
 
         _connectionManager.ProfilesChanged += HandleProfilesChanged;
         RefreshProfiles();
@@ -121,6 +129,10 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
     public RelayCommand OpenIssuesStepCommand { get; }
 
     public RelayCommand GenerateIssuesCommand { get; }
+
+    public RelayCommand<SchemaTrendPatternItemViewModel> SelectTrendContributionCommand { get; }
+
+    public RelayCommand ClearSelectedTrendContributionCommand { get; }
 
     public IReadOnlyList<NamingConvention> NamingConventionOptions { get; } =
     [
@@ -321,6 +333,18 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
     {
         get => _totalForeignKeys;
         private set => Set(ref _totalForeignKeys, value);
+    }
+
+    public int TotalViews
+    {
+        get => _totalViews;
+        private set => Set(ref _totalViews, value);
+    }
+
+    public int TotalSchemas
+    {
+        get => _totalSchemas;
+        private set => Set(ref _totalSchemas, value);
     }
 
     public string DominantNaming
@@ -669,9 +693,13 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
             TotalTables = 0;
             TotalColumns = 0;
             TotalForeignKeys = 0;
+            TotalViews = 0;
+            TotalSchemas = 0;
             DominantNaming = "-";
             DominantPkPattern = "-";
             DominantFkPattern = "-";
+            ClearTrendPatternInsights();
+            RaisePropertyChanged(nameof(MetadataLoadedSummary));
             return;
         }
 
@@ -692,10 +720,14 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
         TotalColumns = tables.Sum(table => table.Columns.Count);
         TotalForeignKeys = filteredMetadata.AllForeignKeys.Count(foreignKey =>
             MatchesSchemaFilter(schemaFilter, foreignKey.ChildSchema) || MatchesSchemaFilter(schemaFilter, foreignKey.ParentSchema));
+        TotalViews = schemas.Sum(schema => schema.Tables.Count(table => table.Kind != TableKind.Table));
+        TotalSchemas = schemas.Count;
 
         DominantNaming = patterns.DominantNamingConvention.ToString();
         DominantPkPattern = string.IsNullOrWhiteSpace(patterns.DominantPkPattern) ? "-" : patterns.DominantPkPattern!;
         DominantFkPattern = string.IsNullOrWhiteSpace(patterns.DominantFkPattern) ? "-" : patterns.DominantFkPattern!;
+        RebuildTrendPatternInsights(schemas);
+        RaisePropertyChanged(nameof(MetadataLoadedSummary));
     }
 
     private async Task<bool> RunAnalysisAsync()

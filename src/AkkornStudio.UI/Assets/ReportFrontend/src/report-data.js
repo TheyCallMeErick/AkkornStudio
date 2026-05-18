@@ -47,7 +47,7 @@ export function createReportModel() {
 
   const overviewCards = computed(() => buildOverviewCards(meta, payload, txt));
   const themeIcon = computed(() => (state.theme === "dark" ? "moon" : "sun"));
-  const footerText = computed(() => `${meta.title ?? "Report"} • Vue 3 • v${payload.version ?? "1.0"}`);
+  const footerText = computed(() => `${meta.title ?? "Report"} • Akkorn Studio • v${payload.version ?? "1.0"}`);
 
   watch(
     () => state,

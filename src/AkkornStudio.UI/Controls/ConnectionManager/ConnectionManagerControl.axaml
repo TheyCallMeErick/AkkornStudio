@@ -114,7 +114,7 @@
       </Border>
 
       <Grid Grid.Row="1">
-        <Grid IsVisible="{Binding IsConnectionPickerMode}" RowDefinitions="Auto,Auto,*" Margin="16">
+        <Grid IsVisible="{Binding IsConnectionPickerMode}" RowDefinitions="Auto,Auto,Auto,*" Margin="16">
           <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
             <StackPanel Spacing="2">
               <TextBlock Text="Conexoes" FontSize="{StaticResource FontSizeTitle}" FontWeight="{StaticResource FontWeightTitle}"/>
@@ -128,7 +128,24 @@
             </Button>
           </Grid>
 
-          <Border Grid.Row="1" Classes="surface-card" Padding="10" Margin="0,0,0,10">
+          <Border Grid.Row="1"
+                  IsVisible="{Binding TestStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                  Background="{StaticResource Bg0Brush}"
+                  BorderBrush="{Binding TestStatusColor}"
+                  BorderThickness="1"
+                  CornerRadius="{StaticResource RadiusSM}"
+                  Padding="10,8"
+                  Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <mi:MaterialIcon Kind="InformationOutline" Width="14" Height="14" Foreground="{Binding TestStatusColor}"/>
+              <TextBlock Text="{Binding TestStatus}"
+                         FontSize="{StaticResource FontSizeCaption}"
+                         Foreground="{Binding TestStatusColor}"
+                         TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
+
+          <Border Grid.Row="2" Classes="surface-card" Padding="10" Margin="0,0,0,10">
             <DockPanel>
               <mi:MaterialIcon DockPanel.Dock="Left"
                                Kind="Magnify"
@@ -149,7 +166,7 @@
             </DockPanel>
           </Border>
 
-          <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="10">
               <ItemsControl ItemsSource="{Binding FilteredConnectionCards}" HorizontalAlignment="Stretch">
                 <ItemsControl.ItemsPanel>
@@ -506,7 +523,8 @@
 
                 <Button Grid.Column="3" Classes="primary" Command="{Binding SaveProfileCommand}">
                   <StackPanel Orientation="Horizontal" Spacing="6">
-                    <mi:MaterialIcon Kind="ContentSave" Width="13" Height="13"/>
+                    <mi:MaterialIcon Kind="ContentSave" Width="13" Height="13" IsVisible="{Binding !IsSavingProfile}"/>
+                    <mi:MaterialIcon Kind="Loading" Width="13" Height="13" IsVisible="{Binding IsSavingProfile}"/>
                     <TextBlock Text="{Binding [connection.action.saveConnection], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeBody}"/>
                   </StackPanel>
                 </Button>

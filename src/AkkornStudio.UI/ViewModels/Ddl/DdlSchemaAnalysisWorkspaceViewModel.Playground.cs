@@ -123,6 +123,17 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel
 
     public ObservableCollection<NamingPlaygroundIssueItemViewModel> PlaygroundIssuePreviewItems { get; } = [];
 
+    public ObservableCollection<NamingPlaygroundBadgeViewModel> PlaygroundLegendBadges { get; } =
+    [
+        new() { Text = "PK", Tone = "pk" },
+        new() { Text = "FK", Tone = "fk" },
+        new() { Text = "IDX", Tone = "idx" },
+        new() { Text = "UNIQUE", Tone = "unique" },
+        new() { Text = "CHECK", Tone = "check" },
+        new() { Text = "VIEW", Tone = "view" },
+        new() { Text = "COL", Tone = "neutral" },
+    ];
+
     public string ActivePlaygroundFocusKey
     {
         get => _activePlaygroundFocusKey;
@@ -146,9 +157,26 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel
     public string PlaygroundIssueEmptyMessage =>
         "Sem divergencias detectadas no modelo de exemplo para os padroes atuais.";
 
+    public string MetadataLoadedSummary =>
+        $"Metadata carregada: {TotalTables} tabelas • {TotalForeignKeys} FKs • {TotalViews} Views • {TotalSchemas} Schemas";
+
     public string PlaygroundValidationSummary => HasTemplateValidationErrors
         ? "Existem templates invalidos. Corrija antes de gerar a analise completa."
-        : "Templates validos. O preview esta consistente com os padroes definidos.";
+        : "Todos os templates estao validos e prontos para uso.";
+
+    public bool HasAllTemplatesValid => !HasTemplateValidationErrors;
+
+    public bool IsPrimaryKeyConstraintTemplateValid => HasRequiredTokens(PrimaryKeyConstraintPattern, "[table]");
+    public bool IsPrimaryKeyConstraintTemplateInvalid => !IsPrimaryKeyConstraintTemplateValid;
+
+    public bool IsForeignKeyTemplateValid => HasRequiredTokens(ForeignKeyPattern, "[target]");
+    public bool IsForeignKeyTemplateInvalid => !IsForeignKeyTemplateValid;
+
+    public bool IsIndexTemplateValid => HasRequiredTokens(IndexPattern, "[table]", "[column]");
+    public bool IsIndexTemplateInvalid => !IsIndexTemplateValid;
+
+    public bool IsConstraintTemplateValid => HasRequiredTokens(ConstraintPattern, "[table]", "[target]");
+    public bool IsConstraintTemplateInvalid => !IsConstraintTemplateValid;
 
     public string TableNamingExample => ApplyNamingConvention("customer_order", TableNamingConvention);
 
@@ -176,6 +204,11 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel
 
     public string ConstraintTemplateExample =>
         ResolveTemplateToken(ConstraintPattern, "order", "customer", "created_at");
+
+    public NamingPlaygroundEntityCardViewModel? CustomerPreviewEntity => GetPreviewEntity(0);
+    public NamingPlaygroundEntityCardViewModel? OrderPreviewEntity => GetPreviewEntity(1);
+    public NamingPlaygroundEntityCardViewModel? OrderItemPreviewEntity => GetPreviewEntity(2);
+    public NamingPlaygroundEntityCardViewModel? ViewPreviewEntity => GetPreviewEntity(3);
 
     private void InitializePlayground()
     {
@@ -252,7 +285,20 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel
         UpdatePlaygroundHighlightStates();
 
         RaisePropertyChanged(nameof(HasTemplateValidationErrors));
+        RaisePropertyChanged(nameof(HasAllTemplatesValid));
         RaisePropertyChanged(nameof(PlaygroundValidationSummary));
+        RaisePropertyChanged(nameof(IsPrimaryKeyConstraintTemplateValid));
+        RaisePropertyChanged(nameof(IsPrimaryKeyConstraintTemplateInvalid));
+        RaisePropertyChanged(nameof(IsForeignKeyTemplateValid));
+        RaisePropertyChanged(nameof(IsForeignKeyTemplateInvalid));
+        RaisePropertyChanged(nameof(IsIndexTemplateValid));
+        RaisePropertyChanged(nameof(IsIndexTemplateInvalid));
+        RaisePropertyChanged(nameof(IsConstraintTemplateValid));
+        RaisePropertyChanged(nameof(IsConstraintTemplateInvalid));
+        RaisePropertyChanged(nameof(CustomerPreviewEntity));
+        RaisePropertyChanged(nameof(OrderPreviewEntity));
+        RaisePropertyChanged(nameof(OrderItemPreviewEntity));
+        RaisePropertyChanged(nameof(ViewPreviewEntity));
         RaisePropertyChanged(nameof(HasPlaygroundIssuePreviewItems));
         RaisePropertyChanged(nameof(HasNoPlaygroundIssuePreviewItems));
         GenerateIssuesCommand.NotifyCanExecuteChanged();
@@ -349,6 +395,13 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel
             IsValid = false,
             Message = $"Token obrigatorio ausente: {string.Join(", ", missing)}",
         };
+    }
+
+    private NamingPlaygroundEntityCardViewModel? GetPreviewEntity(int index)
+    {
+        return index >= 0 && index < PlaygroundPreviewEntities.Count
+            ? PlaygroundPreviewEntities[index]
+            : null;
     }
 
     private void BuildPlaygroundPreviewEntities()
@@ -642,6 +695,14 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel
             .Replace("[table]", table, StringComparison.OrdinalIgnoreCase)
             .Replace("[target]", target, StringComparison.OrdinalIgnoreCase)
             .Replace("[column]", column, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasRequiredTokens(string template, params string[] tokens)
+    {
+        if (string.IsNullOrWhiteSpace(template))
+            return false;
+
+        return tokens.All(token => template.Contains(token, StringComparison.OrdinalIgnoreCase));
     }
 }
 

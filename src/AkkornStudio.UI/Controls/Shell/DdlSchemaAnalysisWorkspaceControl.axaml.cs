@@ -1,7 +1,10 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using AkkornStudio.Ddl.SchemaAnalysis.Domain.Contracts;
 using AkkornStudio.UI.ViewModels;
+using System.IO;
 
 namespace AkkornStudio.UI.Controls.Shell;
 
@@ -114,6 +117,137 @@ public partial class DdlSchemaAnalysisWorkspaceControl : UserControl
             return;
 
         vm.ClearPlaygroundScopeHighlight();
+    }
+
+    private void PlaygroundField_OnGotFocus(object? sender, GotFocusEventArgs e)
+    {
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
+            return;
+
+        if (sender is not Control control)
+            return;
+
+        vm.HighlightPlaygroundScope(control.Tag?.ToString());
+    }
+
+    private void PlaygroundField_OnLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
+            return;
+
+        vm.ClearPlaygroundScopeHighlight();
+    }
+
+    private async void ExportTrendsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
+            return;
+
+        await ExportMarkdownAsync(
+            title: "Exportar tendencias de estrutura",
+            suggestedFileName: "tendencias-estrutura.md",
+            content: vm.BuildTrendsExportMarkdown());
+    }
+
+    private async void ExportIssuesButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
+            return;
+
+        await ExportMarkdownAsync(
+            title: "Exportar issues de estrutura",
+            suggestedFileName: "issues-estrutura.md",
+            content: vm.BuildIssuesExportMarkdown());
+    }
+
+    private async Task ExportMarkdownAsync(string title, string suggestedFileName, string content)
+    {
+        TopLevel? topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.StorageProvider is null)
+            return;
+
+        var mdFileType = new FilePickerFileType("Markdown")
+        {
+            Patterns = ["*.md"],
+        };
+
+        IStorageFile? file = await topLevel.StorageProvider.SaveFilePickerAsync(
+            new FilePickerSaveOptions
+            {
+                Title = title,
+                DefaultExtension = "md",
+                FileTypeChoices = [mdFileType],
+                SuggestedFileName = suggestedFileName,
+            });
+
+        string? path = file?.TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        await File.WriteAllTextAsync(path, content);
+    }
+
+    private void Confidence95Button_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
+            return;
+
+        vm.SchemaAnalysisPanel.MinConfidenceFilter = 0.95d;
+    }
+
+    private void Confidence80Button_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
+            return;
+
+        vm.SchemaAnalysisPanel.MinConfidenceFilter = 0.80d;
+    }
+
+    private void OpenAdvancedFiltersModal_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+
+        if (AdvancedFiltersModalOverlay is not null)
+            AdvancedFiltersModalOverlay.IsVisible = true;
+    }
+
+    private void CloseAdvancedFiltersModal_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+
+        if (AdvancedFiltersModalOverlay is not null)
+            AdvancedFiltersModalOverlay.IsVisible = false;
+    }
+
+    private void AdvancedFiltersOverlay_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        _ = sender;
+
+        if (AdvancedFiltersModalOverlay is null)
+            return;
+
+        if (e.Source == AdvancedFiltersModalOverlay)
+            AdvancedFiltersModalOverlay.IsVisible = false;
+    }
+
+    private void AdvancedFiltersModalCard_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        _ = sender;
+        e.Handled = true;
     }
 }
 
