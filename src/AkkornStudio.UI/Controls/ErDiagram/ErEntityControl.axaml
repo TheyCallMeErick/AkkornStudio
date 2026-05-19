@@ -1,94 +1,262 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ervm="using:AkkornStudio.UI.ViewModels.ErDiagram"
              x:Class="AkkornStudio.UI.Controls.ErDiagram.ErEntityControl"
              x:DataType="ervm:ErEntityNodeViewModel">
 
-  <Grid PointerPressed="Root_PointerPressed">
-    <Border Width="220"
-            CornerRadius="{StaticResource RadiusMD}"
-            Background="{StaticResource Bg1Brush}"
-            BorderBrush="{StaticResource BorderBrush}"
-            BorderThickness="1">
-      <Grid RowDefinitions="36,*">
-        <Border Grid.Row="0"
-                Background="{StaticResource Bg2Brush}"
-                BorderBrush="{StaticResource BorderSubtleBrush}"
-                BorderThickness="0,0,0,1"
-                CornerRadius="{StaticResource RadiusMD}, {StaticResource RadiusMD}, 0, 0"
-                Padding="10,0">
-          <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-            <TextBlock Grid.Column="0"
-                       Classes="txt-label"
-                       Foreground="{StaticResource TextPrimaryBrush}"
-                       Text="{Binding DisplayName}"
-                       TextTrimming="CharacterEllipsis"
-                       VerticalAlignment="Center"/>
+  <UserControl.Styles>
+    <Style Selector="ToggleButton.erd-node-tab">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+      <Setter Property="Padding" Value="0,4"/>
+      <Setter Property="Foreground" Value="#75819A"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="CornerRadius" Value="0"/>
+    </Style>
+    <Style Selector="ToggleButton.erd-node-tab:pointerover">
+      <Setter Property="Foreground" Value="#D8DEEA"/>
+    </Style>
+    <Style Selector="ToggleButton.erd-node-tab:checked">
+      <Setter Property="Foreground" Value="#F1F5FB"/>
+      <Setter Property="BorderBrush" Value="#3B82F6"/>
+    </Style>
 
-            <Border Grid.Column="1"
-                    IsVisible="{Binding IsView}"
-                    Background="{StaticResource ControlActiveBgBrush}"
-                    CornerRadius="{StaticResource RadiusPill}"
-                    Padding="8,2"
-                    VerticalAlignment="Center">
-              <TextBlock Text="VIEW"
-                         FontSize="{StaticResource FontSizeCaption}"
-                         Foreground="{StaticResource TextAccentBrush}"/>
-            </Border>
+    <Style Selector="Border.erd-col-row">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Padding" Value="4,2"/>
+    </Style>
+    <Style Selector="Border.erd-col-row:pointerover">
+      <Setter Property="Background" Value="#162238"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid PointerPressed="Root_PointerPressed"
+        PointerMoved="Root_PointerMoved"
+        PointerReleased="Root_PointerReleased"
+        PointerCaptureLost="Root_PointerCaptureLost"
+        PointerEntered="Root_PointerEntered"
+        PointerExited="Root_PointerExited">
+
+    <Border Width="420"
+            CornerRadius="10"
+            Background="{Binding NodeBackground}"
+            BorderBrush="{Binding NodeBorderBrush}"
+            BorderThickness="{Binding NodeBorderThickness}"
+            Opacity="{Binding NodeOpacity}">
+      <Grid RowDefinitions="Auto,Auto,*">
+        <Border Grid.Row="0"
+                Background="{Binding HeaderBackground}"
+                CornerRadius="10,10,0,0"
+                BorderBrush="#273247"
+                BorderThickness="0,0,0,1"
+                Padding="0">
+          <Grid ColumnDefinitions="4,*">
+            <Border Grid.Column="0" Background="{Binding HeaderAccentBrush}"/>
+
+            <Grid Grid.Column="1" Margin="10,8" RowDefinitions="Auto,Auto" RowSpacing="5">
+              <Grid Grid.Row="0" ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                <TextBlock Grid.Column="0"
+                           Classes="txt-meta"
+                           Foreground="{Binding HeaderSchemaBrush}"
+                           Text="{Binding DisplaySchema}"
+                           TextTrimming="CharacterEllipsis"/>
+
+                <Border Grid.Column="1"
+                        Background="{Binding ObjectTypeBadgeBackground}"
+                        CornerRadius="999"
+                        Padding="7,1"
+                        VerticalAlignment="Center">
+                  <TextBlock Classes="txt-meta"
+                             Foreground="{Binding ObjectTypeBadgeForeground}"
+                             Text="{Binding ObjectTypeLabel}"/>
+                </Border>
+              </Grid>
+
+              <Grid Grid.Row="1" ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                <TextBlock Grid.Column="0"
+                           Classes="txt-node-title"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="{Binding HeaderTitleBrush}"
+                           Text="{Binding DisplayName}"
+                           TextTrimming="CharacterEllipsis"/>
+
+                <TextBlock Grid.Column="1"
+                           Classes="txt-meta"
+                           Foreground="{Binding HeaderMetaBrush}"
+                           Text="{Binding MetaSummary}"/>
+              </Grid>
+            </Grid>
           </Grid>
         </Border>
 
-        <ItemsControl Grid.Row="1" ItemsSource="{Binding Columns}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="ervm:ErColumnRowViewModel">
-              <Grid ColumnDefinitions="Auto,8,*,8,Auto"
-                    Height="22"
-                    Margin="10,0"
-                    VerticalAlignment="Center">
-                <Border Grid.ColumnSpan="5"
-                        CornerRadius="{StaticResource RadiusSM}"
-                        Background="{StaticResource ControlActiveBgBrush}"
-                        IsVisible="{Binding IsRelationEndpointHighlighted}"
-                        Opacity="0.32"/>
-                <Border Grid.Column="0"
-                        MinWidth="24"
-                        Background="{StaticResource Bg3Brush}"
-                        CornerRadius="{StaticResource RadiusPill}"
-                        Padding="6,1"
-                        IsVisible="{Binding HasBadge}"
-                        VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Badge}"
-                             FontSize="{StaticResource FontSizeCaption}"
-                             Foreground="{StaticResource TextSecondaryBrush}"
-                             HorizontalAlignment="Center"/>
+        <Border Grid.Row="1"
+                IsVisible="{Binding ShowTabs}"
+                BorderBrush="#273247"
+                BorderThickness="0,0,0,1"
+                Padding="10,0"
+                Background="#0D1525">
+          <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+            <ToggleButton Classes="erd-node-tab"
+                          IsChecked="{Binding IsColumnsTabSelected}">
+              <TextBlock Text="Columns"/>
+            </ToggleButton>
+            <ToggleButton Classes="erd-node-tab"
+                          IsChecked="{Binding IsCreateTabSelected}">
+              <TextBlock Text="Create Statement"/>
+            </ToggleButton>
+            <ToggleButton Classes="erd-node-tab"
+                          IsChecked="{Binding IsDependenciesTabSelected}">
+              <TextBlock Text="Dependencies"/>
+            </ToggleButton>
+          </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="2" IsVisible="{Binding ShowDetailsArea}">
+          <Border IsVisible="{Binding IsColumnsTabSelected}">
+            <Grid RowDefinitions="Auto,*">
+              <Border Grid.Row="0"
+                      Background="#0A111F"
+                      BorderBrush="#273247"
+                      BorderThickness="0,0,0,1"
+                      Padding="10,4">
+                <Grid ColumnDefinitions="Auto,10,*,10,180">
+                  <TextBlock Grid.Column="0" Classes="txt-meta" Foreground="#6E7C95" Text="KEY"/>
+                  <TextBlock Grid.Column="2" Classes="txt-meta" Foreground="#9CA3AF" Text="NAME"/>
+                  <TextBlock Grid.Column="4" Classes="txt-meta" Foreground="#9CA3AF" Text="TYPE / NULL"/>
+                </Grid>
+              </Border>
+
+              <Grid Grid.Row="1" RowDefinitions="*,Auto">
+                <ScrollViewer Grid.Row="0"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                  <ItemsControl ItemsSource="{Binding VisibleColumns}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="ervm:ErColumnRowViewModel">
+                        <Border Classes="erd-col-row"
+                                Margin="8,1"
+                                PointerEntered="ColumnRow_PointerEntered"
+                                PointerExited="ColumnRow_PointerExited">
+                          <Grid ColumnDefinitions="Auto,10,*,10,180"
+                                Height="23"
+                                VerticalAlignment="Center">
+                            <Border Grid.ColumnSpan="5"
+                                    CornerRadius="6"
+                                    Background="#1D2C47"
+                                    IsVisible="{Binding IsRelationEndpointHighlighted}"
+                                    Opacity="0.38"/>
+
+                            <Border Grid.Column="0"
+                                    CornerRadius="999"
+                                    Padding="7,1"
+                                    Background="#1A2740"
+                                    BorderBrush="#32435F"
+                                    BorderThickness="1"
+                                    MinWidth="36"
+                                    HorizontalAlignment="Left">
+                              <TextBlock Classes="txt-meta"
+                                         Foreground="#B7C2D8"
+                                         Text="{Binding KeyTag}"
+                                         HorizontalAlignment="Center"/>
+                            </Border>
+
+                            <TextBlock Grid.Column="2"
+                                       Classes="txt-body"
+                                       Foreground="{Binding NameBrush}"
+                                       FontWeight="{Binding NameWeight}"
+                                       Text="{Binding ColumnName}"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"/>
+
+                            <StackPanel Grid.Column="4"
+                                        Orientation="Horizontal"
+                                        Spacing="6"
+                                        VerticalAlignment="Center">
+                              <TextBlock Classes="txt-mono-small"
+                                         FontFamily="{StaticResource MonoFont}"
+                                         Foreground="{Binding TypeBrush}"
+                                         Text="{Binding DataType}"
+                                         TextTrimming="CharacterEllipsis"
+                                         MaxWidth="130"/>
+
+                              <Border CornerRadius="999"
+                                      Padding="6,1"
+                                      Background="#111A2B"
+                                      BorderBrush="#2D3A54"
+                                      BorderThickness="1">
+                                <TextBlock Classes="txt-meta"
+                                           Foreground="{Binding NullabilityBrush}"
+                                           Text="{Binding NullabilityChip}"/>
+                              </Border>
+                            </StackPanel>
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+
+                <Border Grid.Row="1"
+                        IsVisible="{Binding HasHiddenColumns}"
+                        Padding="10,4"
+                        BorderBrush="#273247"
+                        BorderThickness="0,1,0,0"
+                        Background="#0D1525">
+                  <TextBlock Classes="txt-meta"
+                             Foreground="#64748B"
+                             Text="{Binding HiddenColumnCount, StringFormat=+{0} columns hidden in this density}"/>
                 </Border>
-
-                <TextBlock Grid.Column="2"
-                           Classes="txt-body"
-                           Foreground="{StaticResource TextPrimaryBrush}"
-                           Text="{Binding ColumnName}"
-                           TextTrimming="CharacterEllipsis"
-                           VerticalAlignment="Center"/>
-
-                <TextBlock Grid.Column="4"
-                           FontFamily="{StaticResource MonoFont}"
-                           FontSize="{StaticResource FontSizeCaption}"
-                           Foreground="{StaticResource TextMutedBrush}"
-                           Text="{Binding DataType}"
-                           TextTrimming="CharacterEllipsis"
-                           VerticalAlignment="Center"/>
               </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+            </Grid>
+          </Border>
+
+          <Border IsVisible="{Binding IsCreateTabSelected}"
+                  Background="#0A111F"
+                  Padding="10,8">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto">
+              <TextBlock Classes="txt-mono-small"
+                         FontFamily="{StaticResource MonoFont}"
+                         Foreground="#AFC0DF"
+                         Text="{Binding CreateStatementSql}"
+                         TextWrapping="NoWrap"/>
+            </ScrollViewer>
+          </Border>
+
+          <Border IsVisible="{Binding IsDependenciesTabSelected}"
+                  Background="#0A111F"
+                  Padding="10,8">
+            <Grid RowDefinitions="Auto,*">
+              <TextBlock Classes="txt-meta"
+                         Foreground="#9CA3AF"
+                         Text="Related tables"/>
+
+              <ScrollViewer Grid.Row="1"
+                            Margin="0,6,0,0"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Dependencies}"
+                              IsVisible="{Binding HasDependencies}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border Background="#101A2B" BorderBrush="#22314B" BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,0,0,4">
+                        <TextBlock Classes="txt-body"
+                                   Foreground="#D6DEEF"
+                                   Text="{Binding .}"
+                                   TextTrimming="CharacterEllipsis"/>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Grid>
+          </Border>
+        </Grid>
       </Grid>
     </Border>
-
-    <Border Width="220"
-            CornerRadius="{StaticResource RadiusMD}"
-            BorderBrush="{StaticResource AccentPrimaryHoverBrush}"
-            BorderThickness="2"
-            IsVisible="{Binding IsSelected}"
-            IsHitTestVisible="False"/>
   </Grid>
 </UserControl>

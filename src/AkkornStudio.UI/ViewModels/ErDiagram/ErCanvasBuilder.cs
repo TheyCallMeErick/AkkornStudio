@@ -8,12 +8,15 @@ namespace AkkornStudio.UI.ViewModels.ErDiagram;
 /// </summary>
 public static class ErCanvasBuilder
 {
-    private const double EntityWidth = 220;
-    private const double HeaderHeight = 36;
-    private const double ColumnRowHeight = 22;
+    private const double EntityWidth = 420;
+    private const double HeaderHeight = 56;
+    private const double TabsHeight = 28;
+    private const double ColumnsHeaderHeight = 22;
+    private const double ColumnRowHeight = 24;
     private const double HorizontalGap = 60;
     private const double VerticalGap = 40;
-    private const int MaxEntitiesPerRow = 4;
+    private const int MinEntitiesPerRow = 4;
+    private const int MaxEntitiesPerRow = 12;
     private const double ReverseLaneOffset = 48;
     private const double ForwardLaneOffset = 24;
 
@@ -35,11 +38,11 @@ public static class ErCanvasBuilder
         foreach (TableMetadata table in eligibleTables)
         {
             ErEntityNodeViewModel entity = BuildEntity(table);
-            double entityHeight = HeaderHeight + (entity.Columns.Count * ColumnRowHeight);
+            double entityHeight = entity.NodeHeight;
             entities.Add((entity, entityHeight));
         }
 
-        int columnCount = Math.Max(1, MaxEntitiesPerRow);
+        int columnCount = ResolveColumnCount(entities.Count);
         var columnBottom = new double[columnCount];
 
         for (int index = 0; index < entities.Count; index++)
@@ -96,9 +99,35 @@ public static class ErCanvasBuilder
                 onUpdate: fk.OnUpdate));
         }
 
-        UpdateEdgeGeometry(canvas, entityById);
+        RecomputeEdgeGeometry(canvas);
 
         return canvas;
+    }
+
+    public static void AutoLayout(ErCanvasViewModel canvas)
+    {
+        ArgumentNullException.ThrowIfNull(canvas);
+
+        List<ErEntityNodeViewModel> ordered = canvas.Entities
+            .OrderBy(static entity => entity.Schema, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static entity => entity.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (ordered.Count == 0)
+            return;
+
+        int columnCount = ResolveColumnCount(ordered.Count);
+        var columnBottom = new double[columnCount];
+        for (int index = 0; index < ordered.Count; index++)
+        {
+            ErEntityNodeViewModel entity = ordered[index];
+            int col = GetShortestColumnIndex(columnBottom);
+            entity.X = col * (EntityWidth + HorizontalGap);
+            entity.Y = columnBottom[col];
+            columnBottom[col] += entity.NodeHeight + VerticalGap;
+        }
+
+        RecomputeEdgeGeometry(canvas);
     }
 
     private static ErEntityNodeViewModel BuildEntity(TableMetadata table)
@@ -113,12 +142,24 @@ public static class ErCanvasBuilder
                 isUnique: column.IsUnique,
                 comment: column.Comment));
 
+        IReadOnlyList<string> dependencies =
+        [
+            .. table.ReferencedTables
+                .OrderBy(static t => t, StringComparer.OrdinalIgnoreCase)
+                .Select(static t => $"Outbound -> {t}"),
+            .. table.ReferencingTables
+                .OrderBy(static t => t, StringComparer.OrdinalIgnoreCase)
+                .Select(static t => $"Inbound <- {t}"),
+        ];
+
         return new ErEntityNodeViewModel(
             schema: table.Schema,
             name: table.Name,
             isView: table.Kind != TableKind.Table,
             estimatedRowCount: table.EstimatedRowCount,
-            columns: columns);
+            columns: columns,
+            dependencies: dependencies,
+            createStatementSql: BuildCreateStatement(table));
     }
 
     private static string BuildEntityId(string schema, string name) =>
@@ -127,10 +168,9 @@ public static class ErCanvasBuilder
     private static string BuildCompositeGroupKey(ForeignKeyRelation fk) =>
         $"{fk.ConstraintName}|{fk.ChildSchema}|{fk.ChildTable}|{fk.ParentSchema}|{fk.ParentTable}";
 
-    private static void UpdateEdgeGeometry(
-        ErCanvasViewModel canvas,
-        IReadOnlyDictionary<string, ErEntityNodeViewModel> entityById)
+    internal static void RecomputeEdgeGeometry(ErCanvasViewModel canvas)
     {
+        var entityById = canvas.Entities.ToDictionary(entity => entity.Id, StringComparer.OrdinalIgnoreCase);
         for (int index = 0; index < canvas.Edges.Count; index++)
         {
             ErRelationEdgeViewModel edge = canvas.Edges[index];
@@ -140,13 +180,13 @@ public static class ErCanvasBuilder
             if (!entityById.TryGetValue(edge.ParentEntityId, out ErEntityNodeViewModel? parent))
                 continue;
 
-            double childHeight = HeaderHeight + (child.Columns.Count * ColumnRowHeight);
-            double parentHeight = HeaderHeight + (parent.Columns.Count * ColumnRowHeight);
+            double childHeight = child.NodeHeight;
+            double parentHeight = parent.NodeHeight;
             bool childIsLeftOfParent = child.X <= parent.X;
             edge.StartX = childIsLeftOfParent ? child.X + EntityWidth : child.X;
-            edge.StartY = child.Y + (childHeight / 2d);
+            edge.StartY = ResolveEdgeY(child, edge.ChildColumns, childHeight);
             edge.EndX = childIsLeftOfParent ? parent.X : parent.X + EntityWidth;
-            edge.EndY = parent.Y + (parentHeight / 2d);
+            edge.EndY = ResolveEdgeY(parent, edge.ParentColumns, parentHeight);
             edge.SetRoute(BuildOrthogonalRoute(edge, child, parent, index));
         }
     }
@@ -161,7 +201,8 @@ public static class ErCanvasBuilder
         double startY = edge.StartY;
         double endX = edge.EndX;
         double endY = edge.EndY;
-        double laneOffset = ((edgeIndex % 3) + 1);
+        int stableHash = Math.Abs((edge.ConstraintName ?? $"{edge.ChildEntityId}->{edge.ParentEntityId}").GetHashCode());
+        double laneOffset = (stableHash % 5) + 1;
         bool flowsLeftToRight = startX <= endX;
 
         if (flowsLeftToRight)
@@ -200,5 +241,78 @@ public static class ErCanvasBuilder
         }
 
         return bestIndex;
+    }
+
+    private static int ResolveColumnCount(int entityCount)
+    {
+        if (entityCount <= 0)
+            return MinEntitiesPerRow;
+
+        // Balance width/height for large schemas so initial fit does not collapse entities
+        // into a visually "broken" vertical stack.
+        int estimated = (int)Math.Ceiling(Math.Sqrt(entityCount));
+        return Math.Clamp(estimated, MinEntitiesPerRow, MaxEntitiesPerRow);
+    }
+
+    private static string BuildCreateStatement(TableMetadata table)
+    {
+        string qualifiedName = string.IsNullOrWhiteSpace(table.Schema)
+            ? table.Name
+            : $"{table.Schema}.{table.Name}";
+        string objectKeyword = table.Kind == TableKind.Table ? "TABLE" : "VIEW";
+
+        if (table.Columns.Count == 0)
+            return $"CREATE {objectKeyword} {qualifiedName};";
+
+        if (table.Kind != TableKind.Table)
+        {
+            return string.Join(
+                Environment.NewLine,
+                $"CREATE VIEW {qualifiedName} AS",
+                "SELECT",
+                "  -- view definition unavailable from metadata snapshot",
+                ";");
+        }
+
+        var lines = new List<string>(table.Columns.Count + 4)
+        {
+            $"CREATE TABLE {qualifiedName} ("
+        };
+
+        for (int index = 0; index < table.Columns.Count; index++)
+        {
+            ColumnMetadata column = table.Columns[index];
+            string nullableSql = column.IsNullable ? "NULL" : "NOT NULL";
+            string defaultSql = string.IsNullOrWhiteSpace(column.DefaultValue)
+                ? string.Empty
+                : $" DEFAULT {column.DefaultValue}";
+            string suffix = index == table.Columns.Count - 1 ? string.Empty : ",";
+            lines.Add($"  {column.Name} {column.DataType} {nullableSql}{defaultSql}{suffix}");
+        }
+
+        lines.Add(");");
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static double ResolveEdgeY(
+        ErEntityNodeViewModel entity,
+        IReadOnlyList<string> columns,
+        double fallbackHeight)
+    {
+        if (columns.Count == 0)
+            return entity.Y + (fallbackHeight / 2d);
+
+        var indexes = new List<int>(columns.Count);
+        foreach (string column in columns)
+        {
+            if (entity.TryGetVisibleColumnIndex(column, out int visibleIndex))
+                indexes.Add(visibleIndex);
+        }
+
+        if (indexes.Count == 0)
+            return entity.Y + (fallbackHeight / 2d);
+
+        double averageIndex = indexes.Average();
+        return entity.Y + HeaderHeight + TabsHeight + ColumnsHeaderHeight + ((averageIndex + 0.5d) * ColumnRowHeight);
     }
 }

@@ -17,12 +17,19 @@ public sealed partial class ErCanvasControl : UserControl
     private readonly CanvasViewportSelectionNavigationController _selectionNavigationController = new();
     private readonly CanvasViewportGesturePolicy _gesturePolicy = CanvasViewportGesturePolicy.ErCanvasDefault;
     private ErCanvasViewModel? _observedCanvas;
+    private bool _isSpacePanArmed;
+
+    public bool IsSpacePanArmed => _isSpacePanArmed;
 
     public ErCanvasControl()
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
         LayoutUpdated += (_, _) => UpdateViewportState();
+        KeyDown += OnKeyDown;
+        KeyUp += OnKeyUp;
+        LostFocus += OnLostFocus;
+        OnDataContextChanged(this, EventArgs.Empty);
     }
 
     private void Edge_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -34,7 +41,8 @@ public sealed partial class ErCanvasControl : UserControl
         bool isPanGesture = CanvasViewportGestureDecisions.IsPanGesture(
             _gesturePolicy,
             pointerProperties,
-            e.KeyModifiers);
+            e.KeyModifiers,
+            _isSpacePanArmed);
         if (isPanGesture)
             return;
 
@@ -43,6 +51,25 @@ public sealed partial class ErCanvasControl : UserControl
 
         canvas.SelectedEdge = edge;
         e.Handled = true;
+    }
+
+    private void Edge_PointerEntered(object? sender, PointerEventArgs e)
+    {
+        if (DataContext is not ErCanvasViewModel canvas)
+            return;
+
+        if (sender is not Control control || control.DataContext is not ErRelationEdgeViewModel edge)
+            return;
+
+        canvas.SetHoveredEdge(edge);
+    }
+
+    private void Edge_PointerExited(object? sender, PointerEventArgs e)
+    {
+        if (DataContext is not ErCanvasViewModel canvas)
+            return;
+
+        canvas.SetHoveredEdge(null);
     }
 
     private void CanvasBackground_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -54,7 +81,8 @@ public sealed partial class ErCanvasControl : UserControl
         bool isPanGesture = CanvasViewportGestureDecisions.IsPanGesture(
             _gesturePolicy,
             pointerProperties,
-            e.KeyModifiers);
+            e.KeyModifiers,
+            _isSpacePanArmed);
         if (isPanGesture)
             return;
 
@@ -72,7 +100,7 @@ public sealed partial class ErCanvasControl : UserControl
         if (sceneContentCanvas is not null)
             sceneContentCanvas.DataContext = _observedCanvas;
 
-        Canvas? overlayCanvas = this.FindControl<Canvas>("SelectionMarquee")?.Parent as Canvas;
+        Canvas? overlayCanvas = this.FindControl<CanvasMarqueeAdorner>("SelectionMarquee")?.Parent as Canvas;
         if (overlayCanvas is not null)
             overlayCanvas.DataContext = _observedCanvas;
 
@@ -160,8 +188,10 @@ public sealed partial class ErCanvasControl : UserControl
         if (_observedCanvas is null || sender is not InfiniteCanvasCoreControl viewportHost)
             return;
 
+        viewportHost.Focus();
+
         PointerPointProperties props = e.GetCurrentPoint(viewportHost.ViewportSurface).Properties;
-        bool isPanGesture = CanvasViewportGestureDecisions.IsPanGesture(_gesturePolicy, props, e.KeyModifiers);
+        bool isPanGesture = CanvasViewportGestureDecisions.IsPanGesture(_gesturePolicy, props, e.KeyModifiers, _isSpacePanArmed);
         if (!isPanGesture && !props.IsLeftButtonPressed)
             return;
 
@@ -222,6 +252,11 @@ public sealed partial class ErCanvasControl : UserControl
         UpdateMarqueeVisual();
     }
 
+    public void RefreshViewportVisuals()
+    {
+        SyncTransform();
+    }
+
     private void UpdateFocusAdorner()
     {
         if (_observedCanvas is null)
@@ -242,5 +277,62 @@ public sealed partial class ErCanvasControl : UserControl
         }
 
         _selectionAdornerController.SyncMarqueeAdorner(_observedCanvas, _interactionHost, marquee);
+    }
+
+    private void OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Space && !_isSpacePanArmed)
+        {
+            _isSpacePanArmed = true;
+            _interactionHost.SetSpacePanArmed(true);
+        }
+
+        if (_observedCanvas is null)
+            return;
+
+        if ((e.Key == Key.Delete || e.Key == Key.Back) && e.KeyModifiers == KeyModifiers.None)
+        {
+            if (_observedCanvas.DeleteSelection())
+            {
+                e.Handled = true;
+                SyncTransform();
+            }
+            return;
+        }
+
+        if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            if (_observedCanvas.Undo())
+            {
+                e.Handled = true;
+                SyncTransform();
+            }
+            return;
+        }
+
+        if ((e.Key == Key.Y && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+            || (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Control) && e.KeyModifiers.HasFlag(KeyModifiers.Shift)))
+        {
+            if (_observedCanvas.Redo())
+            {
+                e.Handled = true;
+                SyncTransform();
+            }
+        }
+    }
+
+    private void OnKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space)
+            return;
+
+        _isSpacePanArmed = false;
+        _interactionHost.SetSpacePanArmed(false);
+    }
+
+    private void OnLostFocus(object? sender, RoutedEventArgs e)
+    {
+        _isSpacePanArmed = false;
+        _interactionHost.SetSpacePanArmed(false);
     }
 }

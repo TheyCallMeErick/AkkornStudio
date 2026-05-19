@@ -17,6 +17,7 @@ public sealed class CanvasViewportInteractionHost
     private readonly CanvasViewportGesturePolicy _gesturePolicy;
     private Point _marqueeStartCanvas;
     private Point _marqueeCurrentCanvas;
+    private bool _isSpacePanArmed;
 
     public CanvasViewportInteractionHost(CanvasViewportGesturePolicy gesturePolicy)
     {
@@ -45,7 +46,8 @@ public sealed class CanvasViewportInteractionHost
         bool isPanGesture = CanvasViewportGestureDecisions.IsPanGesture(
             _gesturePolicy,
             pointerProperties,
-            e.KeyModifiers);
+            e.KeyModifiers,
+            _isSpacePanArmed);
 
         if (isPanGesture)
         {
@@ -97,5 +99,10 @@ public sealed class CanvasViewportInteractionHost
     public void CancelMarquee()
     {
         IsMarqueeSelecting = false;
+    }
+
+    public void SetSpacePanArmed(bool isArmed)
+    {
+        _isSpacePanArmed = isArmed;
     }
 }

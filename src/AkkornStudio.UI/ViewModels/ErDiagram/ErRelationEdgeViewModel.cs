@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using AkkornStudio.Metadata;
 using AkkornStudio.UI.ViewModels;
 
@@ -18,6 +18,9 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
     private double _endX;
     private double _endY;
     private IReadOnlyList<Point> _routePoints = [];
+    private bool _isHovered;
+    private bool _isDimmed;
+    private ErVisualState _visualState = ErVisualState.Normal;
 
     public ErRelationEdgeViewModel(
         string? constraintName,
@@ -97,7 +100,49 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
     public bool IsSelected
     {
         get => _isSelected;
-        set => Set(ref _isSelected, value);
+        set
+        {
+            if (!Set(ref _isSelected, value))
+                return;
+
+            RaiseStylePropertiesChanged();
+        }
+    }
+
+    public bool IsHovered
+    {
+        get => _isHovered;
+        set
+        {
+            if (!Set(ref _isHovered, value))
+                return;
+
+            RaiseStylePropertiesChanged();
+        }
+    }
+
+    public bool IsDimmed
+    {
+        get => _isDimmed;
+        set
+        {
+            if (!Set(ref _isDimmed, value))
+                return;
+
+            RaiseStylePropertiesChanged();
+        }
+    }
+
+    public ErVisualState VisualState
+    {
+        get => _visualState;
+        set
+        {
+            if (!Set(ref _visualState, value))
+                return;
+
+            RaiseStylePropertiesChanged();
+        }
     }
 
     public double StartX
@@ -174,7 +219,7 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
 
     public int ColumnPairCount => Math.Min(ChildColumns.Count, ParentColumns.Count);
 
-    public string ConstraintLabel => string.IsNullOrWhiteSpace(ConstraintName) ? "Relacionamento sem nome" : ConstraintName;
+    public string ConstraintLabel => string.IsNullOrWhiteSpace(ConstraintName) ? "Unnamed relationship" : ConstraintName;
 
     public string MappingSummary =>
         string.Join(" | ", ChildColumns.Zip(ParentColumns, static (child, parent) => $"{child} -> {parent}"));
@@ -187,7 +232,28 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
                 (child, parent) => $"{ChildEntityId}.{child} = {ParentEntityId}.{parent}"));
 
     public string TooltipText =>
-        $"{ChildEntityId}.{FormatColumnList(ChildColumns)} -> {ParentEntityId}.{FormatColumnList(ParentColumns)}";
+        $"{ConstraintLabel}\n{ChildEntityId}.{FormatColumnList(ChildColumns)} -> {ParentEntityId}.{FormatColumnList(ParentColumns)}\nDELETE: {OnDelete} | UPDATE: {OnUpdate}";
+
+    public string HitStroke => "#00FFFFFF";
+
+    public string StrokeColor =>
+        IsSelected
+            ? "#3B82F6"
+            : IsHovered
+                ? "#9FB7DE"
+                : VisualState switch
+                {
+                    ErVisualState.Warning => "#F59E0B",
+                    ErVisualState.Error => "#EF4444",
+                    ErVisualState.Changed => "#C47A3A",
+                    ErVisualState.ConnectedHighlight => "#7FA36A",
+                    _ => "#64748B",
+                };
+
+    public double StrokeThickness =>
+        IsSelected ? 2.8d : IsHovered ? 2.3d : 1.6d;
+
+    public double StrokeOpacity => IsDimmed ? 0.2d : 0.92d;
 
     public void SetRoute(IEnumerable<Point> routePoints)
     {
@@ -198,4 +264,12 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
 
     private static string FormatColumnList(IReadOnlyList<string> columns) =>
         columns.Count <= 1 ? (columns.FirstOrDefault() ?? string.Empty) : $"({string.Join(", ", columns)})";
+
+    private void RaiseStylePropertiesChanged()
+    {
+        RaisePropertyChanged(nameof(StrokeColor));
+        RaisePropertyChanged(nameof(StrokeThickness));
+        RaisePropertyChanged(nameof(StrokeOpacity));
+    }
 }
+

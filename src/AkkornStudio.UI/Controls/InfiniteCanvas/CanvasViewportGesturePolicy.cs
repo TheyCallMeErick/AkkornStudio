@@ -19,8 +19,8 @@ public sealed record CanvasViewportGesturePolicy(
     public static CanvasViewportGesturePolicy ErCanvasDefault { get; } = new(
         PanWithMiddleButton: true,
         PanWithAltLeftButton: true,
-        PanWithSpaceLeftButton: false,
-        PanWithRightButton: true,
+        PanWithSpaceLeftButton: true,
+        PanWithRightButton: false,
         PanWithPrimaryLeftButton: false);
 }
 

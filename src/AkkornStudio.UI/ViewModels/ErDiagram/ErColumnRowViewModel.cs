@@ -1,4 +1,6 @@
 using AkkornStudio.UI.ViewModels;
+using Avalonia.Media;
+using Avalonia;
 
 namespace AkkornStudio.UI.ViewModels.ErDiagram;
 
@@ -31,6 +33,8 @@ public sealed class ErColumnRowViewModel : ViewModelBase
 
     public string DataType { get; }
 
+    public string DataTypeDisplay => $"{NullabilityIcon} {DataType}";
+
     public bool IsNullable { get; }
 
     public bool IsPrimaryKey { get; }
@@ -41,13 +45,84 @@ public sealed class ErColumnRowViewModel : ViewModelBase
 
     public string? Comment { get; }
 
-    public string Badge => IsPrimaryKey ? "PK" : IsForeignKey ? "FK" : string.Empty;
+    public bool HasPrimaryKeyBadge => IsPrimaryKey;
 
-    public bool HasBadge => !string.IsNullOrWhiteSpace(Badge);
+    public bool HasForeignKeyBadge => IsForeignKey;
+
+    public bool HasIndexBadge => IsUnique;
+
+    public string KeyTag =>
+        IsPrimaryKey ? "PK" :
+        IsForeignKey ? "FK" :
+        IsUnique ? "IX" : "COL";
+
+    public string NullabilityLabel => IsNullable ? "NULL" : "NOT NULL";
+
+    public string NullabilityIcon => IsNullable ? "?" : "!";
+
+    public string NullabilityChip => IsNullable ? "NULL" : "NOT NULL";
+
+    public IBrush TypeBrush => ResolveTypeBrush(DataType);
+
+    public IBrush NameBrush =>
+        IsPrimaryKey
+            ? new SolidColorBrush(Color.Parse("#DDE8FF"))
+            : IsForeignKey
+                ? new SolidColorBrush(Color.Parse("#D7F1E8"))
+                : new SolidColorBrush(Color.Parse("#E8EAED"));
+
+    public FontWeight NameWeight =>
+        IsPrimaryKey || IsForeignKey ? FontWeight.SemiBold : FontWeight.Medium;
+
+    public IBrush NullabilityBrush =>
+        IsNullable
+            ? new SolidColorBrush(Color.Parse("#7B879D"))
+            : new SolidColorBrush(Color.Parse("#C47A3A"));
 
     public bool IsRelationEndpointHighlighted
     {
         get => _isRelationEndpointHighlighted;
         set => Set(ref _isRelationEndpointHighlighted, value);
+    }
+
+    private static IBrush ResolveTypeBrush(string? dataType)
+    {
+        string normalized = (dataType ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalized.Length == 0)
+            return new SolidColorBrush(Color.Parse("#8FA3C7"));
+
+        if (normalized.Contains("int")
+            || normalized.Contains("decimal")
+            || normalized.Contains("numeric")
+            || normalized.Contains("float")
+            || normalized.Contains("double")
+            || normalized.Contains("real")
+            || normalized.Contains("money"))
+        {
+            return new SolidColorBrush(Color.Parse("#7CC8FF"));
+        }
+
+        if (normalized.Contains("char")
+            || normalized.Contains("text")
+            || normalized.Contains("string")
+            || normalized.Contains("clob"))
+        {
+            return new SolidColorBrush(Color.Parse("#8FF7C1"));
+        }
+
+        if (normalized.Contains("date")
+            || normalized.Contains("time")
+            || normalized.Contains("timestamp"))
+        {
+            return new SolidColorBrush(Color.Parse("#FFC98A"));
+        }
+
+        if (normalized.Contains("bool")
+            || normalized.Contains("bit"))
+        {
+            return new SolidColorBrush(Color.Parse("#F4A5FF"));
+        }
+
+        return new SolidColorBrush(Color.Parse("#B2C3DF"));
     }
 }

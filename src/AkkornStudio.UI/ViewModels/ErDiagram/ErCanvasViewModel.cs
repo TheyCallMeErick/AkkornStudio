@@ -9,17 +9,16 @@ using AkkornStudio.CanvasKit;
 namespace AkkornStudio.UI.ViewModels.ErDiagram;
 
 /// <summary>
-/// Represents the full ER canvas state for read-only schema visualization.
+/// Represents the full ER canvas state for schema visualization and editing.
 /// </summary>
 public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICanvasViewportSelectionState
 {
-    private const double EntityWidth = 220d;
-    private const double HeaderHeight = 36d;
-    private const double ColumnRowHeight = 22d;
+    private const double EntityWidth = 420d;
 
     private Action<ErRelationEdgeViewModel>? _openSelectionInQuery;
     private ErEntityNodeViewModel? _selectedEntity;
     private ErRelationEdgeViewModel? _selectedEdge;
+    private ErRelationEdgeViewModel? _hoveredEdge;
     private double _viewportX;
     private double _viewportY;
     private double _zoom = 1.0;
@@ -31,15 +30,30 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
     private bool _includeViews;
     private bool _isRebuilding;
     private bool _pendingAutoFit;
+    private bool _isDirty;
+    private bool _refreshNeedsConfirmation;
+    private ErNodeDensity _selectedDensity = ErNodeDensity.Normal;
+    private string _searchTerm = string.Empty;
+    private bool _isMinimapVisible;
+    private bool _isFocusModeEnabled = true;
     private DbMetadata? _sourceMetadata;
+    private Func<ErCanvasSyncRequest, bool>? _syncToDdl;
+    private readonly ErEditHistory _history = new();
 
     public ErCanvasViewModel()
     {
         Entities = [];
         Edges = [];
         TechnicalWarnings = [];
-        RefreshCommand = new RelayCommand(RefreshFromSourceMetadata);
+        RefreshCommand = new RelayCommand(RequestRefreshFromSourceMetadata);
         OpenSelectionInQueryCommand = new RelayCommand(OpenSelectionInQuery, CanOpenSelectionInQuery);
+        SyncToDdlCommand = new RelayCommand(SyncToDdl, CanSyncToDdl);
+        UndoCommand = new RelayCommand(UndoFromCommand, () => CanUndo);
+        RedoCommand = new RelayCommand(RedoFromCommand, () => CanRedo);
+        DeleteSelectionCommand = new RelayCommand(DeleteSelectionFromCommand, () => HasSelectionDetails);
+        FindEntityCommand = new RelayCommand(FindAndSelectEntity, CanFindEntity);
+        AutoLayoutCommand = new RelayCommand(ApplyAutoLayout, CanAutoLayout);
+        FitToScreenCommand = new RelayCommand(FitToContents, () => EntityCount > 0);
 
         Entities.CollectionChanged += OnEntitiesChanged;
         Edges.CollectionChanged += OnEdgesChanged;
@@ -78,6 +92,8 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
                 RaisePropertyChanged(nameof(SelectedEdge));
             }
 
+            SetHoveredEdge(null);
+
             ApplySelectionHighlights();
             RaiseSelectionDetailPropertiesChanged();
         }
@@ -109,6 +125,8 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
                 RaisePropertyChanged(nameof(SelectedEntity));
             }
 
+            SetHoveredEdge(null);
+
             ApplySelectionHighlights();
             RaiseSelectionDetailPropertiesChanged();
         }
@@ -129,7 +147,13 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
     public double Zoom
     {
         get => _zoom;
-        set => Set(ref _zoom, value);
+        set
+        {
+            if (!Set(ref _zoom, value))
+                return;
+
+            RaisePropertyChanged(nameof(ZoomDisplay));
+        }
     }
 
     public Point PanOffset
@@ -167,18 +191,88 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
         }
     }
 
+    public ErNodeDensity SelectedDensity
+    {
+        get => _selectedDensity;
+        set
+        {
+            if (!Set(ref _selectedDensity, value))
+                return;
+
+            foreach (ErEntityNodeViewModel entity in Entities)
+                entity.Density = value;
+
+            RecomputeEdgeGeometry();
+        }
+    }
+
+    public IReadOnlyList<ErNodeDensity> DensityOptions { get; } =
+    [
+        ErNodeDensity.Compact,
+        ErNodeDensity.Normal,
+        ErNodeDensity.Detailed
+    ];
+
+    public string SearchTerm
+    {
+        get => _searchTerm;
+        set
+        {
+            if (!Set(ref _searchTerm, value))
+                return;
+
+            FindEntityCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    public bool IsMinimapVisible
+    {
+        get => _isMinimapVisible;
+        set => Set(ref _isMinimapVisible, value);
+    }
+
+    public bool IsFocusModeEnabled
+    {
+        get => _isFocusModeEnabled;
+        set
+        {
+            if (!Set(ref _isFocusModeEnabled, value))
+                return;
+
+            ApplySelectionHighlights();
+        }
+    }
+
     public int EntityCount => Entities.Count;
 
     public int EdgeCount => Edges.Count;
+
+    public string ZoomDisplay => $"{Zoom * 100:0}%";
 
     public bool HasTechnicalWarnings => TechnicalWarnings.Count > 0;
 
     public bool HasSelectionDetails => SelectedEntity is not null || SelectedEdge is not null;
 
+    public bool IsDirty
+    {
+        get => _isDirty;
+        private set => Set(ref _isDirty, value);
+    }
+
+    public bool RefreshNeedsConfirmation
+    {
+        get => _refreshNeedsConfirmation;
+        private set => Set(ref _refreshNeedsConfirmation, value);
+    }
+
+    public bool CanUndo => _history.CanUndo;
+
+    public bool CanRedo => _history.CanRedo;
+
     public string StatusMessage =>
         _sourceMetadata is null
             ? "Conecte-se a um banco para gerar o diagrama ER."
-            : $"Fonte sincronizada com {EntityCount} entidade(s) e {EdgeCount} relaçao(oes).";
+            : $"Fonte sincronizada com {EntityCount} entidade(s) e {EdgeCount} relacao(oes).{(IsDirty ? " Alteracoes locais pendentes." : string.Empty)}";
 
     public string SelectionTitle =>
         SelectedEdge is not null
@@ -227,6 +321,20 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
 
     public RelayCommand OpenSelectionInQueryCommand { get; }
 
+    public RelayCommand SyncToDdlCommand { get; }
+
+    public RelayCommand UndoCommand { get; }
+
+    public RelayCommand RedoCommand { get; }
+
+    public RelayCommand DeleteSelectionCommand { get; }
+
+    public RelayCommand FindEntityCommand { get; }
+
+    public RelayCommand AutoLayoutCommand { get; }
+
+    public RelayCommand FitToScreenCommand { get; }
+
     public void BindSourceMetadata(DbMetadata? metadata, bool rebuild = true)
     {
         _sourceMetadata = metadata;
@@ -242,15 +350,166 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
         OpenSelectionInQueryCommand.NotifyCanExecuteChanged();
     }
 
+    public void BindSyncToDdl(Func<ErCanvasSyncRequest, bool>? syncToDdl)
+    {
+        _syncToDdl = syncToDdl;
+        SyncToDdlCommand.NotifyCanExecuteChanged();
+    }
+
+    public void MarkDirty()
+    {
+        IsDirty = true;
+        RefreshNeedsConfirmation = false;
+        RaisePropertyChanged(nameof(StatusMessage));
+        SyncToDdlCommand.NotifyCanExecuteChanged();
+    }
+
+    public void RecordEntityMove(ErEntityNodeViewModel entity, Point from, Point to)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        if (Math.Abs(from.X - to.X) < 0.001 && Math.Abs(from.Y - to.Y) < 0.001)
+            return;
+
+        ExecuteMutation(new ErCanvasMutation(
+            Description: "ER: mover tabela",
+            Execute: () =>
+            {
+                entity.X = to.X;
+                entity.Y = to.Y;
+                RecomputeEdgeGeometry();
+            },
+            Undo: () =>
+            {
+                entity.X = from.X;
+                entity.Y = from.Y;
+                RecomputeEdgeGeometry();
+            }));
+    }
+
+    public bool DeleteSelection()
+    {
+        if (SelectedEdge is not null)
+        {
+            ErRelationEdgeViewModel edge = SelectedEdge;
+            ExecuteMutation(new ErCanvasMutation(
+                Description: "ER: remover relacionamento",
+                Execute: () =>
+                {
+                    Edges.Remove(edge);
+                    if (ReferenceEquals(SelectedEdge, edge))
+                        SelectedEdge = null;
+                    RecomputeEdgeGeometry();
+                },
+                Undo: () =>
+                {
+                    if (!Edges.Contains(edge))
+                        Edges.Add(edge);
+                    SelectedEdge = edge;
+                    RecomputeEdgeGeometry();
+                }));
+            return true;
+        }
+
+        if (SelectedEntity is null)
+            return false;
+
+        ErEntityNodeViewModel entity = SelectedEntity;
+        List<ErRelationEdgeViewModel> attachedEdges = [.. GetEdgesForEntity(entity.Id)];
+        int originalIndex = Entities.IndexOf(entity);
+        ExecuteMutation(new ErCanvasMutation(
+            Description: "ER: remover tabela",
+            Execute: () =>
+            {
+                foreach (ErRelationEdgeViewModel edge in attachedEdges)
+                    Edges.Remove(edge);
+                Entities.Remove(entity);
+                ClearSelection();
+                RecomputeEdgeGeometry();
+            },
+            Undo: () =>
+            {
+                int restoreIndex = originalIndex < 0 ? Entities.Count : Math.Min(originalIndex, Entities.Count);
+                if (!Entities.Contains(entity))
+                    Entities.Insert(restoreIndex, entity);
+                foreach (ErRelationEdgeViewModel edge in attachedEdges)
+                {
+                    if (!Edges.Contains(edge))
+                        Edges.Add(edge);
+                }
+                SelectedEntity = entity;
+                RecomputeEdgeGeometry();
+            }));
+        return true;
+    }
+
+    private void DeleteSelectionFromCommand() => DeleteSelection();
+
+    public bool Undo()
+    {
+        bool undone = _history.Undo();
+        if (!undone)
+            return false;
+
+        OnHistoryChanged();
+        return true;
+    }
+
+    private void UndoFromCommand() => Undo();
+
+    private void RedoFromCommand() => Redo();
+
+    public bool Redo()
+    {
+        bool redone = _history.Redo();
+        if (!redone)
+            return false;
+
+        OnHistoryChanged();
+        return true;
+    }
+
     public void ClearSelection()
     {
         if (SelectedEntity is not null)
             SelectedEntity.IsSelected = false;
 
+        SetHoveredEdge(null);
         SelectedEntity = null;
         SelectedEdge = null;
         ApplySelectionHighlights();
         RaiseSelectionDetailPropertiesChanged();
+    }
+
+    public void SetHoveredEdge(ErRelationEdgeViewModel? edge)
+    {
+        if (ReferenceEquals(_hoveredEdge, edge))
+            return;
+
+        if (_hoveredEdge is not null)
+            _hoveredEdge.IsHovered = false;
+
+        _hoveredEdge = edge;
+
+        if (_hoveredEdge is not null)
+            _hoveredEdge.IsHovered = true;
+
+        ApplySelectionHighlights();
+    }
+
+    public void SetHoveredRelationByColumn(string entityId, string columnName)
+    {
+        if (string.IsNullOrWhiteSpace(entityId) || string.IsNullOrWhiteSpace(columnName))
+        {
+            SetHoveredEdge(null);
+            return;
+        }
+
+        ErRelationEdgeViewModel? edge = Edges.FirstOrDefault(candidate =>
+            (string.Equals(candidate.ChildEntityId, entityId, StringComparison.OrdinalIgnoreCase)
+             && candidate.ChildColumns.Any(column => string.Equals(column, columnName, StringComparison.OrdinalIgnoreCase)))
+            || (string.Equals(candidate.ParentEntityId, entityId, StringComparison.OrdinalIgnoreCase)
+                && candidate.ParentColumns.Any(column => string.Equals(column, columnName, StringComparison.OrdinalIgnoreCase))));
+        SetHoveredEdge(edge);
     }
 
     public void ReplaceContents(ErCanvasViewModel source)
@@ -265,7 +524,10 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
         TechnicalWarnings.Clear();
 
         foreach (ErEntityNodeViewModel entity in source.Entities)
+        {
+            entity.Density = SelectedDensity;
             Entities.Add(entity);
+        }
 
         foreach (ErRelationEdgeViewModel edge in source.Edges)
             Edges.Add(edge);
@@ -345,7 +607,7 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
         if (SelectedEntity is not null)
         {
             FocusTargetX = SelectedEntity.X + (EntityWidth / 2d);
-            FocusTargetY = SelectedEntity.Y + GetEntityHeight(SelectedEntity) / 2d;
+            FocusTargetY = SelectedEntity.Y + SelectedEntity.NodeHeight / 2d;
             FocusRequestVersion++;
         }
     }
@@ -358,7 +620,7 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
                 SelectedEntity.X - padding,
                 SelectedEntity.Y - padding,
                 EntityWidth + (padding * 2d),
-                GetEntityHeight(SelectedEntity) + (padding * 2d));
+                SelectedEntity.NodeHeight + (padding * 2d));
             return true;
         }
 
@@ -386,11 +648,11 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
     public bool TrySelectEntityInRegion(Rect region)
     {
         ErEntityNodeViewModel? selected = Entities
-            .Where(entity => region.Intersects(new Rect(entity.X, entity.Y, EntityWidth, GetEntityHeight(entity))))
+            .Where(entity => region.Intersects(new Rect(entity.X, entity.Y, EntityWidth, entity.NodeHeight)))
             .OrderBy(entity =>
             {
                 double centerX = entity.X + (EntityWidth / 2d);
-                double centerY = entity.Y + (GetEntityHeight(entity) / 2d);
+                double centerY = entity.Y + (entity.NodeHeight / 2d);
                 double dx = centerX - region.Center.X;
                 double dy = centerY - region.Center.Y;
                 return (dx * dx) + (dy * dy);
@@ -468,7 +730,7 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
                 entity.X,
                 entity.Y,
                 EntityWidth,
-                GetEntityHeight(entity)))
+                entity.NodeHeight))
             .ToArray();
         if (!CanvasViewportMath.TryGetSelectionBounds(frames, out CanvasSelectionBounds bounds))
             return;
@@ -487,16 +749,59 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
     {
         RaisePropertyChanged(nameof(EntityCount));
         RaisePropertyChanged(nameof(StatusMessage));
+        DeleteSelectionCommand.NotifyCanExecuteChanged();
+        SyncToDdlCommand.NotifyCanExecuteChanged();
+        AutoLayoutCommand.NotifyCanExecuteChanged();
+        FitToScreenCommand.NotifyCanExecuteChanged();
+        FindEntityCommand.NotifyCanExecuteChanged();
     }
 
     private void OnEdgesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         RaisePropertyChanged(nameof(EdgeCount));
         RaisePropertyChanged(nameof(StatusMessage));
+        DeleteSelectionCommand.NotifyCanExecuteChanged();
+        SyncToDdlCommand.NotifyCanExecuteChanged();
     }
 
     private void OnTechnicalWarningsChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
         RaisePropertyChanged(nameof(HasTechnicalWarnings));
+
+    public void RecomputeEdgeGeometry()
+    {
+        ErCanvasBuilder.RecomputeEdgeGeometry(this);
+    }
+
+    private void ExecuteMutation(ErCanvasMutation mutation)
+    {
+        _history.Execute(mutation);
+        IsDirty = true;
+        RefreshNeedsConfirmation = false;
+        OnHistoryChanged();
+        RecomputeEdgeGeometry();
+    }
+
+    private void OnHistoryChanged()
+    {
+        RaisePropertyChanged(nameof(CanUndo));
+        RaisePropertyChanged(nameof(CanRedo));
+        RaisePropertyChanged(nameof(StatusMessage));
+        UndoCommand.NotifyCanExecuteChanged();
+        RedoCommand.NotifyCanExecuteChanged();
+        SyncToDdlCommand.NotifyCanExecuteChanged();
+    }
+
+    private void RequestRefreshFromSourceMetadata()
+    {
+        if (IsDirty && !RefreshNeedsConfirmation)
+        {
+            RefreshNeedsConfirmation = true;
+            AddTechnicalWarning("W-ER-REFRESH-CONFIRMATION-REQUIRED");
+            return;
+        }
+
+        RefreshFromSourceMetadata();
+    }
 
     private void RefreshFromSourceMetadata()
     {
@@ -509,6 +814,10 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
             _pendingAutoFit = false;
             Zoom = 1.0;
             PanOffset = new Point(0, 0);
+            IsDirty = false;
+            RefreshNeedsConfirmation = false;
+            _history.Clear();
+            OnHistoryChanged();
             RaisePropertyChanged(nameof(StatusMessage));
             return;
         }
@@ -517,6 +826,10 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
         rebuilt.BindSourceMetadata(_sourceMetadata, rebuild: false);
         ReplaceContents(rebuilt);
         _pendingAutoFit = true;
+        IsDirty = false;
+        RefreshNeedsConfirmation = false;
+        _history.Clear();
+        OnHistoryChanged();
         TryConsumePendingAutoFit();
     }
 
@@ -534,33 +847,52 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
     private void ApplySelectionHighlights()
     {
         Dictionary<string, HashSet<string>> highlights = new(StringComparer.OrdinalIgnoreCase);
+        ErRelationEdgeViewModel? activeEdge = SelectedEdge ?? _hoveredEdge;
+        HashSet<ErRelationEdgeViewModel> focusedEdges = [];
+        HashSet<string> focusedEntities = new(StringComparer.OrdinalIgnoreCase);
 
-        if (SelectedEdge is not null)
+        if (activeEdge is not null)
         {
             foreach (ErRelationEdgeViewModel edge in Edges)
-                edge.IsSelected = ReferenceEquals(edge, SelectedEdge);
+            {
+                edge.IsSelected = SelectedEdge is not null && ReferenceEquals(edge, SelectedEdge);
+                edge.VisualState = ReferenceEquals(edge, activeEdge)
+                    ? ErVisualState.ConnectedHighlight
+                    : ErVisualState.Normal;
+            }
 
-            AddColumnHighlights(highlights, SelectedEdge.ChildEntityId, SelectedEdge.ChildColumns);
-            AddColumnHighlights(highlights, SelectedEdge.ParentEntityId, SelectedEdge.ParentColumns);
+            AddColumnHighlights(highlights, activeEdge.ChildEntityId, activeEdge.ChildColumns);
+            AddColumnHighlights(highlights, activeEdge.ParentEntityId, activeEdge.ParentColumns);
+            focusedEdges.Add(activeEdge);
+            focusedEntities.Add(activeEdge.ChildEntityId);
+            focusedEntities.Add(activeEdge.ParentEntityId);
         }
         else if (SelectedEntity is not null)
         {
             HashSet<ErRelationEdgeViewModel> selectedEdges = [.. GetEdgesForEntity(SelectedEntity.Id)];
+            focusedEntities.Add(SelectedEntity.Id);
             foreach (ErRelationEdgeViewModel edge in Edges)
             {
                 bool isSelected = selectedEdges.Contains(edge);
                 edge.IsSelected = isSelected;
+                edge.VisualState = isSelected ? ErVisualState.ConnectedHighlight : ErVisualState.Normal;
                 if (!isSelected)
                     continue;
 
                 AddColumnHighlights(highlights, edge.ChildEntityId, edge.ChildColumns);
                 AddColumnHighlights(highlights, edge.ParentEntityId, edge.ParentColumns);
+                focusedEdges.Add(edge);
+                focusedEntities.Add(edge.ChildEntityId);
+                focusedEntities.Add(edge.ParentEntityId);
             }
         }
         else
         {
             foreach (ErRelationEdgeViewModel edge in Edges)
+            {
                 edge.IsSelected = false;
+                edge.VisualState = ErVisualState.Normal;
+            }
         }
 
         foreach (ErEntityNodeViewModel entity in Entities)
@@ -569,7 +901,17 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
                 columns = [];
 
             entity.HighlightColumns(columns);
+            entity.VisualState = columns.Count > 0 ? ErVisualState.ConnectedHighlight : ErVisualState.Normal;
+            if (ReferenceEquals(entity, SelectedEntity))
+                entity.IsSelected = true;
         }
+
+        bool shouldDim = IsFocusModeEnabled && (activeEdge is not null || SelectedEntity is not null);
+        foreach (ErRelationEdgeViewModel edge in Edges)
+            edge.IsDimmed = shouldDim && !focusedEdges.Contains(edge);
+
+        foreach (ErEntityNodeViewModel entity in Entities)
+            entity.IsDimmed = shouldDim && !focusedEntities.Contains(entity.Id);
     }
 
     private static void AddColumnHighlight(
@@ -603,7 +945,77 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
         RaisePropertyChanged(nameof(SelectionBody));
         RaisePropertyChanged(nameof(SelectionJoinPredicate));
         RaisePropertyChanged(nameof(HasSelectionJoinPredicate));
+        DeleteSelectionCommand.NotifyCanExecuteChanged();
         OpenSelectionInQueryCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanSyncToDdl() => _syncToDdl is not null && Entities.Count > 0;
+
+    private void SyncToDdl()
+    {
+        if (_syncToDdl is null)
+            return;
+
+        var request = new ErCanvasSyncRequest(
+            Entities: [.. Entities],
+            Edges: [.. Edges]);
+
+        if (!_syncToDdl(request))
+            return;
+
+        IsDirty = false;
+        RefreshNeedsConfirmation = false;
+        RaisePropertyChanged(nameof(StatusMessage));
+        SyncToDdlCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanFindEntity() =>
+        !string.IsNullOrWhiteSpace(SearchTerm) && Entities.Count > 0;
+
+    private void FindAndSelectEntity()
+    {
+        if (string.IsNullOrWhiteSpace(SearchTerm))
+            return;
+
+        ErEntityNodeViewModel? entity = Entities.FirstOrDefault(candidate =>
+            candidate.DisplayName.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)
+            || candidate.DisplaySchema.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)
+            || candidate.Id.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase));
+        if (entity is null)
+            return;
+
+        SelectedEntity = entity;
+        RequestViewportFocusForCurrentSelection();
+    }
+
+    private bool CanAutoLayout() => Entities.Count > 1;
+
+    private void ApplyAutoLayout()
+    {
+        var previous = Entities
+            .ToDictionary(
+                static entity => entity.Id,
+                static entity => new Point(entity.X, entity.Y),
+                StringComparer.OrdinalIgnoreCase);
+
+        ExecuteMutation(new ErCanvasMutation(
+            Description: "ER: auto layout",
+            Execute: () =>
+            {
+                ErCanvasBuilder.AutoLayout(this);
+            },
+            Undo: () =>
+            {
+                foreach (ErEntityNodeViewModel entity in Entities)
+                {
+                    if (previous.TryGetValue(entity.Id, out Point point))
+                    {
+                        entity.X = point.X;
+                        entity.Y = point.Y;
+                    }
+                }
+                RecomputeEdgeGeometry();
+            }));
     }
 
     private static bool MatchesColumns(IReadOnlyList<string> candidate, IReadOnlyList<string>? expected)
@@ -622,9 +1034,6 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
 
         return true;
     }
-
-    private static double GetEntityHeight(ErEntityNodeViewModel entity) =>
-        HeaderHeight + (entity.Columns.Count * ColumnRowHeight);
 
     private bool CanOpenSelectionInQuery() => SelectedEdge is not null && _openSelectionInQuery is not null;
 

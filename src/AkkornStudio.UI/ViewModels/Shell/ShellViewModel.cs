@@ -540,6 +540,9 @@ public sealed class ShellViewModel : ViewModelBase
 
     public void ActivateDocument(WorkspaceDocumentType documentType)
     {
+        if (documentType == WorkspaceDocumentType.ErDiagram && !CanActivateErDiagram())
+            return;
+
         if (ActiveWorkspaceDocumentType == documentType)
         {
             if (documentType == WorkspaceDocumentType.ErDiagram)
@@ -550,7 +553,11 @@ public sealed class ShellViewModel : ViewModelBase
         OpenWorkspaceDocument? target = _workspaceRouter.OpenDocuments
             .LastOrDefault(document => document.Descriptor.DocumentType == documentType);
         if (documentType == WorkspaceDocumentType.ErDiagram && target?.DocumentViewModel is ErCanvasViewModel erCanvas)
+        {
+            erCanvas.BindQueryNavigation(OpenErRelationInQuery);
+            erCanvas.BindSyncToDdl(SyncErToDdlCanvas);
             erCanvas.BindSourceMetadata(ResolveSharedMetadata());
+        }
         bool changed = target is not null && _workspaceRouter.TryActivate(target.Descriptor.DocumentId);
         if (!changed)
         {
@@ -559,8 +566,36 @@ public sealed class ShellViewModel : ViewModelBase
         }
 
         SyncStateFromActiveDocument();
+        if (documentType == WorkspaceDocumentType.ErDiagram)
+            RefreshErDiagramDocument();
         RaiseActiveDocumentPropertiesChanged();
         SyncExtractedPanels();
+    }
+
+    private bool CanActivateErDiagram()
+    {
+        ConnectionConfig? connection = ResolveSharedActiveConnectionConfig();
+        if (connection is null)
+        {
+            Toasts.ShowWarning(
+                "Conexao obrigatoria para o ER.",
+                "Conecte-se a um banco antes de abrir o diagrama ER.");
+            EnsureCanvas().ConnectionManager.IsVisible = true;
+            RaisePropertyChanged(nameof(IsConnectionManagerOverlayVisible));
+            RaisePropertyChanged(nameof(ConnectionManagerOverlay));
+            return false;
+        }
+
+        DbMetadata? metadata = ResolveSharedMetadata();
+        if (metadata is null)
+        {
+            Toasts.ShowWarning(
+                "Metadata indisponivel para o ER.",
+                "Atualize os metadados da conexao e tente novamente.");
+            return false;
+        }
+
+        return true;
     }
 
     public Guid OpenNewDocument(WorkspaceDocumentType documentType)
@@ -1676,6 +1711,7 @@ public sealed class ShellViewModel : ViewModelBase
         DbMetadata? metadata = ResolveSharedMetadata();
         var erCanvas = new ErCanvasViewModel();
         erCanvas.BindQueryNavigation(OpenErRelationInQuery);
+        erCanvas.BindSyncToDdl(SyncErToDdlCanvas);
         erCanvas.BindSourceMetadata(metadata);
         return erCanvas;
     }
@@ -1687,7 +1723,181 @@ public sealed class ShellViewModel : ViewModelBase
                 .LastOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.ErDiagram)
                 ?.DocumentViewModel as ErCanvasViewModel;
         erCanvas?.BindQueryNavigation(OpenErRelationInQuery);
+        erCanvas?.BindSyncToDdl(SyncErToDdlCanvas);
         erCanvas?.BindSourceMetadata(ResolveSharedMetadata());
+    }
+
+    private bool SyncErToDdlCanvas(ErCanvasSyncRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Entities.Count == 0)
+            return false;
+
+        DatabaseProvider provider = ResolveErSyncProvider();
+        DbMetadata metadata = BuildMetadataFromErRequest(request, provider);
+        CanvasViewModel ddlCanvas = EnsureDdlCanvas();
+
+        var scratch = new CanvasViewModel(
+            nodeManager: null,
+            pinManager: null,
+            selectionManager: null,
+            localizationService: null,
+            domainStrategy: new DdlDomainStrategy(),
+            toastCenter: Toasts,
+            connectionManagerFactory: _connectionManagerViewModelFactory)
+        {
+            Provider = metadata.Provider,
+        };
+
+        var importer = new DdlSchemaImporter();
+        DdlImportResult result = importer.Import(metadata, scratch);
+
+        ddlCanvas.Provider = metadata.Provider;
+        ddlCanvas.ReplaceGraph(scratch.Nodes.ToList(), scratch.Connections.ToList());
+        ActivateDocument(WorkspaceDocumentType.DdlCanvas);
+        Toasts.ShowSuccess(
+            "ER sincronizado para DDL.",
+            $"{result.TableCount} tabela(s), {result.ColumnCount} coluna(s), {result.ForeignKeyCount} FK(s).");
+        return true;
+    }
+
+    private DatabaseProvider ResolveErSyncProvider()
+    {
+        if (DdlCanvas is not null)
+            return DdlCanvas.Provider;
+
+        ConnectionConfig? connection = ResolveSharedActiveConnectionConfig();
+        return connection?.Provider ?? DatabaseProvider.Postgres;
+    }
+
+    private static DbMetadata BuildMetadataFromErRequest(ErCanvasSyncRequest request, DatabaseProvider provider)
+    {
+        string defaultSchema = provider switch
+        {
+            DatabaseProvider.SqlServer => "dbo",
+            DatabaseProvider.SQLite => "main",
+            _ => "public",
+        };
+
+        string ResolveSchema(string? schema) =>
+            string.IsNullOrWhiteSpace(schema) ? defaultSchema : schema.Trim();
+
+        var tableLookup = request.Entities.ToDictionary(
+            entity => entity.Id,
+            StringComparer.OrdinalIgnoreCase);
+
+        var outboundByTable = new Dictionary<string, List<ForeignKeyRelation>>(StringComparer.OrdinalIgnoreCase);
+        var inboundByTable = new Dictionary<string, List<ForeignKeyRelation>>(StringComparer.OrdinalIgnoreCase);
+        foreach (ErEntityNodeViewModel entity in request.Entities.Where(static e => !e.IsView))
+        {
+            outboundByTable[entity.Id] = [];
+            inboundByTable[entity.Id] = [];
+        }
+
+        var allRelations = new List<ForeignKeyRelation>();
+        foreach (ErRelationEdgeViewModel edge in request.Edges)
+        {
+            if (!tableLookup.TryGetValue(edge.ChildEntityId, out ErEntityNodeViewModel? childEntity)
+                || !tableLookup.TryGetValue(edge.ParentEntityId, out ErEntityNodeViewModel? parentEntity)
+                || childEntity.IsView
+                || parentEntity.IsView)
+            {
+                continue;
+            }
+
+            (string childSchema, string childTable) = SplitEntityId(edge.ChildEntityId);
+            (string parentSchema, string parentTable) = SplitEntityId(edge.ParentEntityId);
+            string constraintName = string.IsNullOrWhiteSpace(edge.ConstraintName)
+                ? $"fk_{childTable}_{parentTable}"
+                : edge.ConstraintName!;
+
+            int pairCount = Math.Min(edge.ChildColumns.Count, edge.ParentColumns.Count);
+            for (int i = 0; i < pairCount; i++)
+            {
+                var relation = new ForeignKeyRelation(
+                    ConstraintName: constraintName,
+                    ChildSchema: ResolveSchema(childSchema),
+                    ChildTable: childTable,
+                    ChildColumn: edge.ChildColumns[i],
+                    ParentSchema: ResolveSchema(parentSchema),
+                    ParentTable: parentTable,
+                    ParentColumn: edge.ParentColumns[i],
+                    OnDelete: edge.OnDelete,
+                    OnUpdate: edge.OnUpdate,
+                    OrdinalPosition: i + 1);
+                allRelations.Add(relation);
+                outboundByTable[childEntity.Id].Add(relation);
+                inboundByTable[parentEntity.Id].Add(relation);
+            }
+        }
+
+        var schemaGroups = request.Entities
+            .Where(static e => !e.IsView)
+            .GroupBy(entity => ResolveSchema(entity.Schema), StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                List<TableMetadata> tables = group.Select(entity =>
+                {
+                    IReadOnlyList<ColumnMetadata> columns = entity.Columns
+                        .Select((column, index) => new ColumnMetadata(
+                            Name: column.ColumnName,
+                            DataType: column.DataType,
+                            NativeType: column.DataType,
+                            IsNullable: column.IsNullable,
+                            IsPrimaryKey: column.IsPrimaryKey,
+                            IsForeignKey: column.IsForeignKey,
+                            IsUnique: column.IsUnique,
+                            IsIndexed: column.IsUnique,
+                            OrdinalPosition: index + 1,
+                            DefaultValue: null,
+                            Comment: column.Comment))
+                        .ToList();
+
+                    IReadOnlyList<IndexMetadata> uniqueIndexes = entity.Columns
+                        .Where(static c => c.IsUnique)
+                        .Select(column => new IndexMetadata(
+                            Name: $"uq_{entity.Name}_{column.ColumnName}",
+                            IsUnique: true,
+                            IsClustered: false,
+                            IsPrimaryKey: false,
+                            Columns: [column.ColumnName]))
+                        .ToList();
+
+                    return new TableMetadata(
+                        Schema: ResolveSchema(entity.Schema),
+                        Name: entity.Name,
+                        Kind: TableKind.Table,
+                        EstimatedRowCount: entity.EstimatedRowCount,
+                        Columns: columns,
+                        Indexes: uniqueIndexes,
+                        OutboundForeignKeys: outboundByTable.TryGetValue(entity.Id, out List<ForeignKeyRelation>? outbound)
+                            ? outbound
+                            : [],
+                        InboundForeignKeys: inboundByTable.TryGetValue(entity.Id, out List<ForeignKeyRelation>? inbound)
+                            ? inbound
+                            : []);
+                }).ToList();
+
+                return new SchemaMetadata(group.Key, tables);
+            })
+            .ToList();
+
+        return new DbMetadata(
+            DatabaseName: "er_sync",
+            Provider: provider,
+            ServerVersion: "er",
+            CapturedAt: DateTimeOffset.UtcNow,
+            Schemas: schemaGroups,
+            AllForeignKeys: allRelations);
+    }
+
+    private static (string Schema, string Name) SplitEntityId(string entityId)
+    {
+        int separator = entityId.IndexOf('.', StringComparison.Ordinal);
+        if (separator <= 0)
+            return ("public", entityId.Trim());
+
+        return (entityId[..separator].Trim(), entityId[(separator + 1)..].Trim());
     }
 
     private void OpenErRelationInQuery(ErRelationEdgeViewModel edge)

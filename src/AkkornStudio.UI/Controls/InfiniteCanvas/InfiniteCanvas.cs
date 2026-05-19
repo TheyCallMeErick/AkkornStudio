@@ -105,6 +105,7 @@ public sealed partial class InfiniteCanvas : Panel
         // Transparent background makes the entire panel surface hit-testable,
         // so middle-mouse panning and rubber-band work even on empty canvas areas.
         Background = Brushes.Transparent;
+        _wires.IsHitTestVisible = false;
         Children.Add(_core);
         _scene.Children.Add(_wires);
         _overlay.Children.Add(_guides);
@@ -195,8 +196,6 @@ public sealed partial class InfiniteCanvas : Panel
             {
                 Canvas.SetLeft(nc, vm.Position.X);
                 Canvas.SetTop(nc, vm.Position.Y);
-                nc.Measure(Size.Infinity);
-                nc.Arrange(new Rect(new Point(vm.Position.X, vm.Position.Y), nc.DesiredSize));
             }
 
         _wires.Arrange(new Rect(new Size(20000, 20000)));
@@ -510,11 +509,6 @@ public sealed partial class InfiniteCanvas : Panel
         {
             if (!_nodeControlCache.TryGetValue(node, out NodeControl? nc))
                 continue;
-
-            // CRITICAL: Force re-measure/arrange to ensure pins have correct coordinates
-            // This is essential for TranslatePoint to return accurate positions
-            nc.Measure(Size.Infinity);
-            nc.Arrange(new Rect(new Point(node.Position.X, node.Position.Y), nc.DesiredSize));
 
             // Primary path: PinShapeControl is the active pin visual in current templates.
             foreach (PinShapeControl pinControl in nc.GetLogicalDescendants().OfType<PinShapeControl>())

@@ -65,21 +65,24 @@ public sealed record DdlUniqueExpr(string? ConstraintName, IReadOnlyList<string>
 public sealed record DdlCheckExpr(string? ConstraintName, string Expression);
 
 /// <summary>
-/// Represents a single-column foreign key constraint that can be emitted inline in CREATE TABLE
-/// or reused by ALTER TABLE operations.
+/// Represents a foreign key constraint that can be emitted inline in CREATE TABLE.
+/// Supports single and composite key shapes.
 /// </summary>
 public sealed record DdlForeignKeyExpr(
     string? ConstraintName,
-    string ChildColumn,
+    IReadOnlyList<string> ChildColumns,
     string ParentSchema,
     string ParentTable,
-    string ParentColumn,
+    IReadOnlyList<string> ParentColumns,
     ReferentialAction OnDelete,
     ReferentialAction OnUpdate
 ) : IDdlExpression
 {
     public string Emit(DdlEmitContext context)
     {
+        if (ChildColumns.Count == 0 || ParentColumns.Count == 0 || ChildColumns.Count != ParentColumns.Count)
+            throw new InvalidOperationException("Foreign key requires child/parent columns with matching non-zero cardinality.");
+
         var constraintClause = string.IsNullOrWhiteSpace(ConstraintName)
             ? string.Empty
             : $"CONSTRAINT {ConstraintName} ";
@@ -93,7 +96,9 @@ public sealed record DdlForeignKeyExpr(
             ? string.Empty
             : $" ON UPDATE {EmitAction(OnUpdate)}";
 
-        return $"{constraintClause}FOREIGN KEY ({ChildColumn}) REFERENCES {parentRef} ({ParentColumn}){onDeleteClause}{onUpdateClause}";
+        string childColumnsSql = string.Join(", ", ChildColumns.Select(column => context.Dialect.QuoteIdentifier(column.Trim())));
+        string parentColumnsSql = string.Join(", ", ParentColumns.Select(column => context.Dialect.QuoteIdentifier(column.Trim())));
+        return $"{constraintClause}FOREIGN KEY ({childColumnsSql}) REFERENCES {parentRef} ({parentColumnsSql}){onDeleteClause}{onUpdateClause}";
     }
 
     private static string EmitAction(ReferentialAction action) =>

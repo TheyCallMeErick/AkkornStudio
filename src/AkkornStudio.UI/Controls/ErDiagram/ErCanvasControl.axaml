@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ervm="using:AkkornStudio.UI.ViewModels.ErDiagram"
              xmlns:erc="using:AkkornStudio.UI.Controls.ErDiagram"
@@ -7,21 +7,44 @@
              x:Class="AkkornStudio.UI.Controls.ErDiagram.ErCanvasControl"
              x:DataType="ervm:ErCanvasViewModel">
 
-  <Grid RowDefinitions="Auto,*" Background="{StaticResource Bg0Brush}">
+  <Grid RowDefinitions="Auto,*" Background="#070B14">
     <Border Grid.Row="0"
-            Classes="app-header-shell"
-            Padding="12,8">
+            Padding="10,8"
+            Background="#0D1424"
+            BorderBrush="#1E2A3F"
+            BorderThickness="0,0,0,1">
       <DockPanel LastChildFill="False">
-        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="16">
-          <TextBlock Classes="txt-label"
-                     Foreground="{StaticResource TextPrimaryBrush}"
-                     Text="{Binding EntityCount, StringFormat=Entidades: {0}}"/>
-          <TextBlock Classes="txt-label"
-                     Foreground="{StaticResource TextPrimaryBrush}"
-                     Text="{Binding EdgeCount, StringFormat=Relações: {0}}"/>
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+          <TextBlock Classes="txt-label" Foreground="#E8EAED" Text="{Binding EntityCount, StringFormat=Entities: {0}}"/>
+          <TextBlock Classes="txt-label" Foreground="#E8EAED" Text="{Binding EdgeCount, StringFormat=Relations: {0}}"/>
         </StackPanel>
 
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBox Width="170"
+                   Watermark="Search table/object"
+                   Text="{Binding SearchTerm}"/>
+          <Button Classes="tb compact" Command="{Binding FindEntityCommand}" Padding="8,4">
+            <TextBlock Text="Find"/>
+          </Button>
+
+          <Button Classes="tb compact" Command="{Binding AutoLayoutCommand}" Padding="8,4">
+            <TextBlock Text="Auto layout"/>
+          </Button>
+
+          <ComboBox Width="98"
+                    ItemsSource="{Binding DensityOptions}"
+                    SelectedItem="{Binding SelectedDensity}"/>
+
+          <CheckBox IsChecked="{Binding IncludeViews}" VerticalAlignment="Center"/>
+          <TextBlock Classes="txt-body" Foreground="#9CA3AF" Text="Views" VerticalAlignment="Center"/>
+
+          <Border Background="#121B2D" BorderBrush="#273247" BorderThickness="1" CornerRadius="6" Padding="8,4">
+            <TextBlock Classes="txt-meta" Foreground="#E8EAED" Text="{Binding ZoomDisplay}"/>
+          </Border>
+
+          <Button Classes="tb compact" Command="{Binding FitToScreenCommand}" Padding="8,4">
+            <TextBlock Text="Fit"/>
+          </Button>
           <Button Classes="tb compact"
                   Click="CenterSelection_Click"
                   IsVisible="{Binding HasSelectionDetails}"
@@ -34,170 +57,218 @@
                   Padding="8,4">
             <TextBlock Text="Enquadrar selecao"/>
           </Button>
-          <Button Classes="tb compact"
-                  Command="{Binding RefreshCommand}"
-                  Padding="8,4">
-            <StackPanel Orientation="Horizontal" Spacing="4">
-              <TextBlock Text="Atualizar"/>
-            </StackPanel>
+
+          <ToggleButton Classes="tb compact"
+                        IsChecked="{Binding IsMinimapVisible}"
+                        Padding="8,4">
+            <TextBlock Text="Minimap"/>
+          </ToggleButton>
+          <ToggleButton Classes="tb compact"
+                        IsChecked="{Binding IsFocusModeEnabled}"
+                        Padding="8,4">
+            <TextBlock Text="Focus"/>
+          </ToggleButton>
+
+          <Button Classes="tb compact" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" Padding="8,4">
+            <TextBlock Text="Undo"/>
           </Button>
-          <TextBlock Classes="txt-body"
-                     Foreground="{StaticResource TextSecondaryBrush}"
-                     Text="Incluir Views"
-                     VerticalAlignment="Center"/>
-          <CheckBox IsChecked="{Binding IncludeViews}" VerticalAlignment="Center"/>
+          <Button Classes="tb compact" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}" Padding="8,4">
+            <TextBlock Text="Redo"/>
+          </Button>
+          <Button Classes="tb compact" Command="{Binding DeleteSelectionCommand}" IsEnabled="{Binding HasSelectionDetails}" Padding="8,4">
+            <TextBlock Text="Delete"/>
+          </Button>
+          <Button Classes="tb compact" Command="{Binding SyncToDdlCommand}" Padding="8,4">
+            <TextBlock Text="Sync DDL"/>
+          </Button>
+          <Button Classes="tb compact" Command="{Binding RefreshCommand}" Padding="8,4">
+            <TextBlock Text="Refresh"/>
+          </Button>
         </StackPanel>
       </DockPanel>
     </Border>
 
-    <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*">
-      <Border IsVisible="{Binding HasTechnicalWarnings}"
-              Classes="callout-subtle"
-              BorderThickness="0,0,0,1"
-              CornerRadius="0"
-              Padding="12,8">
-        <StackPanel Spacing="6">
-          <TextBlock Classes="txt-label"
-                     Foreground="{StaticResource TextPrimaryBrush}"
-                     Text="{Binding StatusMessage}"/>
-          <ItemsControl ItemsSource="{Binding TechnicalWarnings}">
+    <Grid Grid.Row="1" ColumnDefinitions="*,320">
+      <Grid Grid.Column="0" Margin="0">
+        <ctrl:InfiniteCanvasCoreControl x:Name="ViewportSurface"
+                                        Viewport="{Binding}"
+                                        Focusable="True"
+                                        PointerWheelChanged="Viewport_PointerWheelChanged"
+                                        PointerPressed="Viewport_PointerPressed"
+                                        PointerMoved="Viewport_PointerMoved"
+                                        PointerReleased="Viewport_PointerReleased">
+          <ctrl:InfiniteCanvasCoreControl.SceneContent>
+            <Canvas x:Name="SceneContentCanvas"
+                    x:DataType="ervm:ErCanvasViewModel"
+                    DataContext="{Binding DataContext, ElementName=ViewportSurface}"
+                    Background="Transparent"
+                    PointerPressed="CanvasBackground_PointerPressed">
+              <ItemsControl x:Name="EdgeItems"
+                            ItemsSource="{Binding Edges}"
+                            Width="{Binding Width, ElementName=SceneContentCanvas}"
+                            Height="{Binding Height, ElementName=SceneContentCanvas}"
+                            ClipToBounds="False">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <Canvas/>
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="ervm:ErRelationEdgeViewModel">
+                    <Canvas>
+                      <shapes:Polyline Points="{Binding RoutePoints}"
+                                       Stroke="{Binding HitStroke}"
+                                       StrokeThickness="14"
+                                       PointerPressed="Edge_PointerPressed"
+                                       PointerEntered="Edge_PointerEntered"
+                                       PointerExited="Edge_PointerExited"
+                                       ToolTip.Tip="{Binding TooltipText}"/>
+
+                      <shapes:Polyline Points="{Binding RoutePoints}"
+                                       Stroke="{Binding StrokeColor}"
+                                       StrokeThickness="{Binding StrokeThickness}"
+                                       Opacity="{Binding StrokeOpacity}"
+                                       ToolTip.Tip="{Binding TooltipText}"/>
+
+                      <Border Canvas.Left="{Binding LabelX}"
+                              Canvas.Top="{Binding LabelY}"
+                              Background="#0F1626"
+                              BorderBrush="#3B82F6"
+                              BorderThickness="1"
+                              CornerRadius="999"
+                              Padding="6,2"
+                              Opacity="{Binding StrokeOpacity}"
+                              IsVisible="{Binding IsSelected}">
+                        <TextBlock Classes="txt-meta"
+                                   Foreground="#E8EAED"
+                                   Text="{Binding Cardinality}"/>
+                      </Border>
+                    </Canvas>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <ItemsControl x:Name="EntityItems"
+                            ItemsSource="{Binding Entities}"
+                            Width="{Binding Width, ElementName=SceneContentCanvas}"
+                            Height="{Binding Height, ElementName=SceneContentCanvas}"
+                            ClipToBounds="False">
+                <ItemsControl.Styles>
+                  <Style Selector="ItemsControl#EntityItems > ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{ReflectionBinding Content.X, RelativeSource={RelativeSource Self}}"/>
+                    <Setter Property="Canvas.Top" Value="{ReflectionBinding Content.Y, RelativeSource={RelativeSource Self}}"/>
+                  </Style>
+                </ItemsControl.Styles>
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <Canvas/>
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="ervm:ErEntityNodeViewModel">
+                    <erc:ErEntityControl/>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Canvas>
+          </ctrl:InfiniteCanvasCoreControl.SceneContent>
+
+          <ctrl:InfiniteCanvasCoreControl.OverlayContent>
+            <Canvas x:DataType="ervm:ErCanvasViewModel"
+                    DataContext="{Binding DataContext, ElementName=ViewportSurface}"
+                    IsHitTestVisible="False">
+              <ctrl:CanvasMarqueeAdorner x:Name="SelectionMarquee"
+                                         Fill="{StaticResource SelectedOverlayBrush}"
+                                         Stroke="{StaticResource BorderFocusBrush}"
+                                         StrokeThickness="1"/>
+              <ctrl:CanvasFocusAdorner x:Name="FocusOverlay"
+                                       Stroke="#3B82F6"
+                                       StrokeThickness="2"/>
+            </Canvas>
+          </ctrl:InfiniteCanvasCoreControl.OverlayContent>
+        </ctrl:InfiniteCanvasCoreControl>
+
+        <Border IsVisible="{Binding IsMinimapVisible}"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                Margin="12"
+                Padding="8"
+                CornerRadius="8"
+                BorderBrush="#273247"
+                BorderThickness="1"
+                Background="#0F1626EE">
+          <StackPanel Spacing="2">
+            <TextBlock Classes="txt-meta" Foreground="#E8EAED" Text="Minimap"/>
+            <TextBlock Classes="txt-meta" Foreground="#9CA3AF" Text="Use search + fit to navigate large schemas."/>
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <Border Grid.Column="1"
+              Margin="8"
+              Padding="12"
+              Background="#0F1626"
+              BorderBrush="#273247"
+              BorderThickness="1"
+              CornerRadius="10">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="txt-label" Foreground="#E8EAED" Text="ER Panel"/>
+          <TextBlock Classes="txt-body" Foreground="#9CA3AF" Text="{Binding StatusMessage}" TextWrapping="Wrap"/>
+
+          <ItemsControl ItemsSource="{Binding TechnicalWarnings}" IsVisible="{Binding HasTechnicalWarnings}">
             <ItemsControl.ItemTemplate>
               <DataTemplate>
-                <TextBlock Classes="txt-body"
-                           Foreground="{StaticResource TextSecondaryBrush}"
-                           Text="{Binding .}"/>
+                <Border Background="#2A1F12" BorderBrush="#F59E0B" BorderThickness="1" CornerRadius="6" Padding="8,4">
+                  <TextBlock Classes="txt-meta" Foreground="#F3C26E" Text="{Binding .}" TextWrapping="Wrap"/>
+                </Border>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-        </StackPanel>
-      </Border>
 
-      <Border Grid.Row="1"
-              IsVisible="{Binding HasSelectionDetails}"
-              Classes="callout-subtle"
-              BorderThickness="0,0,0,1"
-              CornerRadius="0"
-              Padding="12,8">
-        <StackPanel Spacing="6">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <TextBlock Classes="txt-label"
-                       Foreground="{StaticResource TextPrimaryBrush}"
-                       Text="{Binding SelectionTitle}"
-                       VerticalAlignment="Center"/>
-            <Button Classes="tb compact"
-                    Command="{Binding OpenSelectionInQueryCommand}"
-                    IsVisible="{Binding HasSelectionJoinPredicate}"
-                    Padding="8,4">
-              <TextBlock Text="Abrir no Query"/>
-            </Button>
-          </StackPanel>
-          <TextBlock Classes="txt-label"
-                     Foreground="{StaticResource TextSecondaryBrush}"
-                     Text="{Binding SelectionSubtitle}"/>
-          <TextBlock Classes="txt-body"
-                     Foreground="{StaticResource TextPrimaryBrush}"
-                     Text="{Binding SelectionBody}"
-                     TextWrapping="Wrap"/>
-          <Border Classes="callout-subtle"
-                  Background="{StaticResource Bg0Brush}"
+          <TextBlock Classes="txt-body" Foreground="#9CA3AF" Text="{Binding SelectionSubtitle}" TextWrapping="Wrap"/>
+          <TextBlock Classes="txt-body" Foreground="#E8EAED" Text="{Binding SelectionBody}" TextWrapping="Wrap"/>
+
+          <Border Background="#0C1321"
+                  BorderBrush="#273247"
+                  BorderThickness="1"
+                  CornerRadius="6"
                   Padding="8,6"
                   IsVisible="{Binding HasSelectionJoinPredicate}">
             <TextBlock FontFamily="{StaticResource MonoFont}"
-                       Foreground="{StaticResource TextAccentBrush}"
+                       Foreground="#8FA7FF"
                        Text="{Binding SelectionJoinPredicate}"
                        TextWrapping="Wrap"/>
           </Border>
+
+          <Button Classes="tb compact"
+                  Command="{Binding OpenSelectionInQueryCommand}"
+                  IsVisible="{Binding HasSelectionJoinPredicate}"
+                  Padding="8,4">
+            <TextBlock Text="Open in Query"/>
+          </Button>
+
+          <Border Background="#101A2B"
+                  BorderBrush="#273247"
+                  BorderThickness="1"
+                  CornerRadius="6"
+                  Padding="8"
+                  IsVisible="{Binding IsDirty}">
+            <TextBlock Classes="txt-meta"
+                       Foreground="#9CA3AF"
+                       Text="Local changes pending. Use Sync DDL to persist."/>
+          </Border>
+
+          <Button Classes="tb" Command="{Binding SyncToDdlCommand}">
+            <TextBlock Text="Sync to DDL"/>
+          </Button>
+          <Button Classes="tb" Command="{Binding RefreshCommand}">
+            <TextBlock Text="Refresh metadata"/>
+          </Button>
         </StackPanel>
       </Border>
-
-      <ctrl:InfiniteCanvasCoreControl x:Name="ViewportSurface"
-                                  Grid.Row="2"
-                                  Viewport="{Binding}"
-                                  PointerWheelChanged="Viewport_PointerWheelChanged"
-                                  PointerPressed="Viewport_PointerPressed"
-                                  PointerMoved="Viewport_PointerMoved"
-                                  PointerReleased="Viewport_PointerReleased">
-        <ctrl:InfiniteCanvasCoreControl.SceneContent>
-          <Canvas x:Name="SceneContentCanvas"
-                  x:DataType="ervm:ErCanvasViewModel"
-                  DataContext="{Binding DataContext, ElementName=ViewportSurface}"
-                  Background="Transparent"
-                  PointerPressed="CanvasBackground_PointerPressed">
-            <ItemsControl x:Name="EdgeItems"
-                          ItemsSource="{Binding Edges}"
-                          Width="{Binding Width, ElementName=SceneContentCanvas}"
-                          Height="{Binding Height, ElementName=SceneContentCanvas}"
-                          ClipToBounds="False">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <Canvas/>
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="ervm:ErRelationEdgeViewModel">
-                  <Canvas>
-                    <shapes:Polyline Points="{Binding RoutePoints}"
-                                     Stroke="#00FFFFFF"
-                                     StrokeThickness="12"
-                                     PointerPressed="Edge_PointerPressed"/>
-                    <shapes:Polyline Points="{Binding RoutePoints}"
-                                     Stroke="{StaticResource TextMutedBrush}"
-                                     StrokeThickness="2"/>
-                    <shapes:Polyline Points="{Binding RoutePoints}"
-                                     Stroke="{StaticResource AccentPrimaryHoverBrush}"
-                                     StrokeThickness="3"
-                                     IsVisible="{Binding IsSelected}"/>
-                    <Border Canvas.Left="{Binding LabelX}"
-                            Canvas.Top="{Binding LabelY}"
-                            Background="{StaticResource Bg1Brush}"
-                            BorderBrush="{StaticResource AccentPrimaryHoverBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource RadiusPill}"
-                            Padding="6,2"
-                            IsVisible="{Binding IsSelected}">
-                      <TextBlock Classes="txt-body"
-                                 Foreground="{StaticResource TextPrimaryBrush}"
-                                 Text="{Binding Cardinality}"/>
-                    </Border>
-                  </Canvas>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <ItemsControl x:Name="EntityItems"
-                          ItemsSource="{Binding Entities}"
-                          Width="{Binding Width, ElementName=SceneContentCanvas}"
-                          Height="{Binding Height, ElementName=SceneContentCanvas}"
-                          ClipToBounds="False">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <Canvas/>
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="ervm:ErEntityNodeViewModel">
-                  <erc:ErEntityControl Canvas.Left="{Binding X}" Canvas.Top="{Binding Y}"/>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </Canvas>
-        </ctrl:InfiniteCanvasCoreControl.SceneContent>
-        <ctrl:InfiniteCanvasCoreControl.OverlayContent>
-          <Canvas x:DataType="ervm:ErCanvasViewModel"
-            DataContext="{Binding DataContext, ElementName=ViewportSurface}"
-                  IsHitTestVisible="False">
-            <ctrl:CanvasMarqueeAdorner x:Name="SelectionMarquee"
-                                       Fill="{StaticResource SelectedOverlayBrush}"
-                                       Stroke="{StaticResource BorderFocusBrush}"
-                                       StrokeThickness="1"/>
-            <ctrl:CanvasFocusAdorner x:Name="FocusOverlay"
-                                     Stroke="{StaticResource AccentPrimaryHoverBrush}"
-                                     StrokeThickness="2"/>
-          </Canvas>
-        </ctrl:InfiniteCanvasCoreControl.OverlayContent>
-      </ctrl:InfiniteCanvasCoreControl>
     </Grid>
   </Grid>
 </UserControl>
+

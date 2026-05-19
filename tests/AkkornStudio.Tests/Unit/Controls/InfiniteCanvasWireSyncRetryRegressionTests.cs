@@ -28,12 +28,13 @@ public class InfiniteCanvasWireSyncRetryRegressionTests
     }
 
     [Fact]
-    public void UpdatePinPositions_ResetsAbsolutePositions_BeforeMeasuringNodes()
+    public void UpdatePinPositions_ResetsAbsolutePositions_WithoutManualNodeArrange()
     {
         string source = ReadInfiniteCanvasSource();
 
         Assert.Contains("pin.ResetAbsolutePosition();", source);
         Assert.Contains("foreach (NodeViewModel node in ViewModel.Nodes)", source);
+        Assert.DoesNotContain("nc.Arrange(new Rect(new Point(node.Position.X, node.Position.Y), nc.DesiredSize));", source);
     }
 
     private static string ReadInfiniteCanvasSource()
