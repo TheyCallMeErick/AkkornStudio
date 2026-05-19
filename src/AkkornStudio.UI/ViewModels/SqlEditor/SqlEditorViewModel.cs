@@ -102,6 +102,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private bool _isConnectionSwitcherOpen;
     private string? _connectionSwitcherSelectedProfileId;
     private string? _connectionSwitcherSelectedDatabase;
+    private Action? _backNavigationAction;
+    private string _backNavigationLabel = "Voltar";
     private DbMetadata? _cachedSchemaMetadata;
     private string? _cachedSchemaSelection;
     private IReadOnlyList<SqlEditorSchemaTableItem> _schemaTablesCache = [];
@@ -234,6 +236,9 @@ public sealed class SqlEditorViewModel : ViewModelBase
         ReopenResultsSheetCommand = new RelayCommand(
             OpenResultsSheet,
             () => CanReopenResultsSheet);
+        NavigateBackCommand = new RelayCommand(
+            NavigateBack,
+            () => _backNavigationAction is not null);
         _sidebarSelectedConnectionProfileId = ActiveTab.ConnectionProfileId;
         SyncTabCommands();
     }
@@ -271,6 +276,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     public ICommand CancelBenchmarkCommand { get; }
     public ICommand CloseResultsSheetCommand { get; }
     public ICommand ReopenResultsSheetCommand { get; }
+    public ICommand NavigateBackCommand { get; }
     public IReadOnlyList<DatabaseProvider> AvailableProviders { get; } = Enum.GetValues<DatabaseProvider>();
 
     public event EventHandler<SqlResultPageRequestedEventArgs>? SqlResultPageRequested;
@@ -351,6 +357,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
         }
     }
     public bool HasConnectionProfiles => AvailableConnectionProfiles.Count > 0;
+    public bool HasBackNavigationContext => _backNavigationAction is not null;
+    public string BackNavigationLabel => _backNavigationLabel;
     public SqlEditorConnectionProfileOption? SidebarSelectedConnectionProfile
     {
         get
@@ -1877,6 +1885,29 @@ public sealed class SqlEditorViewModel : ViewModelBase
         NotifyActiveTabEdited();
         RaiseTabStateChanged();
         RequestEditorFocus();
+    }
+
+    public void ReplaceTextInEditor(string text, bool markAsDirty = true)
+    {
+        ActiveTab.SqlText = text ?? string.Empty;
+        ActiveTab.IsDirty = markAsDirty;
+        NotifyActiveTabEdited();
+        RaiseTabStateChanged();
+        RequestEditorFocus();
+    }
+
+    public void ConfigureBackNavigation(Action? backNavigationAction, string? label = null)
+    {
+        _backNavigationAction = backNavigationAction;
+        _backNavigationLabel = string.IsNullOrWhiteSpace(label) ? "Voltar" : label.Trim();
+        RaisePropertyChanged(nameof(HasBackNavigationContext));
+        RaisePropertyChanged(nameof(BackNavigationLabel));
+        (NavigateBackCommand as RelayCommand)?.NotifyCanExecuteChanged();
+    }
+
+    private void NavigateBack()
+    {
+        _backNavigationAction?.Invoke();
     }
 
     public void RequestEditorFocus()

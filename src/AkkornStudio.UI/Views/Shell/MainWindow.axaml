@@ -685,6 +685,23 @@
             </StackPanel>
           </Button>
 
+          <Button Name="PreviewDockQuickBtn"
+                  Classes="preview-dock-btn"
+                  Click="PreviewDockQuickBtn_Click"
+                  ToolTip.Tip="Preview rapido de dados">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Border Classes="preview-dock-icon-chip">
+                <mi:MaterialIcon Kind="TableSearch"
+                                 Width="12"
+                                 Height="12"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"/>
+              </Border>
+              <TextBlock Text="Quick"
+                         VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+
           <Button Name="PreviewDockDiagnosticsBtn"
                   Classes="preview-dock-btn alert"
                   Click="PreviewDockDiagnosticsBtn_Click"
@@ -826,6 +843,8 @@
 
     <shell:OutputPreviewModalControl DataContext="{Binding OutputPreview}"
                                      IsVisible="{ReflectionBinding DataContext.IsOutputPreviewModalVisible, ElementName=RootWindow}"/>
+    <shell:QuickDataPreviewModalControl DataContext="{Binding QuickDataPreview}"
+                                        IsVisible="{ReflectionBinding DataContext.IsQuickDataPreviewModalVisible, ElementName=RootWindow}"/>
 
     <Border IsVisible="{Binding IsSettingsVisible}"
             Background="{StaticResource MacroScrimBrush}"

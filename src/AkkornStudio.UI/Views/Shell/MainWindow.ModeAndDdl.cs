@@ -772,6 +772,24 @@ public partial class MainWindow
         }
     }
 
+    private async Task OpenModeAwareQuickDataPreviewSafeAsync()
+    {
+        try
+        {
+            bool opened = await CurrentShell.OpenQuickDataPreviewForActiveModeAsync();
+            if (!opened)
+            {
+                CurrentShell.Toasts.ShowWarning(
+                    "Nao foi possivel abrir o preview rapido.",
+                    "No modo DDL, selecione uma tabela ou view para visualizar os dados.");
+            }
+        }
+        catch (Exception ex)
+        {
+            CurrentShell.Toasts.ShowError("Falha ao abrir preview rapido.", ex.Message);
+        }
+    }
+
     private async Task OpenModeAwareOutputPreviewAsync()
     {
         switch (CurrentShell.ActivePreviewContract.Kind)

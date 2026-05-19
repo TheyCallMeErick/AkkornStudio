@@ -19,6 +19,7 @@ using AkkornStudio.UI.Services.Workspace.Diagnostics;
 using AkkornStudio.UI.Services.Workspace.Models;
 using AkkornStudio.UI.Services.Workspace.Pages;
 using AkkornStudio.UI.Services.Workspace.Preview;
+using AkkornStudio.UI.Services.Preview;
 using AkkornStudio.UI.Serialization;
 using AkkornStudio.UI.ViewModels;
 using AkkornStudio.UI.ViewModels.Canvas.Strategies;
@@ -96,6 +97,7 @@ public sealed class ShellViewModel : ViewModelBase
     private readonly ConnectionManagerViewModel _sqlEditorConnectionManager;
     private PropertyChangedEventHandler? _localizationPropertyChanged;
     private PropertyChangedEventHandler? _outputPreviewPropertyChanged;
+    private PropertyChangedEventHandler? _quickDataPreviewPropertyChanged;
     private Guid? _queryDocumentId;
     private Guid? _ddlDocumentId;
     private Guid? _sqlResultDocumentId;
@@ -106,6 +108,7 @@ public sealed class ShellViewModel : ViewModelBase
     private Guid? _lastSyncedWorkspaceDocumentId;
     private ProjectConventionSettings _projectConventionSettings = AppSettingsStore.LoadProjectConventionSettings();
     private readonly SqlResultSessionService _sqlResultSessionService = new();
+    private readonly QuickDataPreviewService _quickDataPreviewService = new();
     private SqlResultPageViewModel? _sqlResultPage;
 
     public ShellViewModel(
@@ -133,6 +136,9 @@ public sealed class ShellViewModel : ViewModelBase
         LeftSidebar = new LeftSidebarViewModel();
         RightSidebar = new RightSidebarViewModel();
         OutputPreview = new OutputPreviewModalViewModel();
+        QuickDataPreview = new QuickDataPreviewModalViewModel(
+            _quickDataPreviewService,
+            OpenSqlInEditorFromQuickPreview);
         SqlEditor = BuildSqlEditorDocument();
         QueryModeCommand = new RelayCommand(() => ActivateDocument(WorkspaceDocumentType.QueryCanvas));
         DdlModeCommand = new RelayCommand(() => ActivateDocument(WorkspaceDocumentType.DdlCanvas));
@@ -156,6 +162,12 @@ public sealed class ShellViewModel : ViewModelBase
                 RaisePropertyChanged(nameof(IsOutputPreviewModalVisible));
         };
         OutputPreview.PropertyChanged += _outputPreviewPropertyChanged;
+        _quickDataPreviewPropertyChanged = (_, e) =>
+        {
+            if (e.PropertyName == nameof(QuickDataPreviewModalViewModel.IsVisible))
+                RaisePropertyChanged(nameof(IsQuickDataPreviewModalVisible));
+        };
+        QuickDataPreview.PropertyChanged += _quickDataPreviewPropertyChanged;
         if (_canvas is not null)
         {
             _canvas.ApplyProjectConventionSettings(_projectConventionSettings);
@@ -233,6 +245,7 @@ public sealed class ShellViewModel : ViewModelBase
     public CommandPaletteViewModel CommandPalette { get; private set; } = new();
 
     public OutputPreviewModalViewModel OutputPreview { get; }
+    public QuickDataPreviewModalViewModel QuickDataPreview { get; }
 
     public RelayCommand QueryModeCommand { get; }
 
@@ -258,6 +271,7 @@ public sealed class ShellViewModel : ViewModelBase
             RaisePropertyChanged(nameof(IsDiagramOverlayLayerVisible));
             RaisePropertyChanged(nameof(IsConnectionManagerOverlayVisible));
             RaisePropertyChanged(nameof(IsOutputPreviewModalVisible));
+            RaisePropertyChanged(nameof(IsQuickDataPreviewModalVisible));
         }
     }
 
@@ -331,6 +345,9 @@ public sealed class ShellViewModel : ViewModelBase
 
     public bool IsOutputPreviewModalVisible =>
         IsCanvasVisible && OutputPreview.IsVisible;
+
+    public bool IsQuickDataPreviewModalVisible =>
+        IsCanvasVisible && QuickDataPreview.IsVisible;
 
     public CanvasViewModel? ActiveCanvas =>
         ActiveWorkspaceDocument?.DocumentViewModel as CanvasViewModel;
@@ -543,6 +560,12 @@ public sealed class ShellViewModel : ViewModelBase
         if (documentType == WorkspaceDocumentType.ErDiagram && !CanActivateErDiagram())
             return;
 
+        if (documentType == WorkspaceDocumentType.SqlEditor
+            && ActiveWorkspaceDocumentType != WorkspaceDocumentType.ErDiagram)
+        {
+            SqlEditor.ConfigureBackNavigation(null);
+        }
+
         if (ActiveWorkspaceDocumentType == documentType)
         {
             if (documentType == WorkspaceDocumentType.ErDiagram)
@@ -555,6 +578,7 @@ public sealed class ShellViewModel : ViewModelBase
         if (documentType == WorkspaceDocumentType.ErDiagram && target?.DocumentViewModel is ErCanvasViewModel erCanvas)
         {
             erCanvas.BindQueryNavigation(OpenErRelationInQuery);
+            erCanvas.BindEntityDefinitionNavigation(OpenErEntityDefinitionInSqlEditor);
             erCanvas.BindSyncToDdl(SyncErToDdlCanvas);
             erCanvas.BindSourceMetadata(ResolveSharedMetadata());
         }
@@ -814,6 +838,105 @@ public sealed class ShellViewModel : ViewModelBase
             canvas: bridgeCanvas,
             sql: sql,
             connectionConfig: connectionConfig);
+        return true;
+    }
+
+    public async Task<bool> OpenQuickDataPreviewForActiveModeAsync()
+    {
+        OutputPreview.Close();
+        switch (ActiveWorkspaceDocumentType)
+        {
+            case WorkspaceDocumentType.QueryCanvas:
+                return await OpenQuickDataPreviewForQueryAsync();
+            case WorkspaceDocumentType.DdlCanvas:
+                return await OpenQuickDataPreviewForDdlAsync();
+            default:
+                return false;
+        }
+    }
+
+    public async Task<bool> OpenQuickDataPreviewForForeignKeyAsync(
+        Guid? sourceDocumentId,
+        string sql,
+        DatabaseProvider provider,
+        string? focusTableFullName,
+        string? subtitle = null)
+    {
+        OutputPreview.Close();
+        if (string.IsNullOrWhiteSpace(sql))
+            return false;
+
+        ConnectionConfig? connection = ResolveSqlEditorConnectionByProfileId(null);
+        DbMetadata? metadata = ResolveSqlEditorMetadata();
+        WorkspaceDocumentType? sourceType = ActiveWorkspaceDocumentType;
+        if (!sourceType.HasValue && sourceDocumentId.HasValue)
+        {
+            sourceType = _workspaceRouter.OpenDocuments
+                .FirstOrDefault(document => document.Descriptor.DocumentId == sourceDocumentId.Value)
+                ?.Descriptor.DocumentType;
+        }
+
+        await QuickDataPreview.OpenSqlPreviewAsync(
+            title: "Preview FK",
+            subtitle: subtitle ?? (focusTableFullName ?? string.Empty),
+            sql: sql,
+            connection: connection,
+            provider: provider,
+            metadata: metadata,
+            focusTableFullName: focusTableFullName,
+            sourceDocumentType: sourceType,
+            maxRows: 120);
+        return true;
+    }
+
+    private async Task<bool> OpenQuickDataPreviewForQueryAsync()
+    {
+        CanvasViewModel queryCanvas = ActiveQueryCanvasDocument ?? EnsureCanvas();
+        queryCanvas.LiveSql.Recompile();
+
+        string sql = !string.IsNullOrWhiteSpace(queryCanvas.LiveSql.ExecutionSqlTemplate)
+            ? queryCanvas.LiveSql.ExecutionSqlTemplate!
+            : queryCanvas.LiveSql.RawSql;
+        if (string.IsNullOrWhiteSpace(sql))
+            return false;
+
+        ConnectionConfig? connection = queryCanvas.ActiveConnectionConfig ?? ResolveSharedActiveConnectionConfig();
+        DbMetadata? metadata = queryCanvas.DatabaseMetadata ?? ResolveSharedMetadata();
+        DatabaseProvider provider = connection?.Provider ?? queryCanvas.Provider;
+        string? focusTable = TryExtractFirstFromTable(sql);
+
+        await QuickDataPreview.OpenSqlPreviewAsync(
+            title: "Preview rapido",
+            subtitle: "Modo Query",
+            sql: sql,
+            connection: connection,
+            provider: provider,
+            metadata: metadata,
+            focusTableFullName: focusTable,
+            sourceDocumentType: WorkspaceDocumentType.QueryCanvas,
+            maxRows: 120);
+        return true;
+    }
+
+    private async Task<bool> OpenQuickDataPreviewForDdlAsync()
+    {
+        CanvasViewModel ddlCanvas = ActiveDdlCanvasDocument ?? EnsureDdlCanvas();
+        if (!TryResolveDdlPreviewTarget(ddlCanvas, out string? fullTableName))
+            return false;
+
+        ConnectionConfig? connection = ddlCanvas.ActiveConnectionConfig ?? ResolveSharedActiveConnectionConfig();
+        DbMetadata? metadata = ddlCanvas.DatabaseMetadata ?? ResolveSharedMetadata();
+        DatabaseProvider provider = connection?.Provider ?? ddlCanvas.Provider;
+        if (string.IsNullOrWhiteSpace(fullTableName))
+            return false;
+
+        await QuickDataPreview.OpenTablePreviewAsync(
+            fullTableName!,
+            connection,
+            provider,
+            metadata,
+            WorkspaceDocumentType.DdlCanvas,
+            maxRows: 120);
         return true;
     }
 
@@ -1272,6 +1395,7 @@ public sealed class ShellViewModel : ViewModelBase
         RaisePropertyChanged(nameof(IsQueryConnectionManagerOverlayVisible));
         RaisePropertyChanged(nameof(IsDdlConnectionManagerOverlayVisible));
         RaisePropertyChanged(nameof(IsOutputPreviewModalVisible));
+        RaisePropertyChanged(nameof(IsQuickDataPreviewModalVisible));
         RaisePropertyChanged(nameof(ActiveCanvas));
         RaisePropertyChanged(nameof(ActiveDiagramSidebar));
         RaisePropertyChanged(nameof(ActiveDiagramPropertyPanel));
@@ -1281,6 +1405,7 @@ public sealed class ShellViewModel : ViewModelBase
     private void HideDiagramOnlyOverlays()
     {
         OutputPreview.IsVisible = false;
+        QuickDataPreview.Close();
 
         if (Canvas is not null)
         {
@@ -1299,6 +1424,7 @@ public sealed class ShellViewModel : ViewModelBase
         RaisePropertyChanged(nameof(IsConnectionManagerOverlayVisible));
         RaisePropertyChanged(nameof(ConnectionManagerOverlay));
         RaisePropertyChanged(nameof(IsOutputPreviewModalVisible));
+        RaisePropertyChanged(nameof(IsQuickDataPreviewModalVisible));
         RaisePropertyChanged(nameof(QueryConnectionManager));
         RaisePropertyChanged(nameof(DdlConnectionManager));
         RaisePropertyChanged(nameof(IsQueryConnectionManagerOverlayVisible));
@@ -1652,6 +1778,13 @@ public sealed class ShellViewModel : ViewModelBase
 
             ActivateDocument(WorkspaceDocumentType.SqlEditor);
         });
+        _sqlResultPage.ConfigureQuickPreview(async (sourceDocumentId, sql, provider, focusTableFullName, subtitle) =>
+            await OpenQuickDataPreviewForForeignKeyAsync(
+                sourceDocumentId,
+                sql,
+                provider,
+                focusTableFullName,
+                subtitle));
         _sqlResultPage.ConfigureBackNavigation(sourceDocumentId =>
         {
             if (sourceDocumentId.HasValue && TryActivateWorkspaceDocument(sourceDocumentId.Value))
@@ -1711,6 +1844,7 @@ public sealed class ShellViewModel : ViewModelBase
         DbMetadata? metadata = ResolveSharedMetadata();
         var erCanvas = new ErCanvasViewModel();
         erCanvas.BindQueryNavigation(OpenErRelationInQuery);
+        erCanvas.BindEntityDefinitionNavigation(OpenErEntityDefinitionInSqlEditor);
         erCanvas.BindSyncToDdl(SyncErToDdlCanvas);
         erCanvas.BindSourceMetadata(metadata);
         return erCanvas;
@@ -1723,6 +1857,7 @@ public sealed class ShellViewModel : ViewModelBase
                 .LastOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.ErDiagram)
                 ?.DocumentViewModel as ErCanvasViewModel;
         erCanvas?.BindQueryNavigation(OpenErRelationInQuery);
+        erCanvas?.BindEntityDefinitionNavigation(OpenErEntityDefinitionInSqlEditor);
         erCanvas?.BindSyncToDdl(SyncErToDdlCanvas);
         erCanvas?.BindSourceMetadata(ResolveSharedMetadata());
     }
@@ -1898,6 +2033,75 @@ public sealed class ShellViewModel : ViewModelBase
             return ("public", entityId.Trim());
 
         return (entityId[..separator].Trim(), entityId[(separator + 1)..].Trim());
+    }
+
+    private void OpenSqlInEditorFromQuickPreview(string sql, WorkspaceDocumentType? sourceDocumentType)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+            return;
+
+        SyncSqlEditorConnectionFromSharedManager();
+        ActivateDocument(WorkspaceDocumentType.SqlEditor);
+        SqlEditor.ReplaceTextInEditor(sql, markAsDirty: false);
+        SqlEditor.ConfigureBackNavigation(
+            sourceDocumentType.HasValue ? () => ActivateDocument(sourceDocumentType.Value) : null,
+            sourceDocumentType switch
+            {
+                WorkspaceDocumentType.QueryCanvas => "Voltar ao Query",
+                WorkspaceDocumentType.DdlCanvas => "Voltar ao DDL",
+                WorkspaceDocumentType.SqlResult => "Voltar ao Resultado",
+                _ => "Voltar",
+            });
+        SqlEditor.NotifyConnectionContextChanged();
+    }
+
+    private void SyncSqlEditorConnectionFromSharedManager()
+    {
+        ConnectionManagerViewModel? sharedManager = ResolveSharedConnectionManager();
+        if (sharedManager is null)
+            return;
+
+        string? activeProfileId = string.IsNullOrWhiteSpace(sharedManager.ActiveProfileId)
+            ? null
+            : sharedManager.ActiveProfileId.Trim();
+        if (!string.IsNullOrWhiteSpace(activeProfileId))
+        {
+            ConnectionProfile? sqlProfile = _sqlEditorConnectionManager.Profiles.FirstOrDefault(profile =>
+                string.Equals(profile.Id, activeProfileId, StringComparison.OrdinalIgnoreCase));
+            if (sqlProfile is not null)
+            {
+                _sqlEditorConnectionManager.SelectedProfile = sqlProfile;
+                _sqlEditorConnectionManager.ActiveProfileId = sqlProfile.Id;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(sharedManager.SelectedDatabase))
+            _sqlEditorConnectionManager.SelectedDatabase = sharedManager.SelectedDatabase;
+
+        if (!string.IsNullOrWhiteSpace(sharedManager.SelectedSchema))
+            _sqlEditorConnectionManager.SelectedSchema = sharedManager.SelectedSchema;
+    }
+
+    private void OpenErEntityDefinitionInSqlEditor(ErEntityNodeViewModel entity)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        if (!entity.IsView)
+        {
+            Toasts.ShowWarning(
+                "Somente views podem ser editadas por este fluxo.",
+                "Para tabelas, use sincronizacao ER -> DDL.");
+            return;
+        }
+
+        SyncSqlEditorConnectionFromSharedManager();
+
+        ActivateDocument(WorkspaceDocumentType.SqlEditor);
+        SqlEditor.ReplaceTextInEditor(entity.CreateStatementSql ?? string.Empty, markAsDirty: false);
+        SqlEditor.ConfigureBackNavigation(() => ActivateDocument(WorkspaceDocumentType.ErDiagram), "Voltar ao ER");
+        SqlEditor.NotifyConnectionContextChanged();
+        Toasts.ShowSuccess(
+            "Definition aberta no SQL Editor.",
+            $"{entity.DisplaySchema}.{entity.DisplayName}");
     }
 
     private void OpenErRelationInQuery(ErRelationEdgeViewModel edge)
@@ -2668,6 +2872,72 @@ public sealed class ShellViewModel : ViewModelBase
 
     private static string GetTableIdentifier(NodeViewModel node) =>
         string.IsNullOrWhiteSpace(node.Subtitle) ? node.Title : node.Subtitle;
+
+    private static bool TryResolveDdlPreviewTarget(CanvasViewModel ddlCanvas, out string? fullTableName)
+    {
+        fullTableName = null;
+
+        NodeViewModel? selected = ddlCanvas.PropertyPanel.SelectedNode
+            ?? ddlCanvas.Nodes.FirstOrDefault(node => node.IsSelected);
+        if (selected is null)
+            return false;
+
+        if (selected.Type == NodeType.TableDefinition)
+        {
+            string schemaName = selected.Parameters.GetValueOrDefault("SchemaName")?.Trim() ?? string.Empty;
+            string tableName = selected.Parameters.GetValueOrDefault("TableName")?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(tableName))
+            {
+                fullTableName = string.IsNullOrWhiteSpace(schemaName)
+                    ? tableName
+                    : $"{schemaName}.{tableName}";
+                return true;
+            }
+        }
+
+        if (selected.Type == NodeType.ViewDefinition)
+        {
+            string schemaName = selected.Parameters.GetValueOrDefault("SchemaName")?.Trim() ?? string.Empty;
+            string viewName = selected.Parameters.GetValueOrDefault("ViewName")?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(viewName))
+            {
+                fullTableName = string.IsNullOrWhiteSpace(schemaName)
+                    ? viewName
+                    : $"{schemaName}.{viewName}";
+                return true;
+            }
+        }
+
+        if (selected.Type == NodeType.TableSource)
+        {
+            fullTableName = !string.IsNullOrWhiteSpace(selected.Subtitle)
+                ? selected.Subtitle
+                : selected.Title;
+            return !string.IsNullOrWhiteSpace(fullTableName);
+        }
+
+        return false;
+    }
+
+    private static string? TryExtractFirstFromTable(string? sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+            return null;
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            sql,
+            @"\bfrom\s+([a-zA-Z0-9_\.\[\]`""]+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        if (!match.Success)
+            return null;
+
+        string raw = match.Groups[1].Value.Trim();
+        int spaceIndex = raw.IndexOf(' ');
+        if (spaceIndex > 0)
+            raw = raw[..spaceIndex];
+
+        return raw.Trim('"', '[', ']', '`');
+    }
 
     private static string NormalizeEntityId(string entityId)
     {

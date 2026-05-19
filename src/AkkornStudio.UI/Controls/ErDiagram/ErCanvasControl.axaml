@@ -3,9 +3,23 @@
              xmlns:ervm="using:AkkornStudio.UI.ViewModels.ErDiagram"
              xmlns:erc="using:AkkornStudio.UI.Controls.ErDiagram"
              xmlns:ctrl="using:AkkornStudio.UI.Controls"
+             xmlns:mi="using:Material.Icons.Avalonia"
              xmlns:shapes="clr-namespace:Avalonia.Controls.Shapes;assembly=Avalonia.Controls"
              x:Class="AkkornStudio.UI.Controls.ErDiagram.ErCanvasControl"
              x:DataType="ervm:ErCanvasViewModel">
+
+  <UserControl.Styles>
+    <Style Selector="ToggleButton.focus-toggle">
+      <Setter Property="BorderBrush" Value="#2C3B57"/>
+      <Setter Property="Background" Value="#0E182A"/>
+      <Setter Property="Foreground" Value="#9CA3AF"/>
+    </Style>
+    <Style Selector="ToggleButton.focus-toggle:checked">
+      <Setter Property="BorderBrush" Value="#3B82F6"/>
+      <Setter Property="Background" Value="#16294A"/>
+      <Setter Property="Foreground" Value="#E8EAED"/>
+    </Style>
+  </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*" Background="#070B14">
     <Border Grid.Row="0"
@@ -63,11 +77,30 @@
                         Padding="8,4">
             <TextBlock Text="Minimap"/>
           </ToggleButton>
-          <ToggleButton Classes="tb compact"
+          <ToggleButton Classes="tb compact focus-toggle"
                         IsChecked="{Binding IsFocusModeEnabled}"
                         Padding="8,4">
-            <TextBlock Text="Focus"/>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <mi:MaterialIcon Kind="CrosshairsGps" Width="12" Height="12" VerticalAlignment="Center"/>
+              <TextBlock Text="Focus Mode"/>
+            </StackPanel>
           </ToggleButton>
+          <Button Classes="tb compact"
+                  Command="{Binding HideUnrelatedEntitiesCommand}"
+                  Padding="8,4">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <mi:MaterialIcon Kind="FilterVariant" Width="12" Height="12" VerticalAlignment="Center"/>
+              <TextBlock Text="Ocultar Não Rel."/>
+            </StackPanel>
+          </Button>
+          <Button Classes="tb compact"
+                  Command="{Binding ShowAllEntitiesCommand}"
+                  Padding="8,4">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <mi:MaterialIcon Kind="EyeOutline" Width="12" Height="12" VerticalAlignment="Center"/>
+              <TextBlock Text="Mostrar Todos"/>
+            </StackPanel>
+          </Button>
 
           <Button Classes="tb compact" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" Padding="8,4">
             <TextBlock Text="Undo"/>
@@ -103,6 +136,14 @@
                     DataContext="{Binding DataContext, ElementName=ViewportSurface}"
                     Background="Transparent"
                     PointerPressed="CanvasBackground_PointerPressed">
+              <Canvas.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Ocultar nodes não relacionados"
+                            Command="{Binding HideUnrelatedEntitiesCommand}"/>
+                  <MenuItem Header="Mostrar todos os nodes"
+                            Command="{Binding ShowAllEntitiesCommand}"/>
+                </ContextMenu>
+              </Canvas.ContextMenu>
               <ItemsControl x:Name="EdgeItems"
                             ItemsSource="{Binding Edges}"
                             Width="{Binding Width, ElementName=SceneContentCanvas}"
@@ -116,7 +157,7 @@
 
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="ervm:ErRelationEdgeViewModel">
-                    <Canvas>
+                    <Canvas IsVisible="{Binding !IsHidden}">
                       <shapes:Polyline Points="{Binding RoutePoints}"
                                        Stroke="{Binding HitStroke}"
                                        StrokeThickness="14"
@@ -168,7 +209,7 @@
 
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="ervm:ErEntityNodeViewModel">
-                    <erc:ErEntityControl/>
+                    <erc:ErEntityControl IsVisible="{Binding !IsHidden}"/>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
@@ -183,9 +224,6 @@
                                          Fill="{StaticResource SelectedOverlayBrush}"
                                          Stroke="{StaticResource BorderFocusBrush}"
                                          StrokeThickness="1"/>
-              <ctrl:CanvasFocusAdorner x:Name="FocusOverlay"
-                                       Stroke="#3B82F6"
-                                       StrokeThickness="2"/>
             </Canvas>
           </ctrl:InfiniteCanvasCoreControl.OverlayContent>
         </ctrl:InfiniteCanvasCoreControl>
@@ -216,6 +254,7 @@
         <StackPanel Spacing="10">
           <TextBlock Classes="txt-label" Foreground="#E8EAED" Text="ER Panel"/>
           <TextBlock Classes="txt-body" Foreground="#9CA3AF" Text="{Binding StatusMessage}" TextWrapping="Wrap"/>
+          <TextBlock Classes="txt-title" Foreground="#E8EAED" Text="{Binding SelectionTitle}" IsVisible="{Binding HasSelectionDetails}"/>
 
           <ItemsControl ItemsSource="{Binding TechnicalWarnings}" IsVisible="{Binding HasTechnicalWarnings}">
             <ItemsControl.ItemTemplate>
@@ -234,6 +273,24 @@
                   BorderBrush="#273247"
                   BorderThickness="1"
                   CornerRadius="6"
+                  Padding="10,8"
+                  IsVisible="{Binding HasSelectedEntityMetadata}">
+            <StackPanel Spacing="4">
+              <TextBlock Classes="txt-title" Foreground="#E8EAED" Text="{Binding SelectedEntityQualifiedName}" TextWrapping="Wrap"/>
+              <TextBlock Classes="txt-meta" Foreground="#9CA3AF" Text="{Binding SelectedEntityObjectType}"/>
+              <TextBlock Classes="txt-body" Foreground="#C6D0E2" Text="{Binding SelectedEntityStats}" TextWrapping="Wrap"/>
+              <TextBlock Classes="txt-body" Foreground="#AEBBD2" Text="{Binding SelectedEntityNullabilityStats}" TextWrapping="Wrap"/>
+              <TextBlock Classes="txt-body" Foreground="#AEBBD2" Text="{Binding SelectedEntityRelationshipStats}" TextWrapping="Wrap"/>
+              <TextBlock Classes="txt-meta" Foreground="#FDE68A" Text="{Binding SelectedEntityPrimaryKeyColumns, StringFormat=PK: {0}}" TextWrapping="Wrap"/>
+              <TextBlock Classes="txt-meta" Foreground="#FDBA74" Text="{Binding SelectedEntityForeignKeyColumns, StringFormat=FK: {0}}" TextWrapping="Wrap"/>
+              <TextBlock Classes="txt-meta" Foreground="#BFDBFE" Text="{Binding SelectedEntityIndexedColumns, StringFormat=IX: {0}}" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
+
+          <Border Background="#0C1321"
+                  BorderBrush="#273247"
+                  BorderThickness="1"
+                  CornerRadius="6"
                   Padding="8,6"
                   IsVisible="{Binding HasSelectionJoinPredicate}">
             <TextBlock FontFamily="{StaticResource MonoFont}"
@@ -247,6 +304,18 @@
                   IsVisible="{Binding HasSelectionJoinPredicate}"
                   Padding="8,4">
             <TextBlock Text="Open in Query"/>
+          </Button>
+          <Button Classes="tb compact"
+                  Click="CopyDefinition_Click"
+                  IsVisible="{Binding HasSingleEntitySelection}"
+                  Padding="8,4">
+            <TextBlock Text="Copiar definition"/>
+          </Button>
+          <Button Classes="tb compact"
+                  Command="{Binding EditSelectedDefinitionInSqlEditorCommand}"
+                  IsVisible="{Binding CanEditSelectedViewDefinition}"
+                  Padding="8,4">
+            <TextBlock Text="Editar view no SQL"/>
           </Button>
 
           <Border Background="#101A2B"

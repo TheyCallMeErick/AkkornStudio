@@ -65,8 +65,19 @@
 
     <Grid Grid.Row="1"
           Margin="10,8,10,0"
-          ColumnDefinitions="Auto,*">
+          ColumnDefinitions="Auto,Auto,*">
       <Button Grid.Column="0"
+              Classes="secondary compact"
+              IsVisible="{Binding HasBackNavigationContext}"
+              Command="{Binding NavigateBackCommand}"
+              Margin="0,0,8,0">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <mi:MaterialIcon Kind="ArrowLeft" Width="12" Height="12" VerticalAlignment="Center"/>
+          <TextBlock Text="{Binding BackNavigationLabel}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </Button>
+
+      <Button Grid.Column="1"
               Classes="icon-ghost sql-connection-launch"
               Command="{Binding OpenConnectionSwitcherCommand}">
         <Grid>

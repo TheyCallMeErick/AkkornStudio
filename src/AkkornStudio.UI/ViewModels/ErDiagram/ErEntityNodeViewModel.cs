@@ -46,6 +46,8 @@ public sealed class ErEntityNodeViewModel : ViewModelBase
     private bool _isSelected;
     private bool _isHovered;
     private bool _isDimmed;
+    private bool _isHidden;
+    private bool _isHoverFocusPending;
     private ErVisualState _visualState = ErVisualState.Normal;
     private ErEntityDetailsTab _selectedTab = ErEntityDetailsTab.Columns;
     private ErNodeDensity _density = ErNodeDensity.Normal;
@@ -275,6 +277,18 @@ public sealed class ErEntityNodeViewModel : ViewModelBase
         }
     }
 
+    public bool IsHidden
+    {
+        get => _isHidden;
+        set => Set(ref _isHidden, value);
+    }
+
+    public bool IsHoverFocusPending
+    {
+        get => _isHoverFocusPending;
+        set => Set(ref _isHoverFocusPending, value);
+    }
+
     public ErVisualState VisualState
     {
         get => _visualState;
@@ -313,10 +327,12 @@ public sealed class ErEntityNodeViewModel : ViewModelBase
 
     public IBrush HeaderMetaBrush => new SolidColorBrush(Color.Parse("#64748B"));
 
+    public string ObjectKindIconKind => IsView ? "EyeOutline" : "TableLarge";
+
     public IBrush HeaderAccentBrush =>
         IsView
-            ? new SolidColorBrush(Color.Parse("#4A84C7"))
-            : new SolidColorBrush(Color.Parse("#7FA36A"));
+            ? new SolidColorBrush(Color.Parse("#D9A441"))
+            : new SolidColorBrush(Color.Parse("#3B82F6"));
 
     public IBrush ObjectTypeBadgeBackground =>
         IsView

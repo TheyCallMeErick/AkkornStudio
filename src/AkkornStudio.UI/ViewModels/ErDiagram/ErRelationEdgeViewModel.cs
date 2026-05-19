@@ -20,6 +20,7 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
     private IReadOnlyList<Point> _routePoints = [];
     private bool _isHovered;
     private bool _isDimmed;
+    private bool _isHidden;
     private ErVisualState _visualState = ErVisualState.Normal;
 
     public ErRelationEdgeViewModel(
@@ -131,6 +132,12 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
 
             RaiseStylePropertiesChanged();
         }
+    }
+
+    public bool IsHidden
+    {
+        get => _isHidden;
+        set => Set(ref _isHidden, value);
     }
 
     public ErVisualState VisualState

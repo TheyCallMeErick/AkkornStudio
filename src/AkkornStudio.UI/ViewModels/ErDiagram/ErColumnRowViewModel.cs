@@ -10,6 +10,8 @@ namespace AkkornStudio.UI.ViewModels.ErDiagram;
 public sealed class ErColumnRowViewModel : ViewModelBase
 {
     private bool _isRelationEndpointHighlighted;
+    private bool _hasInboundRelation;
+    private bool _hasOutboundRelation;
 
     public ErColumnRowViewModel(
         string columnName,
@@ -51,6 +53,20 @@ public sealed class ErColumnRowViewModel : ViewModelBase
 
     public bool HasIndexBadge => IsUnique;
 
+    public bool HasNoKeyBadge => !IsPrimaryKey && !IsForeignKey && !IsUnique;
+
+    public bool HasInboundRelation
+    {
+        get => _hasInboundRelation;
+        set => Set(ref _hasInboundRelation, value);
+    }
+
+    public bool HasOutboundRelation
+    {
+        get => _hasOutboundRelation;
+        set => Set(ref _hasOutboundRelation, value);
+    }
+
     public string KeyTag =>
         IsPrimaryKey ? "PK" :
         IsForeignKey ? "FK" :
@@ -61,6 +77,8 @@ public sealed class ErColumnRowViewModel : ViewModelBase
     public string NullabilityIcon => IsNullable ? "?" : "!";
 
     public string NullabilityChip => IsNullable ? "NULL" : "NOT NULL";
+
+    public string NullabilityBadgeText => IsNullable ? "NULL" : "NOT NULL";
 
     public IBrush TypeBrush => ResolveTypeBrush(DataType);
 

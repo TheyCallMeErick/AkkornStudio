@@ -220,6 +220,10 @@
           <Button Classes="secondary compact"
                   Command="{Binding RefreshSessionCommand}"
                   Content="Refresh"/>
+          <Button Classes="secondary compact"
+                  Margin="8,0,0,0"
+                  Command="{Binding PreviewSelectedForeignKeyCommand}"
+                  Content="Preview FK"/>
 
           <Grid ColumnDefinitions="Auto,Auto" Margin="8,0,0,0">
             <Button Grid.Column="0"
@@ -619,6 +623,7 @@
                 <MenuItem Header="Ver detalhes da linha" Command="{Binding OpenDetailsTabCommand}"/>
                 <MenuItem Header="Gerar WHERE" Command="{Binding GenerateWhereClauseCommand}"/>
                 <MenuItem Header="Abrir FK relacionada" Command="{Binding NavigateSelectedForeignKeyCommand}"/>
+                <MenuItem Header="Preview FK relacionada" Command="{Binding PreviewSelectedForeignKeyCommand}"/>
               </ContextMenu>
             </DataGrid.ContextMenu>
           </DataGrid>
@@ -627,7 +632,7 @@
                   Classes="surface-card"
                   Padding="6"
                   IsVisible="{Binding HasSelectionContext}">
-            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="6">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="6">
               <Border Grid.Column="0" Classes="badge">
                 <TextBlock Text="{Binding SelectionContextText}"/>
               </Border>
@@ -652,6 +657,12 @@
                       Content="Abrir FK"
                       IsVisible="{Binding HasSelectedCell}"/>
               <Button Grid.Column="5"
+                      Classes="secondary compact"
+                      HorizontalAlignment="Right"
+                      Command="{Binding PreviewSelectedForeignKeyCommand}"
+                      Content="Preview FK"
+                      IsVisible="{Binding HasSelectedCell}"/>
+              <Button Grid.Column="6"
                       Classes="secondary compact"
                       HorizontalAlignment="Right"
                       Command="{Binding OpenDetailsTabCommand}"

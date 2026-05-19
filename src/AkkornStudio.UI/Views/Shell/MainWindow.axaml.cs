@@ -73,6 +73,7 @@ public partial class MainWindow : Window
     private PropertyChangedEventHandler? _shellPropertyChangedHandler;
     private PropertyChangedEventHandler? _toastCenterPropertyChangedHandler;
     private PropertyChangedEventHandler? _outputPreviewPropertyChangedHandler;
+    private PropertyChangedEventHandler? _quickDataPreviewPropertyChangedHandler;
     private readonly ThemeJsonSettingsService _themeJsonSettings;
     private readonly ICriticalFlowTelemetryService? _criticalFlowTelemetry;
     private readonly ICriticalFlowBaselineReportService? _criticalFlowBaselineReportService;
@@ -234,9 +235,15 @@ public partial class MainWindow : Window
             if (e.PropertyName == nameof(OutputPreviewModalViewModel.IsVisible))
                 UpdatePreviewDockLayout();
         };
+        _quickDataPreviewPropertyChangedHandler = (_, e) =>
+        {
+            if (e.PropertyName == nameof(QuickDataPreviewModalViewModel.IsVisible))
+                UpdatePreviewDockLayout();
+        };
 
         CurrentShell.Toasts.PropertyChanged += _toastCenterPropertyChangedHandler;
         CurrentShell.OutputPreview.PropertyChanged += _outputPreviewPropertyChangedHandler;
+        CurrentShell.QuickDataPreview.PropertyChanged += _quickDataPreviewPropertyChangedHandler;
         UpdatePreviewDockLayout();
     }
 
@@ -247,9 +254,12 @@ public partial class MainWindow : Window
 
         if (_outputPreviewPropertyChangedHandler is not null)
             CurrentShell.OutputPreview.PropertyChanged -= _outputPreviewPropertyChangedHandler;
+        if (_quickDataPreviewPropertyChangedHandler is not null)
+            CurrentShell.QuickDataPreview.PropertyChanged -= _quickDataPreviewPropertyChangedHandler;
 
         _toastCenterPropertyChangedHandler = null;
         _outputPreviewPropertyChangedHandler = null;
+        _quickDataPreviewPropertyChangedHandler = null;
     }
 
     private void UpdatePreviewDockLayout()
@@ -259,7 +269,9 @@ public partial class MainWindow : Window
             return;
 
         bool isDiagramPage = CurrentShell.IsDiagramDocumentPageActive;
-        bool isBlockedByModal = CurrentShell.OutputPreview.IsVisible || CurrentShell.Toasts.IsDetailsOpen;
+        bool isBlockedByModal = CurrentShell.OutputPreview.IsVisible
+            || CurrentShell.QuickDataPreview.IsVisible
+            || CurrentShell.Toasts.IsDetailsOpen;
         dock.IsVisible = isDiagramPage && !isBlockedByModal;
 
         double bottomMargin = CurrentShell.Toasts.IsVisible
@@ -682,6 +694,13 @@ public partial class MainWindow : Window
     {
         EnterCanvasMode();
         _ = OpenOutputDiagnosticsTabSafeAsync();
+        e.Handled = true;
+    }
+
+    private void PreviewDockQuickBtn_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        EnterCanvasMode();
+        _ = OpenModeAwareQuickDataPreviewSafeAsync();
         e.Handled = true;
     }
 

@@ -6,6 +6,7 @@ using Avalonia;
 using AkkornStudio.UI.ViewModels.ErDiagram;
 using System.ComponentModel;
 using AkkornStudio.UI.Controls;
+using Avalonia.VisualTree;
 
 namespace AkkornStudio.UI.Controls.ErDiagram;
 
@@ -172,6 +173,18 @@ public sealed partial class ErCanvasControl : UserControl
         {
             SyncTransform();
         }
+    }
+
+    private async void CopyDefinition_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_observedCanvas?.SelectedEntity is not ErEntityNodeViewModel entity)
+            return;
+
+        TopLevel? topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.Clipboard is null)
+            return;
+
+        await topLevel.Clipboard.SetTextAsync(entity.CreateStatementSql ?? string.Empty);
     }
 
     private void Viewport_PointerWheelChanged(object? sender, PointerWheelEventArgs e)

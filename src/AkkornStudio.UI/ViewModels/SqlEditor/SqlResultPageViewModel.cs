@@ -78,6 +78,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     private string _columnProfileStatusText = string.Empty;
     private string _sessionAnnotationText = string.Empty;
     private Action<Guid?, string>? _appendSqlToEditor;
+    private Func<Guid?, string, DatabaseProvider, string?, string?, Task<bool>>? _openQuickPreview;
     private Func<string?, ConnectionConfig?>? _connectionConfigBySessionResolver;
     private Func<DbMetadata?>? _metadataResolver;
     private readonly SqlResultColumnProfilingService _columnProfilingService;
@@ -286,6 +287,9 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         NavigateSelectedForeignKeyCommand = new RelayCommand(
             NavigateSelectedForeignKey,
             () => CanNavigateSelectedForeignKey);
+        PreviewSelectedForeignKeyCommand = new RelayCommand(
+            () => _ = PreviewSelectedForeignKeyAsync(),
+            () => CanPreviewSelectedForeignKey);
         CompareWithSelectedSessionCommand = new RelayCommand(
             CompareWithSelectedSession,
             () => CanCompareWithSelectedSession);
@@ -377,6 +381,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     public ICommand SendSelectedSqlTemplateToEditorCommand { get; }
     public ICommand SendTableQuickActionToEditorCommand { get; }
     public ICommand NavigateSelectedForeignKeyCommand { get; }
+    public ICommand PreviewSelectedForeignKeyCommand { get; }
     public ICommand CompareWithSelectedSessionCommand { get; }
     public ICommand ClearComparisonCommand { get; }
     public ICommand ToggleSidebarCommand { get; }
@@ -835,6 +840,9 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     public bool CanNavigateSelectedForeignKey =>
         _appendSqlToEditor is not null
         && HasSelectedCell;
+    public bool CanPreviewSelectedForeignKey =>
+        _openQuickPreview is not null
+        && HasSelectedCell;
     public string EditabilityStatusText
     {
         get
@@ -1275,6 +1283,15 @@ public sealed class SqlResultPageViewModel : ViewModelBase
     {
         _appendSqlToEditor = appendSqlToEditor ?? throw new ArgumentNullException(nameof(appendSqlToEditor));
         RaisePropertyChanged(nameof(CanNavigateSelectedForeignKey));
+        RaisePropertyChanged(nameof(CanPreviewSelectedForeignKey));
+        NotifyCommands();
+    }
+
+    public void ConfigureQuickPreview(
+        Func<Guid?, string, DatabaseProvider, string?, string?, Task<bool>> openQuickPreview)
+    {
+        _openQuickPreview = openQuickPreview ?? throw new ArgumentNullException(nameof(openQuickPreview));
+        RaisePropertyChanged(nameof(CanPreviewSelectedForeignKey));
         NotifyCommands();
     }
 
@@ -1928,6 +1945,32 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         string sql = $"SELECT {limitClause}*\nFROM {QuoteCompositeIdentifier(Session.Provider, parentTable)}\nWHERE {where}{limitTail};";
         _appendSqlToEditor?.Invoke(_sourceSqlEditorDocumentId, sql);
         UpdatePendingExecutionStatus($"FK aberta: {relation.ChildFullTable}.{relation.ChildColumn} → {relation.ParentFullTable}.{relation.ParentColumn}", hasError: false);
+    }
+
+    private async Task PreviewSelectedForeignKeyAsync()
+    {
+        if (!TryResolveForeignKeyNavigationContext(out ForeignKeyRelation? relation, out object? value) || relation is null)
+        {
+            UpdatePendingExecutionStatus("Nenhum relacionamento FK pode ser resolvido para a celula selecionada.", hasError: true);
+            OpenMessagesTab();
+            return;
+        }
+
+        string where = value is null
+            ? $"{QuoteIdentifier(Session!.Provider, relation.ParentColumn)} IS NULL"
+            : $"{QuoteIdentifier(Session!.Provider, relation.ParentColumn)} = {ToSqlLiteral(value)}";
+        string limitClause = Session!.Provider == DatabaseProvider.SqlServer ? "TOP 120 " : string.Empty;
+        string limitTail = Session.Provider == DatabaseProvider.SqlServer ? string.Empty : " LIMIT 120";
+        string sql = $"SELECT {limitClause}*\nFROM {QuoteCompositeIdentifier(Session.Provider, relation.ParentFullTable)}\nWHERE {where}{limitTail};";
+
+        bool opened = await (_openQuickPreview?.Invoke(
+            _sourceSqlEditorDocumentId,
+            sql,
+            Session.Provider,
+            relation.ParentFullTable,
+            $"{relation.ChildFullTable}.{relation.ChildColumn} -> {relation.ParentFullTable}.{relation.ParentColumn}") ?? Task.FromResult(false));
+        if (!opened)
+            UpdatePendingExecutionStatus("Nao foi possivel abrir o preview rapido para a FK selecionada.", hasError: true);
     }
 
     private bool TryResolveForeignKeyNavigationContext(out ForeignKeyRelation? relation, out object? value)
@@ -5046,6 +5089,7 @@ public sealed class SqlResultPageViewModel : ViewModelBase
         (SendSelectedSqlTemplateToEditorCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (SendTableQuickActionToEditorCommand as RelayCommand<SqlTableQuickActionOption>)?.NotifyCanExecuteChanged();
         (NavigateSelectedForeignKeyCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (PreviewSelectedForeignKeyCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (CompareWithSelectedSessionCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ClearComparisonCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ToggleBottomPanelCommand as RelayCommand)?.NotifyCanExecuteChanged();

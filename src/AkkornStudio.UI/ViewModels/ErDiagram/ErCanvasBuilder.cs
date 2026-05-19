@@ -97,6 +97,9 @@ public static class ErCanvasBuilder
                 parentColumns: parentColumns,
                 onDelete: fk.OnDelete,
                 onUpdate: fk.OnUpdate));
+
+            AppendEntityDependency(entityById, childEntityId, parentEntityId, childColumns, parentColumns, outbound: true);
+            AppendEntityDependency(entityById, parentEntityId, childEntityId, parentColumns, childColumns, outbound: false);
         }
 
         RecomputeEdgeGeometry(canvas);
@@ -142,23 +145,13 @@ public static class ErCanvasBuilder
                 isUnique: column.IsUnique,
                 comment: column.Comment));
 
-        IReadOnlyList<string> dependencies =
-        [
-            .. table.ReferencedTables
-                .OrderBy(static t => t, StringComparer.OrdinalIgnoreCase)
-                .Select(static t => $"Outbound -> {t}"),
-            .. table.ReferencingTables
-                .OrderBy(static t => t, StringComparer.OrdinalIgnoreCase)
-                .Select(static t => $"Inbound <- {t}"),
-        ];
-
         return new ErEntityNodeViewModel(
             schema: table.Schema,
             name: table.Name,
             isView: table.Kind != TableKind.Table,
             estimatedRowCount: table.EstimatedRowCount,
             columns: columns,
-            dependencies: dependencies,
+            dependencies: [],
             createStatementSql: BuildCreateStatement(table));
     }
 
@@ -167,6 +160,34 @@ public static class ErCanvasBuilder
 
     private static string BuildCompositeGroupKey(ForeignKeyRelation fk) =>
         $"{fk.ConstraintName}|{fk.ChildSchema}|{fk.ChildTable}|{fk.ParentSchema}|{fk.ParentTable}";
+
+    private static void AppendEntityDependency(
+        IReadOnlyDictionary<string, ErEntityNodeViewModel> entityById,
+        string sourceEntityId,
+        string targetEntityId,
+        IReadOnlyList<string> sourceColumns,
+        IReadOnlyList<string> targetColumns,
+        bool outbound)
+    {
+        if (!entityById.TryGetValue(sourceEntityId, out ErEntityNodeViewModel? sourceEntity))
+            return;
+
+        string sourceCols = sourceColumns.Count > 1
+            ? $"({string.Join(", ", sourceColumns)})"
+            : sourceColumns.FirstOrDefault() ?? "?";
+        string targetCols = targetColumns.Count > 1
+            ? $"({string.Join(", ", targetColumns)})"
+            : targetColumns.FirstOrDefault() ?? "?";
+        string cardinality = outbound ? "N:1" : "1:N";
+        string dependency = outbound
+            ? $"{cardinality} {sourceCols} -> {targetEntityId}.{targetCols}"
+            : $"{cardinality} {sourceCols} <- {targetEntityId}.{targetCols}";
+
+        if (sourceEntity.Dependencies.Any(existing => string.Equals(existing, dependency, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        sourceEntity.Dependencies.Add(dependency);
+    }
 
     internal static void RecomputeEdgeGeometry(ErCanvasViewModel canvas)
     {
