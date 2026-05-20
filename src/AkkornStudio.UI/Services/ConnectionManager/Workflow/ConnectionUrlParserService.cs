@@ -116,15 +116,19 @@ public sealed class ConnectionUrlParserService : IConnectionUrlParserService
         string encoded = input;
         string username = string.Empty;
         string password = string.Empty;
+        bool hadCredentialSection = false;
+        bool hadPasswordDelimiter = false;
 
         int authorityStart = input.IndexOf("://", StringComparison.Ordinal) + 3;
         int lastAt = input.LastIndexOf('@');
         if (lastAt > authorityStart)
         {
+            hadCredentialSection = true;
             string credentialPart = input.Substring(authorityStart, lastAt - authorityStart);
             int firstColon = credentialPart.IndexOf(':');
             if (firstColon >= 0)
             {
+                hadPasswordDelimiter = true;
                 username = Uri.UnescapeDataString(credentialPart[..firstColon]);
                 password = Uri.UnescapeDataString(credentialPart[(firstColon + 1)..]);
             }
@@ -161,17 +165,27 @@ public sealed class ConnectionUrlParserService : IConnectionUrlParserService
                 : database;
         }
 
+        string resolvedUsername = string.IsNullOrWhiteSpace(username)
+            ? Uri.UnescapeDataString(uri.UserInfo)
+            : username;
+        string normalizedUrl = BuildNormalizedUrl(
+            uri,
+            resolvedUsername,
+            password,
+            hadCredentialSection,
+            hadPasswordDelimiter);
+
         parsed = new ParsedConnectionUrl(
             Provider: provider,
             Host: string.IsNullOrWhiteSpace(uri.Host) ? AppConstants.DefaultHost : uri.Host,
             Port: uri.IsDefaultPort ? ConnectionProfile.DefaultPort(provider) : uri.Port,
             Database: database,
-            Username: string.IsNullOrWhiteSpace(username) ? Uri.UnescapeDataString(uri.UserInfo) : username,
+            Username: resolvedUsername,
             Password: password,
             UseSsl: useSsl,
             TrustServerCertificate: trust,
             UseIntegratedSecurity: useIntegratedSecurity,
-            NormalizedUrl: uri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.Unescaped));
+            NormalizedUrl: normalizedUrl);
 
         if (provider == DatabaseProvider.SqlServer && parsed.Port <= 0)
             parsed = parsed with { Port = ConnectionProfile.DefaultPort(DatabaseProvider.SqlServer) };
@@ -257,6 +271,30 @@ public sealed class ConnectionUrlParserService : IConnectionUrlParserService
             || value.Equals("required", StringComparison.OrdinalIgnoreCase)
             || value.Equals("require", StringComparison.OrdinalIgnoreCase)
             || value.Equals("true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildNormalizedUrl(
+        Uri uri,
+        string username,
+        string password,
+        bool hadCredentialSection,
+        bool hadPasswordDelimiter)
+    {
+        string normalized = uri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.Unescaped);
+        bool shouldInjectCredentials = hadCredentialSection
+            && (!string.IsNullOrWhiteSpace(username) || !string.IsNullOrWhiteSpace(password) || hadPasswordDelimiter);
+        if (!shouldInjectCredentials)
+            return normalized;
+
+        int schemeSeparator = uri.Scheme.Length;
+
+        string encodedUser = Uri.EscapeDataString(username);
+        string encodedPassword = Uri.EscapeDataString(password);
+        string credential = hadPasswordDelimiter
+            ? $"{encodedUser}:{encodedPassword}@"
+            : $"{encodedUser}@";
+
+        return normalized[..(schemeSeparator + 3)] + credential + normalized[(schemeSeparator + 3)..];
     }
 
     private readonly record struct ParsedConnectionUrl(

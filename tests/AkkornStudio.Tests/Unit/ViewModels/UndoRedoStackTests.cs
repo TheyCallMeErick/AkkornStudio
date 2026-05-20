@@ -39,6 +39,42 @@ public class UndoRedoStackTests
         public ICanvasCommand? TryMerge(ICanvasCommand other) => null;
     }
 
+    private sealed class PartiallyFailingStateCommand(List<int> target, int value) : ICanvasCommand
+    {
+        public string Description => $"Failing add {value}";
+
+        public void Execute(CanvasViewModel canvas)
+        {
+            target.Add(value);
+            throw new InvalidOperationException("Simulated execute failure after side-effect.");
+        }
+
+        public void Undo(CanvasViewModel canvas)
+        {
+            int index = target.LastIndexOf(value);
+            if (index >= 0)
+                target.RemoveAt(index);
+        }
+
+        public ICanvasCommand? TryMerge(ICanvasCommand other) => null;
+    }
+
+    private sealed class MergeableCommand(string description, string mergeOnDescription) : ICanvasCommand
+    {
+        public string Description => description;
+
+        public void Execute(CanvasViewModel canvas) { }
+
+        public void Undo(CanvasViewModel canvas) { }
+
+        public ICanvasCommand? TryMerge(ICanvasCommand other)
+        {
+            return string.Equals(other.Description, mergeOnDescription, StringComparison.Ordinal)
+                ? new MockCommand("Merged")
+                : null;
+        }
+    }
+
     // â”€â”€ Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
@@ -256,6 +292,29 @@ public class UndoRedoStackTests
     }
 
     [Fact]
+    public void RollbackTransaction_RevertsPartiallyAppliedCommand_WhenExecuteFailsDuringTransaction()
+    {
+        var canvas = new CanvasViewModel();
+        var stack = new UndoRedoStack(canvas);
+        var values = new List<int>();
+
+        stack.BeginTransaction("Tx Failure");
+        stack.Execute(new StateCommand(values, 1));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            stack.Execute(new PartiallyFailingStateCommand(values, 2)));
+
+        // Side-effect happened before exception.
+        Assert.Equal([1, 2], values);
+
+        stack.RollbackTransaction();
+
+        Assert.Empty(values);
+        Assert.False(stack.InTransaction);
+        Assert.False(stack.CanUndo);
+    }
+
+    [Fact]
     public void Clear_ErasesAllHistory()
     {
         var canvas = new CanvasViewModel();
@@ -289,6 +348,21 @@ public class UndoRedoStackTests
         // Execute a new command should clear redo
         stack.Execute(new MockCommand("Third"));
         Assert.False(stack.CanRedo);
+    }
+
+    [Fact]
+    public void Execute_WhenTryMergeReturnsCommand_ReplacesTopUndoEntry()
+    {
+        var canvas = new CanvasViewModel();
+        var stack = new UndoRedoStack(canvas);
+
+        stack.Execute(new MergeableCommand("First", "Second"));
+        stack.Execute(new MockCommand("Second"));
+
+        Assert.True(stack.CanUndo);
+        Assert.Equal("Merged", stack.UndoDescription);
+        Assert.Single(stack.UndoHistory);
+        Assert.Equal("Merged", stack.UndoHistory[0]);
     }
 
     [Fact]
@@ -350,4 +424,3 @@ public class UndoRedoStackTests
         Assert.Equal("Cmd218", stack.UndoDescription);
     }
 }
-

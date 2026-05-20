@@ -18,7 +18,14 @@ internal sealed class AlterViewOutputCompiler : IDdlOutputCompiler
             {
                 Connection? input = context.Graph.GetSingleInputConnection(outputNode.Id, "view");
                 if (input is null)
+                {
+                    context.AddError(
+                        "E-DDL-ALTERVIEW-OUTPUT-VIEW",
+                        "AlterViewOutput requer input 'view' conectado.",
+                        outputNode.Id
+                    );
                     continue;
+                }
 
                 NodeInstance viewNode = context.Graph.NodeMap[input.FromNodeId];
                 if (viewNode.Type != NodeType.ViewDefinition)

@@ -10,6 +10,7 @@ public sealed class CommandPaletteViewModel : ViewModelBase
     private bool _isVisible;
     private string _query = "";
     private int _selectedIndex = 0;
+    private Exception? _lastExecutionError;
     private readonly ICommandPaletteFilterService _filterService;
 
     private readonly List<PaletteCommandItem> _all = [];
@@ -35,7 +36,13 @@ public sealed class CommandPaletteViewModel : ViewModelBase
     public int SelectedIndex
     {
         get => _selectedIndex;
-        set => Set(ref _selectedIndex, value);
+        set => Set(ref _selectedIndex, NormalizeSelectedIndex(value));
+    }
+
+    public Exception? LastExecutionError
+    {
+        get => _lastExecutionError;
+        private set => Set(ref _lastExecutionError, value);
     }
 
     public CommandPaletteViewModel(ICommandPaletteFilterService? filterService = null)
@@ -87,11 +94,21 @@ public sealed class CommandPaletteViewModel : ViewModelBase
 
     public void ExecuteSelected()
     {
-        if (SelectedIndex < 0 || SelectedIndex >= Results.Count)
+        if (SelectedIndex >= Results.Count)
             return;
+
         PaletteCommandItem cmd = Results[SelectedIndex];
-        Close();
-        cmd.Execute();
+        LastExecutionError = null;
+
+        try
+        {
+            cmd.Execute();
+            Close();
+        }
+        catch (Exception ex)
+        {
+            LastExecutionError = ex;
+        }
     }
 
     // ── Fuzzy filtering ───────────────────────────────────────────────────────
@@ -104,5 +121,19 @@ public sealed class CommandPaletteViewModel : ViewModelBase
 
         foreach (PaletteCommandItem cmd in filtered)
             Results.Add(cmd);
+    }
+
+    private int NormalizeSelectedIndex(int requestedIndex)
+    {
+        if (Results.Count == 0)
+            return 0;
+
+        if (requestedIndex < 0)
+            return 0;
+
+        if (requestedIndex >= Results.Count)
+            return Results.Count - 1;
+
+        return requestedIndex;
     }
 }

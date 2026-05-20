@@ -99,14 +99,14 @@ internal static class QueryParameterPromptModel
 
         if (IsNullLiteral(raw))
             return null;
-        if (bool.TryParse(raw, out bool boolValue))
-            return boolValue;
         if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue))
             return intValue;
         if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out long longValue))
             return longValue;
         if (decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal decimalValue))
             return decimalValue;
+        if (bool.TryParse(raw, out bool boolValue))
+            return boolValue;
         if (DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime dateTime))
             return dateTime;
 

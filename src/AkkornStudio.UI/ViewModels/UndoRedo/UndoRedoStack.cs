@@ -167,13 +167,16 @@ public sealed class UndoRedoStack(CanvasViewModel canvas) : ViewModelBase
     /// </summary>
     public void Execute(ICanvasCommand command)
     {
-        command.Execute(_canvas);
-
         if (_txBuffer is not null)
         {
+            // Buffer first so rollback can compensate even when Execute throws
+            // after partially applying side-effects.
             _txBuffer.Add(command);
+            command.Execute(_canvas);
             return;
         }
+
+        command.Execute(_canvas);
 
         // Attempt to coalesce with the top-of-stack command
         if (_undoStack.Last is not null && _undoStack.Last.Value.TryMerge(command) is ICanvasCommand merged)

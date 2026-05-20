@@ -19,7 +19,7 @@ public sealed class ErAddForeignKeyCommand(
 {
     private readonly ErCanvasViewModel _erCanvas = erCanvas ?? throw new ArgumentNullException(nameof(erCanvas));
     private readonly ErRelationEdgeViewModel _edge = new(
-        constraintName,
+        ValidateConstraintName(constraintName),
         childEntityId,
         parentEntityId,
         childColumn,
@@ -32,6 +32,8 @@ public sealed class ErAddForeignKeyCommand(
     public void Execute(CanvasViewModel canvas)
     {
         _ = canvas;
+        EnsureEntitiesExist();
+
         if (!_erCanvas.Edges.Contains(_edge))
             _erCanvas.Edges.Add(_edge);
     }
@@ -44,6 +46,8 @@ public sealed class ErAddForeignKeyCommand(
 
     public IDdlExpression ToDdlExpression()
     {
+        EnsureEntitiesExist();
+
         (string childSchema, string childTable) = SplitEntityId(_edge.ChildEntityId);
         (string parentSchema, string parentTable) = SplitEntityId(_edge.ParentEntityId);
 
@@ -72,4 +76,40 @@ public sealed class ErAddForeignKeyCommand(
 
         return (entityId[..separator].Trim(), entityId[(separator + 1)..].Trim());
     }
+
+    private void EnsureEntitiesExist()
+    {
+        if (_erCanvas.FindEntity(_edge.ChildEntityId) is null)
+            throw new InvalidOperationException(
+                $"Child entity '{_edge.ChildEntityId}' was not found in ER canvas."
+            );
+
+        if (_erCanvas.FindEntity(_edge.ParentEntityId) is null)
+            throw new InvalidOperationException(
+                $"Parent entity '{_edge.ParentEntityId}' was not found in ER canvas."
+            );
+    }
+
+    private static string? ValidateConstraintName(string? constraintName)
+    {
+        if (constraintName is null)
+            return null;
+
+        string trimmed = constraintName.Trim();
+        if (trimmed.Length == 0)
+            throw new ArgumentException("Constraint name cannot be empty or whitespace.", nameof(constraintName));
+
+        if (!IsIdentifierStart(trimmed[0]) || trimmed.Skip(1).Any(c => !IsIdentifierPart(c)))
+        {
+            throw new ArgumentException(
+                $"Constraint name '{trimmed}' must be a valid SQL identifier ([A-Za-z_][A-Za-z0-9_]*).",
+                nameof(constraintName));
+        }
+
+        return trimmed;
+    }
+
+    private static bool IsIdentifierStart(char c) => char.IsLetter(c) || c == '_';
+
+    private static bool IsIdentifierPart(char c) => char.IsLetterOrDigit(c) || c == '_';
 }

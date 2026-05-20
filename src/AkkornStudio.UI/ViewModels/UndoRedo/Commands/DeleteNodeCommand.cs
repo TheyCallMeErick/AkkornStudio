@@ -9,15 +9,44 @@ public sealed class DeleteNodeCommand(NodeViewModel node) : ICanvasCommand
     public void Execute(CanvasViewModel canvas)
     {
         _removedConnections.Clear();
-        var wires = canvas
-            .Connections.Where(c => c.FromPin.Owner == _node || c.ToPin?.Owner == _node)
-            .ToList();
-        foreach (ConnectionViewModel? w in wires)
+        List<ConnectionViewModel> wires = [];
+        foreach (ConnectionViewModel connection in canvas.Connections)
         {
-            _removedConnections.Add(w);
-            canvas.Connections.Remove(w);
+            if (connection.FromPin.Owner == _node || connection.ToPin?.Owner == _node)
+                wires.Add(connection);
         }
-        canvas.Nodes.Remove(_node);
+        bool nodeWasPresent = canvas.Nodes.Contains(_node);
+        try
+        {
+            foreach (ConnectionViewModel? w in wires)
+            {
+                try
+                {
+                    canvas.Connections.Remove(w);
+                }
+                finally
+                {
+                    if (!canvas.Connections.Contains(w))
+                        _removedConnections.Add(w);
+                }
+            }
+
+            if (nodeWasPresent)
+                canvas.Nodes.Remove(_node);
+        }
+        catch
+        {
+            if (nodeWasPresent && !canvas.Nodes.Contains(_node))
+                canvas.Nodes.Add(_node);
+
+            foreach (ConnectionViewModel connection in _removedConnections)
+            {
+                if (!canvas.Connections.Contains(connection))
+                    canvas.Connections.Add(connection);
+            }
+
+            throw;
+        }
     }
 
     public void Undo(CanvasViewModel canvas)

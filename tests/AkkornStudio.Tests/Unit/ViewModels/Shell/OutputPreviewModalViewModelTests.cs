@@ -26,8 +26,8 @@ public class OutputPreviewModalViewModelTests
         Assert.True(vm.IsDdlMode);
         Assert.False(vm.HasDdlSql);
         Assert.True(vm.HasCanvasDiagnostics);
-        Assert.True(vm.HasStructureDiagnostics);
-        Assert.Same(liveDdl, vm.DdlTool);
+        Assert.Null(vm.BenchmarkTool);
+        Assert.Null(vm.ExplainPlanTool);
     }
 
     [Fact]
@@ -51,8 +51,8 @@ public class OutputPreviewModalViewModelTests
         Assert.True(vm.IsDdlMode);
         Assert.False(vm.HasDdlSql);
         Assert.True(vm.HasCanvasDiagnostics);
-        Assert.True(vm.HasStructureDiagnostics);
-        Assert.Same(liveDdl, vm.DdlTool);
+        Assert.Null(vm.BenchmarkTool);
+        Assert.Null(vm.ExplainPlanTool);
     }
 
     [Fact]
@@ -66,8 +66,8 @@ public class OutputPreviewModalViewModelTests
         Assert.True(vm.IsUnavailableMode);
         Assert.True(vm.ShowUnavailablePrimaryContent);
         Assert.False(vm.HasCanvasDiagnostics);
-        Assert.False(vm.HasStructureDiagnostics);
-        Assert.Null(vm.DdlTool);
+        Assert.Null(vm.BenchmarkTool);
+        Assert.Null(vm.ExplainPlanTool);
         Assert.Equal("Preview indisponivel para este documento.", vm.UnavailableMessage);
     }
 
@@ -88,11 +88,13 @@ public class OutputPreviewModalViewModelTests
 
         var vm = new OutputPreviewModalViewModel();
         vm.OpenForDdl(ddlCanvas, liveDdl, "PostgreSQL");
-        Assert.Same(liveDdl, vm.DdlTool);
+        Assert.True(vm.IsDdlMode);
+        Assert.Null(vm.BenchmarkTool);
+        Assert.Null(vm.ExplainPlanTool);
 
         vm.OpenForQuery(queryCanvas, liveSql, "PostgreSQL");
 
-        Assert.Null(vm.DdlTool);
+        Assert.Equal(string.Empty, vm.DdlSqlText);
         Assert.True(vm.IsQueryMode);
     }
 
@@ -112,11 +114,11 @@ public class OutputPreviewModalViewModelTests
         var vm = new OutputPreviewModalViewModel();
 
         vm.OpenForDdl(ddlCanvas, liveDdl, "PostgreSQL");
-        Assert.Same(liveDdl, vm.DdlTool);
+        Assert.True(vm.IsDdlMode);
 
         vm.OpenForSqlBenchmark(queryCanvas, "SELECT 1", null);
 
-        Assert.Null(vm.DdlTool);
+        Assert.Equal(string.Empty, vm.DdlSqlText);
         Assert.True(vm.IsSqlBenchmarkMode);
     }
 
@@ -134,11 +136,12 @@ public class OutputPreviewModalViewModelTests
 
         var vm = new OutputPreviewModalViewModel();
         vm.OpenForDdl(ddlCanvas, liveDdl, "PostgreSQL");
-        Assert.Same(liveDdl, vm.DdlTool);
+        Assert.True(vm.IsDdlMode);
 
         vm.Close();
 
-        Assert.Null(vm.DdlTool);
+        Assert.Null(vm.BenchmarkTool);
+        Assert.Null(vm.ExplainPlanTool);
         Assert.False(vm.IsVisible);
     }
 }

@@ -1,7 +1,4 @@
-﻿using AkkornStudio.UI.Services.Benchmark;
-
-
-namespace AkkornStudio.Tests.Unit.ViewModels;
+﻿namespace AkkornStudio.Tests.Unit.ViewModels;
 
 public class CommandPaletteViewModelTests
 {
@@ -117,6 +114,126 @@ public class CommandPaletteViewModelTests
         Assert.True(executed);
         Assert.False(vm.IsVisible);
         Assert.Equal(string.Empty, vm.Query);
+        Assert.Null(vm.LastExecutionError);
+    }
+
+    [Fact]
+    public void ExecuteSelected_WhenCommandThrows_DoesNotCrashAndKeepsPaletteOpen()
+    {
+        var vm = new CommandPaletteViewModel();
+        vm.SetCommands(
+            [
+                new PaletteCommandItem
+                {
+                    Name = "Boom",
+                    Description = "Boom",
+                    Tags = "boom",
+                    Execute = () => throw new InvalidOperationException("explode"),
+                },
+            ]
+        );
+        vm.Open();
+        vm.Query = "bo";
+
+        vm.ExecuteSelected();
+
+        Assert.True(vm.IsVisible);
+        Assert.Equal("bo", vm.Query);
+        InvalidOperationException ex = Assert.IsType<InvalidOperationException>(vm.LastExecutionError);
+        Assert.Equal("explode", ex.Message);
+    }
+
+    [Fact]
+    public void SelectedIndex_GreaterThanResultCount_IsClampedToLast()
+    {
+        var vm = new CommandPaletteViewModel();
+        vm.SetCommands(
+            [
+                new PaletteCommandItem
+                {
+                    Name = "Run A",
+                    Description = "Run A",
+                    Tags = "a",
+                    Execute = () => { },
+                },
+                new PaletteCommandItem
+                {
+                    Name = "Run B",
+                    Description = "Run B",
+                    Tags = "b",
+                    Execute = () => { },
+                },
+            ]
+        );
+        vm.Open();
+        vm.SelectedIndex = 7;
+
+        Assert.Equal(1, vm.SelectedIndex);
+    }
+
+    [Fact]
+    public void SelectedIndex_Negative_IsClampedToZero()
+    {
+        var vm = new CommandPaletteViewModel();
+        vm.SetCommands(
+            [
+                new PaletteCommandItem
+                {
+                    Name = "Run",
+                    Description = "Run",
+                    Tags = "run",
+                    Execute = () => { },
+                },
+            ]
+        );
+        vm.Open();
+        vm.SelectedIndex = -1;
+
+        Assert.Equal(0, vm.SelectedIndex);
+    }
+
+    [Fact]
+    public void SelectedIndex_WithinBounds_IsKept()
+    {
+        var vm = new CommandPaletteViewModel();
+        vm.SetCommands(
+            [
+                new PaletteCommandItem { Name = "A", Description = "A", Tags = "A", Execute = () => { } },
+                new PaletteCommandItem { Name = "B", Description = "B", Tags = "B", Execute = () => { } },
+            ]
+        );
+        vm.Open();
+
+        vm.SelectedIndex = 1;
+
+        Assert.Equal(1, vm.SelectedIndex);
+    }
+
+    [Fact]
+    public void ExecuteSelected_WhenNoResults_IsNoOp()
+    {
+        var vm = new CommandPaletteViewModel();
+        vm.Open();
+        vm.Query = "missing";
+
+        vm.ExecuteSelected();
+
+        Assert.True(vm.IsVisible);
+        Assert.Null(vm.LastExecutionError);
+    }
+
+    [Fact]
+    public void SelectNextAndPrev_WithNoResults_DoesNotChangeIndex()
+    {
+        var vm = new CommandPaletteViewModel();
+        vm.Open();
+        vm.Query = "missing";
+        vm.SelectedIndex = 3;
+
+        vm.SelectNext();
+        vm.SelectPrev();
+
+        Assert.Equal(0, vm.SelectedIndex);
+        Assert.Empty(vm.Results);
     }
 }
-

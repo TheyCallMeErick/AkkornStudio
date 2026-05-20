@@ -7,17 +7,23 @@ public sealed class DeleteConnectionCommand(ConnectionViewModel connection) : IC
 
     public void Execute(CanvasViewModel canvas)
     {
-        canvas.Connections.Remove(_connection);
-
-        if (_connection.FromPin is not null)
+        try
+        {
+            canvas.Connections.Remove(_connection);
+        }
+        finally
+        {
             _connection.FromPin.IsConnected = canvas.Connections.Any(c =>
                 c.FromPin == _connection.FromPin
             );
-        if (_connection.ToPin is not null)
-            _connection.ToPin.IsConnected = canvas.Connections.Any(c =>
-                c.ToPin == _connection.ToPin
-            );
 
+            if (_connection.ToPin is not null)
+            {
+                _connection.ToPin.IsConnected = canvas.Connections.Any(c =>
+                    c.ToPin == _connection.ToPin
+                );
+            }
+        }
     }
 
     public void Undo(CanvasViewModel canvas)

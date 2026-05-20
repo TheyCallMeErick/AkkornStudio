@@ -27,9 +27,17 @@ public sealed class ErEditHistory
             return false;
 
         ErCanvasMutation mutation = _undo.Pop();
-        mutation.Undo();
-        _redo.Push(mutation);
-        return true;
+        try
+        {
+            mutation.Undo();
+            _redo.Push(mutation);
+            return true;
+        }
+        catch
+        {
+            _undo.Push(mutation);
+            throw;
+        }
     }
 
     public bool Redo()
@@ -38,9 +46,17 @@ public sealed class ErEditHistory
             return false;
 
         ErCanvasMutation mutation = _redo.Pop();
-        mutation.Execute();
-        _undo.Push(mutation);
-        return true;
+        try
+        {
+            mutation.Execute();
+            _undo.Push(mutation);
+            return true;
+        }
+        catch
+        {
+            _redo.Push(mutation);
+            throw;
+        }
     }
 
     public void Clear()

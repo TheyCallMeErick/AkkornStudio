@@ -37,12 +37,21 @@ public static class ServiceCollectionExtensions
         var options = new AkkornStudioServiceOptions();
         configure?.Invoke(options);
 
-        IEnumerable<IProviderRegistration> providerRegistrations =
-            options.ProviderRegistrations ?? DefaultProviderRegistrations.CreateAll();
-        IEnumerable<OrchestratorRegistration> orchestratorRegistrations =
-            options.OrchestratorRegistrations ?? DbOrchestratorFactory.CreateDefaultRegistrations();
-        IEnumerable<InspectorRegistration> inspectorRegistrations =
-            options.InspectorRegistrations ?? DatabaseInspectorFactory.CreateDefaultRegistrations();
+        IReadOnlyList<IProviderRegistration> providerRegistrations = ResolveRegistrations(
+            options.ProviderRegistrations,
+            DefaultProviderRegistrations.CreateAll,
+            nameof(AkkornStudioServiceOptions.ProviderRegistrations)
+        );
+        IReadOnlyList<OrchestratorRegistration> orchestratorRegistrations = ResolveRegistrations(
+            options.OrchestratorRegistrations,
+            DbOrchestratorFactory.CreateDefaultRegistrations,
+            nameof(AkkornStudioServiceOptions.OrchestratorRegistrations)
+        );
+        IReadOnlyList<InspectorRegistration> inspectorRegistrations = ResolveRegistrations(
+            options.InspectorRegistrations,
+            DatabaseInspectorFactory.CreateDefaultRegistrations,
+            nameof(AkkornStudioServiceOptions.InspectorRegistrations)
+        );
         Func<ICanvasTableTracker> canvasTableTrackerFactory =
             options.CanvasTableTrackerFactory ?? (() => new CanvasTableTracker());
 
@@ -57,16 +66,44 @@ public static class ServiceCollectionExtensions
         // the same live connection across all view-models.
         services.AddSingleton<ActiveConnectionContext>();
 
-        // FunctionRegistry and QueryBuilder are resolved from the context;
-        // register factory delegates so VMs can request the current instance.
-        services.AddTransient<ISqlFunctionRegistry>(sp =>
-            sp.GetRequiredService<ActiveConnectionContext>().FunctionRegistry
-        );
+        // Use a proxy registry that always delegates to the current
+        // ActiveConnectionContext registry so provider switches do not stale
+        // long-lived references resolved from DI.
+        services.AddSingleton<ISqlFunctionRegistry, ActiveConnectionSqlFunctionRegistryProxy>();
 
         services.AddTransient<QueryBuilderService>(sp =>
             sp.GetRequiredService<ActiveConnectionContext>().QueryBuilder
         );
 
         return services;
+    }
+
+    private static IReadOnlyList<TRegistration> ResolveRegistrations<TRegistration>(
+        IEnumerable<TRegistration>? configuredRegistrations,
+        Func<IReadOnlyList<TRegistration>> defaultFactory,
+        string optionName
+    )
+    {
+        IReadOnlyList<TRegistration> registrations = configuredRegistrations?.ToArray() ?? defaultFactory();
+        if (registrations.Count == 0)
+            throw new InvalidOperationException(
+                $"AkkornStudio service option '{optionName}' must contain at least one registration."
+            );
+
+        return registrations;
+    }
+
+    private sealed class ActiveConnectionSqlFunctionRegistryProxy(
+        ActiveConnectionContext connectionContext
+    ) : ISqlFunctionRegistry
+    {
+        public string GetFunction(string functionName, params string[] args) =>
+            connectionContext.FunctionRegistry.GetFunction(functionName, args);
+
+        public bool IsSupported(string functionName) =>
+            connectionContext.FunctionRegistry.IsSupported(functionName);
+
+        public IReadOnlyList<PortabilityWarning> CheckPortability(IEnumerable<string> functionNames) =>
+            connectionContext.FunctionRegistry.CheckPortability(functionNames);
     }
 }

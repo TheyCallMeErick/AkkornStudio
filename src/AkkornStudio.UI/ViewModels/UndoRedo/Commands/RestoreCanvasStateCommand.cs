@@ -1,4 +1,5 @@
 using AkkornStudio.UI.ViewModels.Canvas;
+using AkkornStudio.UI.Serialization;
 
 namespace AkkornStudio.UI.ViewModels.UndoRedo;
 
@@ -14,10 +15,8 @@ namespace AkkornStudio.UI.ViewModels.UndoRedo;
 /// </summary>
 public sealed class RestoreCanvasStateCommand : ICanvasCommand
 {
-    private readonly List<NodeViewModel> _savedNodes;
-    private readonly List<ConnectionViewModel> _savedConnections;
-    private List<NodeViewModel>? _afterNodes;
-    private List<ConnectionViewModel>? _afterConnections;
+    private readonly string _savedCanvasJson;
+    private string? _afterCanvasJson;
     private bool _hasAfterSnapshot;
     private bool _hasBeenRegistered;
 
@@ -33,8 +32,7 @@ public sealed class RestoreCanvasStateCommand : ICanvasCommand
         Description = $"Undo {operationDescription}";
 
         // Snapshot current state (before the destructive operation)
-        _savedNodes = canvas.Nodes.ToList();
-        _savedConnections = canvas.Connections.ToList();
+        _savedCanvasJson = CanvasSerializer.Serialize(canvas);
     }
 
     public void Execute(CanvasViewModel canvas)
@@ -49,13 +47,13 @@ public sealed class RestoreCanvasStateCommand : ICanvasCommand
 
         // Subsequent Execute calls are Redo — restore post-operation state when available.
         if (_hasAfterSnapshot)
-            Restore(canvas, _afterNodes!, _afterConnections!);
+            Restore(canvas, _afterCanvasJson!);
     }
 
     public void Undo(CanvasViewModel canvas)
     {
         // Undo should restore the pre-operation state.
-        Restore(canvas, _savedNodes, _savedConnections);
+        Restore(canvas, _savedCanvasJson);
     }
 
     /// <summary>
@@ -63,24 +61,27 @@ public sealed class RestoreCanvasStateCommand : ICanvasCommand
     /// </summary>
     public void CaptureAfterState(CanvasViewModel canvas)
     {
-        _afterNodes = canvas.Nodes.ToList();
-        _afterConnections = canvas.Connections.ToList();
+        _afterCanvasJson = CanvasSerializer.Serialize(canvas);
         _hasAfterSnapshot = true;
     }
 
-    private static void Restore(
-        CanvasViewModel canvas,
-        IReadOnlyList<NodeViewModel> nodes,
-        IReadOnlyList<ConnectionViewModel> connections)
+    private static void Restore(CanvasViewModel canvas, string snapshotJson)
     {
+        using var snapshotCanvas = new CanvasViewModel();
+        CanvasLoadResult load = CanvasSerializer.Deserialize(snapshotJson, snapshotCanvas);
+        if (!load.Success)
+            throw new InvalidOperationException($"Failed to restore canvas snapshot: {load.Error}.");
+
         canvas.Connections.Clear();
         canvas.Nodes.Clear();
+        canvas.Zoom = snapshotCanvas.Zoom;
+        canvas.PanOffset = snapshotCanvas.PanOffset;
+        canvas.ReplacePreviewParameterInputs(snapshotCanvas.PreviewParameterInputs);
 
-        foreach (NodeViewModel node in nodes)
+        foreach (NodeViewModel node in snapshotCanvas.Nodes)
             canvas.Nodes.Add(node);
 
-        foreach (ConnectionViewModel conn in connections)
+        foreach (ConnectionViewModel conn in snapshotCanvas.Connections)
             canvas.Connections.Add(conn);
     }
 }
-

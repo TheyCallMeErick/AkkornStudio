@@ -11,20 +11,37 @@ namespace AkkornStudio.UI.ViewModels.ErDiagram;
 public sealed class ErEditOrchestrator
 {
     private readonly ErCanvasViewModel _erCanvas;
-    private readonly MutationGuardService _mutationGuardService;
     private readonly ErDdlEmitter _ddlEmitter;
+    private readonly Func<string, MutationGuardResult> _analyzeMutation;
 
     public ErEditOrchestrator(
         ErCanvasViewModel erCanvas,
         DatabaseProvider provider,
         MutationGuardService mutationGuardService)
+        : this(
+            erCanvas,
+            provider,
+            mutationGuardService,
+            mutationGuardService is null
+                ? throw new ArgumentNullException(nameof(mutationGuardService))
+                : mutationGuardService.Analyze)
+    {
+    }
+
+    internal ErEditOrchestrator(
+        ErCanvasViewModel erCanvas,
+        DatabaseProvider provider,
+        MutationGuardService mutationGuardService,
+        Func<string, MutationGuardResult> analyzeMutation)
     {
         _erCanvas = erCanvas ?? throw new ArgumentNullException(nameof(erCanvas));
-        _mutationGuardService = mutationGuardService ?? throw new ArgumentNullException(nameof(mutationGuardService));
+        _ = mutationGuardService ?? throw new ArgumentNullException(nameof(mutationGuardService));
         _ddlEmitter = new ErDdlEmitter(provider);
+        _analyzeMutation = analyzeMutation ?? throw new ArgumentNullException(nameof(analyzeMutation));
     }
 
     public string LastGeneratedDdl { get; private set; } = string.Empty;
+    public MutationGuardResult? LastMutationGuardResult { get; private set; }
 
     public bool ApplyCommand(
         ICanvasCommand command,
@@ -34,15 +51,18 @@ public sealed class ErEditOrchestrator
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(canvas);
+        LastMutationGuardResult = null;
 
         string ddl = _ddlEmitter.Emit([command]);
-        LastGeneratedDdl = ddl;
 
         if (!force && IsDestructive(command))
         {
-            MutationGuardResult guard = _mutationGuardService.Analyze(ddl);
+            MutationGuardResult guard = _analyzeMutation(ddl);
             if (guard.RequiresConfirmation)
+            {
+                LastMutationGuardResult = guard;
                 return false;
+            }
         }
 
         if (undoRedo is not null)
@@ -50,6 +70,7 @@ public sealed class ErEditOrchestrator
         else
             command.Execute(canvas);
 
+        LastGeneratedDdl = ddl;
         return true;
     }
 

@@ -14,6 +14,7 @@
     <PackageVersion Include="ClosedXML" Version="0.102.3" />
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
     <PackageVersion Include="Material.Icons.Avalonia" Version="2.1.9" />
+    <PackageVersion Include="HarfBuzzSharp.NativeAssets.Linux" Version="8.3.0.1" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="9.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
@@ -23,6 +24,7 @@
     <PackageVersion Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="170.128.0" />
     <PackageVersion Include="MySqlConnector" Version="2.3.7" />
     <PackageVersion Include="Npgsql" Version="8.0.3" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
     <PackageVersion Include="SqlKata" Version="2.4.0" />
     <PackageVersion Include="SqlKata.Execution" Version="2.4.0" />
     <PackageVersion Include="Testcontainers" Version="3.9.0" />

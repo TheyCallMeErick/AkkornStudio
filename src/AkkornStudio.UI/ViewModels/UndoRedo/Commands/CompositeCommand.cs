@@ -21,13 +21,62 @@ public sealed class CompositeCommand : ICanvasCommand
 
     public void Execute(CanvasViewModel canvas)
     {
-        foreach (ICanvasCommand cmd in _commands)
-            cmd.Execute(canvas);
+        List<ICanvasCommand> executed = [];
+        try
+        {
+            foreach (ICanvasCommand cmd in _commands)
+            {
+                cmd.Execute(canvas);
+                executed.Add(cmd);
+            }
+        }
+        catch
+        {
+            // Best-effort compensation to preserve atomicity.
+            foreach (ICanvasCommand cmd in executed.AsEnumerable().Reverse())
+            {
+                try
+                {
+                    cmd.Undo(canvas);
+                }
+                catch
+                {
+                    // Keep original exception as primary failure.
+                }
+            }
+
+            throw;
+        }
     }
 
     public void Undo(CanvasViewModel canvas)
     {
-        foreach (ICanvasCommand cmd in _commands.Reverse())
-            cmd.Undo(canvas);
+        List<ICanvasCommand> undone = [];
+        try
+        {
+            foreach (ICanvasCommand cmd in _commands.AsEnumerable().Reverse())
+            {
+                cmd.Undo(canvas);
+                undone.Add(cmd);
+            }
+        }
+        catch
+        {
+            // Best-effort compensation to preserve atomicity.
+            // Re-apply commands already undone in original forward order.
+            foreach (ICanvasCommand cmd in undone.AsEnumerable().Reverse())
+            {
+                try
+                {
+                    cmd.Execute(canvas);
+                }
+                catch
+                {
+                    // Keep original exception as primary failure.
+                }
+            }
+
+            throw;
+        }
     }
 }

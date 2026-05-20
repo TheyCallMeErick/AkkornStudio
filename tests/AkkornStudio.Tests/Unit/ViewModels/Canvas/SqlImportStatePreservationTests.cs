@@ -102,12 +102,14 @@ public class SqlImportStatePreservationTests
         // Undo goes back to before-state
         command.Undo(canvas);
         var undone = Assert.Single(canvas.Nodes);
-        Assert.Same(before, undone);
+        Assert.Equal(before.Title, undone.Title);
+        Assert.NotSame(before, undone);
 
         // Redo reapplies captured after-state
         command.Execute(canvas);
         var redone = Assert.Single(canvas.Nodes);
-        Assert.Same(after, redone);
+        Assert.Equal(after.Title, redone.Title);
+        Assert.NotSame(after, redone);
     }
 
     [Fact]
@@ -199,7 +201,8 @@ public class SqlImportStatePreservationTests
         // Undo should restore the saved state
         command.Undo(canvas);
         var restored = Assert.Single(canvas.Nodes);
-        Assert.Same(node, restored);
+        Assert.Equal(node.Title, restored.Title);
+        Assert.NotSame(node, restored);
     }
 
     [Fact]
@@ -297,18 +300,20 @@ public class SqlImportStatePreservationTests
     }
 
     [Fact]
-    public void RegressionTest_RestoreCommandPreservesNodeIdentity()
+    public void RegressionTest_RestoreCommandRestoresEquivalentNodeState()
     {
-        // Regression test: Verify that restored nodes are the same objects (not clones)
+        // Regression test: restored snapshot keeps equivalent state (aliases/params),
+        // even though node instances are reconstructed.
         var canvas = new CanvasViewModel();
         canvas.Nodes.Clear();
         canvas.Connections.Clear();
 
         var originalNode = new NodeViewModel("Table", [], new(100, 100));
+        originalNode.Alias = "table_alias";
+        originalNode.Parameters["foo"] = "bar";
         canvas.Nodes.Add(originalNode);
 
         var command = new RestoreCanvasStateCommand(canvas, "Test");
-        var nodeReference = originalNode;
 
         // Simulate clear
         canvas.Nodes.Clear();
@@ -316,10 +321,11 @@ public class SqlImportStatePreservationTests
         // Undo (restore)
         command.Undo(canvas);
 
-        // The restored node should be the original object
+        // Restored node is equivalent state, not same reference
         var restoredNode = Assert.Single(canvas.Nodes);
-        Assert.Same(nodeReference, restoredNode);
+        Assert.NotSame(originalNode, restoredNode);
+        Assert.Equal("table_alias", restoredNode.Alias);
+        Assert.Equal("bar", restoredNode.Parameters["foo"]);
     }
 }
-
 
