@@ -159,11 +159,7 @@ public sealed class ConnectionUrlParserService : IConnectionUrlParserService
         string database = Uri.UnescapeDataString(uri.AbsolutePath.Trim('/'));
 
         if (provider == DatabaseProvider.SQLite)
-        {
-            database = uri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase)
-                ? Uri.UnescapeDataString(uri.LocalPath)
-                : database;
-        }
+            database = ResolveSqliteDatabasePath(uri, database);
 
         string resolvedUsername = string.IsNullOrWhiteSpace(username)
             ? Uri.UnescapeDataString(uri.UserInfo)
@@ -271,6 +267,15 @@ public sealed class ConnectionUrlParserService : IConnectionUrlParserService
             || value.Equals("required", StringComparison.OrdinalIgnoreCase)
             || value.Equals("require", StringComparison.OrdinalIgnoreCase)
             || value.Equals("true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveSqliteDatabasePath(Uri uri, string fallback)
+    {
+        string localPath = Uri.UnescapeDataString(uri.LocalPath);
+        if (localPath == "/" && string.IsNullOrWhiteSpace(fallback))
+            return fallback;
+
+        return localPath;
     }
 
     private static string BuildNormalizedUrl(

@@ -13,7 +13,15 @@ public sealed record ColumnExpr(
     public string Emit(EmitContext ctx)
     {
         if (ColumnName == "*")
+        {
+            if (OutputType != PinDataType.ColumnSet)
+            {
+                throw new InvalidOperationException(
+                    "Wildcard column '*' is only allowed for ColumnSet projections.");
+            }
+
             return string.IsNullOrEmpty(TableAlias) ? "*" : $"{ctx.QuoteIdentifier(TableAlias)}.*";
+        }
 
         return string.IsNullOrEmpty(TableAlias)
             ? ctx.QuoteIdentifier(ColumnName)

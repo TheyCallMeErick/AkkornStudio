@@ -1,3 +1,5 @@
+using AkkornStudio.Core;
+
 namespace AkkornStudio.Expressions.Advanced;
 
 /// <summary>
@@ -10,11 +12,19 @@ public sealed record TopExpr(ISqlExpression Result, ISqlExpression Count) : ISql
 
     public string Emit(EmitContext ctx)
     {
-        string resultSql = Result.Emit(ctx);
+        string resultSql = Result.Emit(ctx).Trim().TrimEnd(';').TrimEnd();
+        string countSql = Count.Emit(ctx).Trim();
+        if (string.IsNullOrWhiteSpace(countSql))
+            throw new InvalidOperationException("TOP/LIMIT count expression is required.");
 
-        _ = Count.Emit(ctx);
-        // Note: The actual TOP/LIMIT syntax is typically handled at the SELECT level,
-        // but this expression wraps both the result expression and the count.
-        return resultSql; // Return the result, count is used separately in SELECT compilation
+        if (ctx.Provider == DatabaseProvider.SqlServer)
+        {
+            if (resultSql.StartsWith("SELECT ", StringComparison.OrdinalIgnoreCase))
+                return resultSql.Insert(6, $" TOP ({countSql})");
+
+            return $"SELECT TOP ({countSql}) * FROM ({resultSql}) AS __top_expr";
+        }
+
+        return $"{resultSql} LIMIT {countSql}";
     }
 }

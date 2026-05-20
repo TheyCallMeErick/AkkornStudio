@@ -227,6 +227,28 @@ public class MathNodeTests
 
 public class CastNodeTests
 {
+    public static IEnumerable<object[]> CastTypeCases()
+    {
+        yield return [DatabaseProvider.SqlServer, CastTargetType.Text, "NVARCHAR(MAX)"];
+        yield return [DatabaseProvider.Postgres, CastTargetType.Text, "TEXT"];
+        yield return [DatabaseProvider.MySql, CastTargetType.Text, "TEXT"];
+        yield return [DatabaseProvider.Postgres, CastTargetType.Integer, "INTEGER"];
+        yield return [DatabaseProvider.MySql, CastTargetType.Integer, "INT"];
+        yield return [DatabaseProvider.Postgres, CastTargetType.BigInt, "BIGINT"];
+        yield return [DatabaseProvider.Postgres, CastTargetType.Decimal, "DECIMAL(18,4)"];
+        yield return [DatabaseProvider.Postgres, CastTargetType.Float, "DOUBLE PRECISION"];
+        yield return [DatabaseProvider.SqlServer, CastTargetType.Float, "FLOAT"];
+        yield return [DatabaseProvider.SqlServer, CastTargetType.Boolean, "BIT"];
+        yield return [DatabaseProvider.MySql, CastTargetType.Boolean, "BOOLEAN"];
+        yield return [DatabaseProvider.Postgres, CastTargetType.Date, "DATE"];
+        yield return [DatabaseProvider.Postgres, CastTargetType.DateTime, "TIMESTAMP"];
+        yield return [DatabaseProvider.MySql, CastTargetType.DateTime, "DATETIME"];
+        yield return [DatabaseProvider.SqlServer, CastTargetType.Timestamp, "DATETIMEOFFSET"];
+        yield return [DatabaseProvider.Postgres, CastTargetType.Timestamp, "TIMESTAMPTZ"];
+        yield return [DatabaseProvider.SqlServer, CastTargetType.Uuid, "UNIQUEIDENTIFIER"];
+        yield return [DatabaseProvider.Postgres, CastTargetType.Uuid, "UUID"];
+    }
+
     [Fact]
     public void Cast_ToText_Postgres_EmitsTEXT()
     {
@@ -270,7 +292,24 @@ public class CastNodeTests
             PinDataType.DateTime,
             new CastExpr(NullExpr.Instance, CastTargetType.Date).OutputType
         );
+        Assert.Equal(
+            PinDataType.Expression,
+            new CastExpr(NullExpr.Instance, CastTargetType.Uuid).OutputType
+        );
     }
+
+    [Theory]
+    [MemberData(nameof(CastTypeCases))]
+    public void Cast_TranslateType_MatchesProviderMapping(
+        DatabaseProvider provider,
+        CastTargetType targetType,
+        string expectedSqlType)
+    {
+        var expr = new CastExpr(new LiteralExpr("1"), targetType);
+        string sql = expr.Emit(NodeFixtures.Ctx(provider));
+        Assert.Equal($"CAST(1 AS {expectedSqlType})", sql);
+    }
+
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

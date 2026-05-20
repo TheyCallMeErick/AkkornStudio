@@ -24,7 +24,7 @@ public sealed class PostgresMetadataQueries : IMetadataQueryProvider
             CASE WHEN c.is_nullable = 'YES' THEN 'YES' ELSE 'NO' END AS is_nullable,
             c.character_maximum_length,
             CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END AS is_pk,
-            fk_ref.table_name AS fk_table
+            fk_ref.fk_table AS fk_table
         FROM information_schema.columns c
         LEFT JOIN (
             SELECT a.attname AS column_name
@@ -36,12 +36,19 @@ public sealed class PostgresMetadataQueries : IMetadataQueryProvider
         ) pk ON pk.column_name = c.column_name
         LEFT JOIN (
             SELECT DISTINCT
-                fk_c.relname AS table_name,
-                a.attname AS column_name
+                child_n.nspname AS table_schema,
+                child_c.relname AS table_name,
+                a.attname AS column_name,
+                parent_c.relname AS fk_table
             FROM   pg_constraint fk
-            JOIN   pg_class fk_c ON fk.conrelid = fk_c.oid
+            JOIN   pg_class child_c ON fk.conrelid = child_c.oid
+            JOIN   pg_namespace child_n ON child_c.relnamespace = child_n.oid
             JOIN   pg_attribute a ON fk.conrelid = a.attrelid AND a.attnum = ANY(fk.conkey)
-        ) fk_ref ON fk_ref.column_name = c.column_name
+            JOIN   pg_class parent_c ON fk.confrelid = parent_c.oid
+            WHERE  fk.contype = 'f'
+        ) fk_ref ON fk_ref.table_schema = c.table_schema
+                 AND fk_ref.table_name = c.table_name
+                 AND fk_ref.column_name = c.column_name
         WHERE  c.table_schema = @schema
           AND  c.table_name = @table
         ORDER  BY c.ordinal_position

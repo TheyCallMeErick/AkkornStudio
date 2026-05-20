@@ -55,7 +55,7 @@ public sealed class MetadataSnapshotCache(TimeSpan ttl) : IMetadataSnapshotCache
 
         CacheEntry? cached = _cache;
         if (cached is null)
-            return;
+            throw new InvalidOperationException("Cannot replace table because metadata cache is empty.");
 
         DbMetadata metadata = cached.Metadata;
         var schemas = metadata.Schemas

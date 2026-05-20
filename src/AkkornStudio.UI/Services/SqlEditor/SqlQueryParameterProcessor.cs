@@ -44,7 +44,7 @@ public sealed class SqlQueryParameterProcessor
             if (occurrence.Start > cursor)
                 builder.Append(sql, cursor, occurrence.Start - cursor);
 
-            if (!parameterValues.TryGetValue(occurrence.Name, out string? rawValue) || string.IsNullOrWhiteSpace(rawValue))
+            if (!parameterValues.TryGetValue(occurrence.Name, out string? rawValue) || rawValue is null)
             {
                 if (!misses.Contains(occurrence.Name, StringComparer.OrdinalIgnoreCase))
                     misses.Add(occurrence.Name);
@@ -190,10 +190,7 @@ public sealed class SqlQueryParameterProcessor
         errorMessage = null;
         string value = rawValue.Trim();
         if (value.Length == 0)
-        {
-            sqlLiteral = "NULL";
-            return true;
-        }
+            return TryConvertWhitespaceOnlyToStringLiteral(rawValue, out sqlLiteral);
 
         if (string.Equals(value, "null", StringComparison.OrdinalIgnoreCase))
         {
@@ -223,17 +220,21 @@ public sealed class SqlQueryParameterProcessor
 
         if (Guid.TryParse(value, out Guid guidValue))
         {
-            sqlLiteral = $"'{guidValue:D}'";
+            string canonicalGuid = guidValue.ToString("D", CultureInfo.InvariantCulture);
+            sqlLiteral = provider == DatabaseProvider.SqlServer
+                ? $"CAST('{canonicalGuid}' AS uniqueidentifier)"
+                : $"'{canonicalGuid}'";
             return true;
         }
 
-        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal, out DateTimeOffset dto))
+        if (HasExplicitOffset(value)
+            && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.RoundtripKind, out DateTimeOffset dto))
         {
             sqlLiteral = $"'{dto:yyyy-MM-dd HH:mm:ss.fffffff zzz}'";
             return true;
         }
 
-        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeLocal, out DateTime dt))
+        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.RoundtripKind, out DateTime dt))
         {
             sqlLiteral = $"'{dt:yyyy-MM-dd HH:mm:ss.fffffff}'";
             return true;
@@ -252,6 +253,38 @@ public sealed class SqlQueryParameterProcessor
 
     private static string EscapeSqlLiteral(string value) =>
         value.Replace("'", "''", StringComparison.Ordinal);
+
+    private static bool TryConvertWhitespaceOnlyToStringLiteral(string rawValue, out string sqlLiteral)
+    {
+        if (rawValue.Length == 0)
+        {
+            sqlLiteral = "''";
+            return true;
+        }
+
+        sqlLiteral = $"'{EscapeSqlLiteral(rawValue)}'";
+        return true;
+    }
+
+    private static bool HasExplicitOffset(string value)
+    {
+        if (value.EndsWith('Z'))
+            return true;
+
+        int timeSeparator = value.LastIndexOf('T');
+        if (timeSeparator < 0)
+            timeSeparator = value.LastIndexOf(' ');
+
+        if (timeSeparator < 0 || timeSeparator >= value.Length - 1)
+            return false;
+
+        int plusIndex = value.IndexOf('+', timeSeparator + 1);
+        if (plusIndex >= 0)
+            return true;
+
+        int minusIndex = value.IndexOf('-', timeSeparator + 1);
+        return minusIndex >= 0;
+    }
 
     private sealed record SqlQueryParameterOccurrence(string Name, int Start, int Length);
 }

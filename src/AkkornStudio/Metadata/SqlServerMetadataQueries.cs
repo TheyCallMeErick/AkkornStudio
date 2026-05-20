@@ -13,6 +13,8 @@ public sealed class SqlServerMetadataQueries : IMetadataQueryProvider
         SELECT TABLE_SCHEMA, TABLE_NAME
         FROM   INFORMATION_SCHEMA.TABLES
         WHERE  TABLE_TYPE = 'BASE TABLE'
+          AND  TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+          AND  TABLE_CATALOG NOT IN ('master', 'model', 'msdb', 'tempdb', 'Resource')
         ORDER  BY TABLE_SCHEMA, TABLE_NAME
     ";
 

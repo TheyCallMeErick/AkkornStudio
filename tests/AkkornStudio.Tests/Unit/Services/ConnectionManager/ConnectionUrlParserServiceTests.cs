@@ -160,7 +160,20 @@ public sealed class ConnectionUrlParserServiceTests
 
         Assert.Equal(ConnectionUrlParseStatusDto.Success, result.ParseStatus);
         Assert.Equal(DatabaseProvider.SQLite.ToString(), result.SuggestedProvider);
-        Assert.Equal("tmp/quick-preview.sqlite", fields["database"]);
+        Assert.Equal("/tmp/quick-preview.sqlite", fields["database"]);
+    }
+
+    [Fact]
+    public async Task ParseAsync_WithSqliteSchemeAndNoPath_FallsBackToAbsolutePath()
+    {
+        ConnectionUrlParseResultDto result = await _sut.ParseAsync(
+            "sqlite://localhost",
+            selectedProvider: null);
+        Dictionary<string, string?> fields = ToFieldMap(result);
+
+        Assert.Equal(ConnectionUrlParseStatusDto.Success, result.ParseStatus);
+        Assert.Equal(DatabaseProvider.SQLite.ToString(), result.SuggestedProvider);
+        Assert.Equal(string.Empty, fields["database"]);
     }
 
     [Fact]
