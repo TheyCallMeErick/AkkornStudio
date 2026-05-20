@@ -60,27 +60,103 @@ public sealed class QuickDataPreviewService
     public string BuildTablePreviewSql(
         DatabaseProvider provider,
         string tableFullName,
-        int maxRows = 120,
+        int maxRows = 50,
         string? whereColumn = null,
-        object? whereValue = null)
+        object? whereValue = null,
+        int offset = 0)
     {
         string tableExpression = QuoteCompositeIdentifier(provider, tableFullName);
-        string head = provider == DatabaseProvider.SqlServer
-            ? $"SELECT TOP {Math.Max(1, maxRows)} *\nFROM {tableExpression}"
-            : $"SELECT *\nFROM {tableExpression}";
+        int safeRows = Math.Max(1, maxRows);
+        int safeOffset = Math.Max(0, offset);
+
+        var parts = new System.Text.StringBuilder();
+
+        if (provider == DatabaseProvider.SqlServer && safeOffset == 0)
+            parts.AppendLine($"SELECT TOP {safeRows} *");
+        else
+            parts.AppendLine("SELECT *");
+
+        parts.Append($"FROM {tableExpression}");
 
         if (!string.IsNullOrWhiteSpace(whereColumn))
         {
             string where = whereValue is null || whereValue == DBNull.Value
                 ? $"{QuoteIdentifier(provider, whereColumn)} IS NULL"
                 : $"{QuoteIdentifier(provider, whereColumn)} = {ToSqlLiteral(whereValue)}";
-            head = $"{head}\nWHERE {where}";
+            parts.AppendLine();
+            parts.Append($"WHERE {where}");
         }
 
-        if (provider != DatabaseProvider.SqlServer)
-            head = $"{head}\nLIMIT {Math.Max(1, maxRows)}";
+        if (provider == DatabaseProvider.SqlServer)
+        {
+            if (safeOffset > 0)
+            {
+                parts.AppendLine();
+                parts.AppendLine("ORDER BY (SELECT NULL)");
+                parts.Append($"OFFSET {safeOffset} ROWS FETCH NEXT {safeRows} ROWS ONLY");
+            }
+        }
+        else
+        {
+            parts.AppendLine();
+            parts.Append(safeOffset > 0
+                ? $"LIMIT {safeRows} OFFSET {safeOffset}"
+                : $"LIMIT {safeRows}");
+        }
 
-        return head + ";";
+        parts.Append(';');
+        return parts.ToString();
+    }
+
+    public static string StripWhereClause(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+            return sql;
+
+        // Find WHERE keyword at word boundary
+        int whereIdx = -1;
+        int searchFrom = 0;
+        while (searchFrom < sql.Length)
+        {
+            int idx = sql.IndexOf("WHERE", searchFrom, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+                break;
+            bool leftOk = idx == 0 || !char.IsLetterOrDigit(sql[idx - 1]);
+            bool rightOk = idx + 5 >= sql.Length || !char.IsLetterOrDigit(sql[idx + 5]);
+            if (leftOk && rightOk)
+            {
+                whereIdx = idx;
+                break;
+            }
+            searchFrom = idx + 1;
+        }
+
+        if (whereIdx < 0)
+            return sql;
+
+        string[] terminators = ["LIMIT ", "LIMIT\n", "ORDER BY", "GROUP BY", "HAVING ", "OFFSET "];
+        int endIdx = -1;
+        string afterWhere = sql[whereIdx..];
+        foreach (string term in terminators)
+        {
+            int idx = afterWhere.IndexOf(term, StringComparison.OrdinalIgnoreCase);
+            if (idx > 0 && (endIdx < 0 || idx < endIdx))
+                endIdx = idx;
+        }
+
+        string result;
+        if (endIdx < 0)
+        {
+            result = sql[..whereIdx].TrimEnd();
+            if (!result.EndsWith(';'))
+                result += ";";
+        }
+        else
+        {
+            result = sql[..whereIdx] + afterWhere[endIdx..];
+        }
+
+        return result;
     }
 
     public IReadOnlyList<QuickDataPreviewRelationship> ResolveRelationships(

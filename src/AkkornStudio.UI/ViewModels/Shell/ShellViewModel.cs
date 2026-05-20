@@ -2112,8 +2112,12 @@ public sealed class ShellViewModel : ViewModelBase
         CanvasViewModel queryCanvas = ActiveQueryCanvasDocument ?? EnsureCanvas();
         queryCanvas.SetDatabaseContext(ResolveSharedMetadata(), ResolveSharedActiveConnectionConfig());
 
-        NodeViewModel? childTable = FindOrInsertTableSourceNode(queryCanvas, edge.ChildEntityId, new Point(80, 80));
-        NodeViewModel? parentTable = FindOrInsertTableSourceNode(queryCanvas, edge.ParentEntityId, new Point(80, 320));
+        // Smart vertical positioning: stack below existing nodes to avoid overlap
+        double baseY = queryCanvas.Nodes.Count == 0
+            ? 0d
+            : queryCanvas.Nodes.Max(static n => n.Position.Y + 240d);
+        NodeViewModel? childTable = FindOrInsertTableSourceNode(queryCanvas, edge.ChildEntityId, new Point(80, baseY + 80));
+        NodeViewModel? parentTable = FindOrInsertTableSourceNode(queryCanvas, edge.ParentEntityId, new Point(80, baseY + 320));
         if (childTable is null || parentTable is null)
         {
             queryCanvas.NotifyWarning(
@@ -2130,6 +2134,26 @@ public sealed class ShellViewModel : ViewModelBase
             return;
         }
 
+        // Resolve which FK column pairs actually have matching pins on the canvas nodes.
+        // This avoids silently creating partial join conditions (e.g. only "valor = valor"
+        // when the intended join is "id_sancao = id AND valor = valor").
+        IReadOnlyList<(string ChildCol, string ParentCol)> validPairs =
+            ResolveValidColumnPairs(childTable, parentTable, edge);
+
+        // For single-column FKs, require the primary column to resolve.
+        // For composite FKs, require at least the FIRST (ordinal-0) pair to be valid.
+        bool primaryPairValid = validPairs.Count > 0
+            && (edge.ColumnPairCount <= 1 || validPairs.Any(p =>
+                    string.Equals(p.ChildCol, edge.ChildColumn, StringComparison.OrdinalIgnoreCase)));
+
+        if (!primaryPairValid)
+        {
+            queryCanvas.NotifyWarning(
+                "Não foi possível resolver as colunas da relação no Query Canvas.",
+                edge.JoinPredicateSql);
+            return;
+        }
+
         NodeViewModel joinNode = queryCanvas.SpawnNode(
             NodeDefinitionRegistry.Get(NodeType.Join),
             new Point(Math.Max(childTable.Position.X, parentTable.Position.X) + 360, (childTable.Position.Y + parentTable.Position.Y) / 2d));
@@ -2138,26 +2162,22 @@ public sealed class ShellViewModel : ViewModelBase
         joinNode.RaiseParameterChanged("join_type");
         joinNode.RaiseParameterChanged("right_source");
 
-        if (!TryConnectJoinInputs(queryCanvas, joinNode, childTable, parentTable, edge))
-        {
-            queryCanvas.NotifyWarning(
-                "Não foi possível resolver as colunas da relação no Query Canvas.",
-                edge.JoinPredicateSql);
-            return;
-        }
-
         if (edge.ColumnPairCount <= 1)
         {
+            // Set text expression parameters first (always configure the node fully)
             joinNode.Parameters["left_expr"] = $"{GetTableIdentifier(childTable)}.{edge.ChildColumn}";
             joinNode.Parameters["right_expr"] = $"{GetTableIdentifier(parentTable)}.{edge.ParentColumn}";
             joinNode.Parameters["operator"] = "=";
             joinNode.RaiseParameterChanged("left_expr");
             joinNode.RaiseParameterChanged("right_expr");
             joinNode.RaiseParameterChanged("operator");
+            // Wire visual pin connections (pre-validated above)
+            TryConnectJoinInputs(queryCanvas, joinNode, childTable, parentTable, edge);
         }
         else
         {
-            BuildCompositeJoinCondition(queryCanvas, joinNode, childTable, parentTable, edge);
+            // Composite FK: only pass the pairs that are confirmed valid to avoid wrong conditions
+            BuildCompositeJoinCondition(queryCanvas, joinNode, childTable, parentTable, edge, validPairs);
         }
 
         EnsureSuggestedProjectionForRelation(queryCanvas, childTable, parentTable, edge);
@@ -2194,6 +2214,30 @@ public sealed class ShellViewModel : ViewModelBase
                 || string.Equals(node.Alias, shortName, StringComparison.OrdinalIgnoreCase)));
     }
 
+    private static IReadOnlyList<(string ChildCol, string ParentCol)> ResolveValidColumnPairs(
+        NodeViewModel childTable,
+        NodeViewModel parentTable,
+        ErRelationEdgeViewModel edge)
+    {
+        var result = new List<(string, string)>(edge.ColumnPairCount);
+        for (int i = 0; i < edge.ColumnPairCount; i++)
+        {
+            string childCol = i < edge.ChildColumns.Count ? edge.ChildColumns[i] : string.Empty;
+            string parentCol = i < edge.ParentColumns.Count ? edge.ParentColumns[i] : string.Empty;
+            if (string.IsNullOrEmpty(childCol) || string.IsNullOrEmpty(parentCol))
+                continue;
+
+            bool childFound = childTable.OutputPins.Any(p =>
+                string.Equals(p.Name, childCol, StringComparison.OrdinalIgnoreCase));
+            bool parentFound = parentTable.OutputPins.Any(p =>
+                string.Equals(p.Name, parentCol, StringComparison.OrdinalIgnoreCase));
+
+            if (childFound && parentFound)
+                result.Add((childCol, parentCol));
+        }
+        return result;
+    }
+
     private static bool TryConnectJoinInputs(
         CanvasViewModel canvas,
         NodeViewModel joinNode,
@@ -2221,16 +2265,21 @@ public sealed class ShellViewModel : ViewModelBase
         NodeViewModel joinNode,
         NodeViewModel childTable,
         NodeViewModel parentTable,
-        ErRelationEdgeViewModel edge)
+        ErRelationEdgeViewModel edge,
+        IReadOnlyList<(string ChildCol, string ParentCol)>? validPairsOverride = null)
     {
+        // Use pre-validated pairs if provided; otherwise resolve on the fly
+        IReadOnlyList<(string ChildCol, string ParentCol)> pairs =
+            validPairsOverride ?? ResolveValidColumnPairs(childTable, parentTable, edge);
+
         List<NodeViewModel> comparisonNodes = [];
         double conditionX = joinNode.Position.X - 220;
-        double conditionY = joinNode.Position.Y - ((edge.ColumnPairCount - 1) * 70d / 2d);
+        double conditionY = joinNode.Position.Y - ((pairs.Count - 1) * 70d / 2d);
 
-        for (int i = 0; i < edge.ColumnPairCount; i++)
+        for (int i = 0; i < pairs.Count; i++)
         {
-            string childColumn = edge.ChildColumns[i];
-            string parentColumn = edge.ParentColumns[i];
+            string childColumn = pairs[i].ChildCol;
+            string parentColumn = pairs[i].ParentCol;
             PinViewModel? childPin = childTable.OutputPins.FirstOrDefault(pin =>
                 string.Equals(pin.Name, childColumn, StringComparison.OrdinalIgnoreCase));
             PinViewModel? parentPin = parentTable.OutputPins.FirstOrDefault(pin =>

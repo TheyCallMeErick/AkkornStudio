@@ -94,8 +94,18 @@ public sealed class ErColumnRowViewModel : ViewModelBase
 
     public IBrush NullabilityBrush =>
         IsNullable
-            ? new SolidColorBrush(Color.Parse("#7B879D"))
-            : new SolidColorBrush(Color.Parse("#C47A3A"));
+            ? new SolidColorBrush(Color.Parse("#4A5A6A"))
+            : new SolidColorBrush(Color.Parse("#4A8A40"));
+
+    public IBrush NullabilityBackground =>
+        IsNullable
+            ? new SolidColorBrush(Color.Parse("#0C121C"))
+            : new SolidColorBrush(Color.Parse("#0C1A10"));
+
+    public IBrush NullabilityBorderBrush =>
+        IsNullable
+            ? new SolidColorBrush(Color.Parse("#1A2230"))
+            : new SolidColorBrush(Color.Parse("#1A3020"));
 
     public bool IsRelationEndpointHighlighted
     {

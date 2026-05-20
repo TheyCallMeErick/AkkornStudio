@@ -13,7 +13,7 @@ namespace AkkornStudio.UI.Controls.ErDiagram;
 public sealed partial class ErEntityControl : UserControl
 {
     private static readonly CanvasViewportGesturePolicy GesturePolicy = CanvasViewportGesturePolicy.ErCanvasDefault;
-    private const int HoverFocusDelayMs = 180;
+    private const int HoverFocusDelayMs = 300;
     private bool _isDragging;
     private bool _isPointerInside;
     private bool _isDoubleClick;
@@ -135,7 +135,7 @@ public sealed partial class ErEntityControl : UserControl
         EndDrag();
         e.Pointer.Capture(null);
         canvas.RecordEntityMoves(oldPositions);
-        if (!didDrag && _isDoubleClick && clickedEntity is not null)
+        if (!didDrag && clickedEntity is not null)
         {
             bool additiveSelection = keyModifiers.HasFlag(KeyModifiers.Control)
                 || keyModifiers.HasFlag(KeyModifiers.Shift);

@@ -152,6 +152,8 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
         }
     }
 
+    private const double DotRadius = 4.5;
+
     public double StartX
     {
         get => _startX;
@@ -162,6 +164,7 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
 
             RaisePropertyChanged(nameof(StartPoint));
             RaisePropertyChanged(nameof(MidpointX));
+            RaisePropertyChanged(nameof(StartDotLeft));
         }
     }
 
@@ -175,6 +178,7 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
 
             RaisePropertyChanged(nameof(StartPoint));
             RaisePropertyChanged(nameof(MidpointY));
+            RaisePropertyChanged(nameof(StartDotTop));
         }
     }
 
@@ -188,6 +192,7 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
 
             RaisePropertyChanged(nameof(EndPoint));
             RaisePropertyChanged(nameof(MidpointX));
+            RaisePropertyChanged(nameof(EndDotLeft));
         }
     }
 
@@ -201,8 +206,16 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
 
             RaisePropertyChanged(nameof(EndPoint));
             RaisePropertyChanged(nameof(MidpointY));
+            RaisePropertyChanged(nameof(EndDotTop));
         }
     }
+
+    // Canvas.Left/Top for endpoint dot ellipses (centered on the pin point)
+    public double StartDotLeft => StartX - DotRadius;
+    public double StartDotTop => StartY - DotRadius;
+    public double EndDotLeft => EndX - DotRadius;
+    public double EndDotTop => EndY - DotRadius;
+    public double DotSize => DotRadius * 2;
 
     public double MidpointX => (StartX + EndX) / 2d;
 
@@ -247,26 +260,30 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
         IsSelected
             ? "#3B82F6"
             : IsHovered
-                ? "#9FB7DE"
+                ? "#6BAED6"
                 : VisualState switch
                 {
                     ErVisualState.Warning => "#F59E0B",
                     ErVisualState.Error => "#EF4444",
                     ErVisualState.Changed => "#C47A3A",
-                    ErVisualState.ConnectedHighlight => "#7FA36A",
-                    _ => "#64748B",
+                    ErVisualState.ConnectedHighlight => "#22C55E",
+                    _ => "#1E3254",
                 };
 
     public double StrokeThickness =>
-        IsSelected ? 2.8d : IsHovered ? 2.3d : 1.6d;
+        IsSelected ? 2.5d : IsHovered ? 2.0d : 1.4d;
 
-    public double StrokeOpacity => IsDimmed ? 0.2d : 0.92d;
+    public double StrokeOpacity => IsDimmed ? 0.15d : 0.85d;
 
     public void SetRoute(IEnumerable<Point> routePoints)
     {
         RoutePoints = routePoints.ToArray();
         RaisePropertyChanged(nameof(LabelX));
         RaisePropertyChanged(nameof(LabelY));
+        RaisePropertyChanged(nameof(StartDotLeft));
+        RaisePropertyChanged(nameof(StartDotTop));
+        RaisePropertyChanged(nameof(EndDotLeft));
+        RaisePropertyChanged(nameof(EndDotTop));
     }
 
     private static string FormatColumnList(IReadOnlyList<string> columns) =>

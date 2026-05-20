@@ -27,6 +27,12 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
     private DatabaseProvider _contextProvider = DatabaseProvider.Postgres;
     private DbMetadata? _contextMetadata;
 
+    // Table-mode pagination
+    private string? _tableModeFullName;
+    private bool _isTableMode;
+    private int _pageNumber = 1;
+    private int _pageSize = 50;
+
     public QuickDataPreviewModalViewModel(
         QuickDataPreviewService? previewService = null,
         Action<string, WorkspaceDocumentType?>? openSqlInEditor = null)
@@ -37,11 +43,17 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
         CloseCommand = new RelayCommand(Close);
         OpenInSqlEditorCommand = new RelayCommand(OpenInSqlEditor, () => CanOpenInSqlEditor);
         PreviewRelationshipCommand = new RelayCommand<QuickDataPreviewRelationshipItemViewModel>(item => _ = PreviewRelationshipAsync(item));
+        NextPageCommand = new RelayCommand(() => _ = GoToPageAsync(_pageNumber + 1), () => CanGoNextPage);
+        PreviousPageCommand = new RelayCommand(() => _ = GoToPageAsync(_pageNumber - 1), () => CanGoPreviousPage);
+        RemoveWhereCommand = new RelayCommand(() => _ = RemoveWhereAndReloadAsync(), () => HasWhereClause);
     }
 
     public RelayCommand CloseCommand { get; }
     public RelayCommand OpenInSqlEditorCommand { get; }
     public RelayCommand<QuickDataPreviewRelationshipItemViewModel> PreviewRelationshipCommand { get; }
+    public RelayCommand NextPageCommand { get; }
+    public RelayCommand PreviousPageCommand { get; }
+    public RelayCommand RemoveWhereCommand { get; }
 
     public ObservableCollection<QuickDataPreviewRelationshipItemViewModel> Relationships { get; } = [];
 
@@ -84,7 +96,9 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
                 return;
 
             RaisePropertyChanged(nameof(CanOpenInSqlEditor));
+            RaisePropertyChanged(nameof(HasWhereClause));
             (OpenInSqlEditorCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (RemoveWhereCommand as RelayCommand)?.NotifyCanExecuteChanged();
         }
     }
 
@@ -115,6 +129,47 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
 
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
 
+    public int PageNumber
+    {
+        get => _pageNumber;
+        private set
+        {
+            if (!Set(ref _pageNumber, value))
+                return;
+
+            RaisePropertyChanged(nameof(PageDisplay));
+            RaisePropertyChanged(nameof(CanGoPreviousPage));
+            RaisePropertyChanged(nameof(CanGoNextPage));
+            (NextPageCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            (PreviousPageCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        }
+    }
+
+    public int PageSize
+    {
+        get => _pageSize;
+        set
+        {
+            if (!Set(ref _pageSize, value))
+                return;
+
+            if (_isTableMode)
+                _ = GoToPageAsync(1);
+        }
+    }
+
+    public bool CanGoPreviousPage => _isTableMode && _pageNumber > 1;
+
+    public bool CanGoNextPage => _isTableMode && HasData && (ResultData?.Rows.Count ?? 0) >= _pageSize;
+
+    public string PageDisplay => _isTableMode ? $"Página {_pageNumber}" : string.Empty;
+
+    public bool IsTableMode => _isTableMode;
+
+    public bool HasWhereClause => _sqlText.Contains("WHERE", StringComparison.OrdinalIgnoreCase);
+
+    public IReadOnlyList<int> PageSizeOptions { get; } = [25, 50, 100, 200];
+
     public DataTable? ResultData
     {
         get => _resultData;
@@ -126,6 +181,8 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
             RaisePropertyChanged(nameof(ResultView));
             RaisePropertyChanged(nameof(HasData));
             RaisePropertyChanged(nameof(ShowEmptyMessage));
+            RaisePropertyChanged(nameof(CanGoNextPage));
+            (NextPageCommand as RelayCommand)?.NotifyCanExecuteChanged();
         }
     }
 
@@ -159,6 +216,9 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
         _contextConnection = connection;
         _contextProvider = provider;
         _contextMetadata = metadata;
+        _isTableMode = false;
+        _tableModeFullName = null;
+        _pageNumber = 1;
 
         Title = string.IsNullOrWhiteSpace(title) ? "Preview rapido" : title.Trim();
         Subtitle = subtitle ?? string.Empty;
@@ -168,6 +228,12 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
         ErrorMessage = null;
         Relationships.Clear();
         RaisePropertyChanged(nameof(HasRelationships));
+        RaisePropertyChanged(nameof(IsTableMode));
+        RaisePropertyChanged(nameof(PageDisplay));
+        RaisePropertyChanged(nameof(CanGoPreviousPage));
+        RaisePropertyChanged(nameof(CanGoNextPage));
+        (NextPageCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (PreviousPageCommand as RelayCommand)?.NotifyCanExecuteChanged();
 
         IsVisible = true;
         IsLoading = true;
@@ -216,10 +282,15 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
         DatabaseProvider provider,
         DbMetadata? metadata,
         WorkspaceDocumentType? sourceDocumentType,
-        int maxRows = 120,
+        int maxRows = 50,
         CancellationToken cancellationToken = default)
     {
-        string sql = _previewService.BuildTablePreviewSql(provider, tableFullName, maxRows);
+        _tableModeFullName = tableFullName;
+        _isTableMode = true;
+        _pageSize = maxRows;
+        _pageNumber = 1;
+
+        string sql = _previewService.BuildTablePreviewSql(provider, tableFullName, _pageSize, offset: 0);
         await OpenSqlPreviewAsync(
             title: "Preview de dados",
             subtitle: tableFullName,
@@ -231,6 +302,84 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
             sourceDocumentType,
             maxRows,
             cancellationToken);
+
+        // Restore table mode (OpenSqlPreviewAsync resets it)
+        _tableModeFullName = tableFullName;
+        _isTableMode = true;
+        RaisePropertyChanged(nameof(IsTableMode));
+        RaisePropertyChanged(nameof(PageDisplay));
+        RaisePropertyChanged(nameof(CanGoPreviousPage));
+        RaisePropertyChanged(nameof(CanGoNextPage));
+        (NextPageCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (PreviousPageCommand as RelayCommand)?.NotifyCanExecuteChanged();
+    }
+
+    private async Task GoToPageAsync(int newPage)
+    {
+        if (!_isTableMode || _tableModeFullName is null || _contextConnection is null)
+            return;
+
+        int targetPage = Math.Max(1, newPage);
+        PageNumber = targetPage;
+
+        int offset = (_pageNumber - 1) * _pageSize;
+        string sql = _previewService.BuildTablePreviewSql(_contextProvider, _tableModeFullName, _pageSize, offset: offset);
+        SqlText = sql;
+        await ExecuteCurrentSqlAsync();
+    }
+
+    private async Task RemoveWhereAndReloadAsync()
+    {
+        string stripped = QuickDataPreviewService.StripWhereClause(SqlText);
+        if (string.Equals(stripped, SqlText, StringComparison.Ordinal))
+            return;
+
+        SqlText = stripped;
+        if (_isTableMode)
+            PageNumber = 1;
+        await ExecuteCurrentSqlAsync();
+    }
+
+    private async Task ExecuteCurrentSqlAsync()
+    {
+        _runCts?.Cancel();
+        _runCts?.Dispose();
+        _runCts = new CancellationTokenSource();
+
+        ResultData = null;
+        ErrorMessage = null;
+        IsLoading = true;
+        StatusText = "Executando consulta...";
+        RaisePropertyChanged(nameof(ShowEmptyMessage));
+
+        QuickDataPreviewResult result;
+        try
+        {
+            result = await _previewService.ExecuteAsync(
+                new QuickDataPreviewRequest(
+                    Sql: SqlText,
+                    Connection: _contextConnection,
+                    Provider: _contextProvider,
+                    Metadata: _contextMetadata,
+                    FocusTableFullName: _tableModeFullName,
+                    MaxRows: _pageSize),
+                _runCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            IsLoading = false;
+            StatusText = "Consulta cancelada.";
+            return;
+        }
+
+        SqlText = result.Sql;
+        ResultData = result.Execution.Data;
+        ErrorMessage = result.Execution.Success ? null : result.Execution.ErrorMessage;
+        StatusText = result.Execution.Success
+            ? BuildSuccessStatus(result.Execution)
+            : "Falha ao executar preview.";
+        IsLoading = false;
+        RaisePropertyChanged(nameof(ShowEmptyMessage));
     }
 
     private async Task PreviewRelationshipAsync(QuickDataPreviewRelationshipItemViewModel? item)

@@ -289,6 +289,19 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
             ? string.Empty
             : JoinColumnsOrDash(SelectedEntity.Columns.Where(static c => c.IsUnique).Select(static c => c.ColumnName));
 
+    public int SelectedEntityColumnCount => SelectedEntity?.ColumnCount ?? 0;
+
+    public int SelectedEntityPrimaryKeyCount => SelectedEntity?.PrimaryKeyCount ?? 0;
+
+    public int SelectedEntityForeignKeyCount => SelectedEntity?.ForeignKeyCount ?? 0;
+
+    public bool HasSelectedEntityPrimaryKeys => SelectedEntity?.PrimaryKeyCount > 0;
+
+    public bool HasSelectedEntityForeignKeys => SelectedEntity?.ForeignKeyCount > 0;
+
+    public bool HasSelectedEntityIndexes =>
+        SelectedEntity is not null && SelectedEntity.Columns.Any(static c => c.IsUnique);
+
     public bool IsDirty
     {
         get => _isDirty;
@@ -1174,6 +1187,12 @@ public sealed class ErCanvasViewModel : ViewModelBase, ICanvasViewportState, ICa
         RaisePropertyChanged(nameof(SelectedEntityPrimaryKeyColumns));
         RaisePropertyChanged(nameof(SelectedEntityForeignKeyColumns));
         RaisePropertyChanged(nameof(SelectedEntityIndexedColumns));
+        RaisePropertyChanged(nameof(SelectedEntityColumnCount));
+        RaisePropertyChanged(nameof(SelectedEntityPrimaryKeyCount));
+        RaisePropertyChanged(nameof(SelectedEntityForeignKeyCount));
+        RaisePropertyChanged(nameof(HasSelectedEntityPrimaryKeys));
+        RaisePropertyChanged(nameof(HasSelectedEntityForeignKeys));
+        RaisePropertyChanged(nameof(HasSelectedEntityIndexes));
         RaisePropertyChanged(nameof(SelectionTitle));
         RaisePropertyChanged(nameof(SelectionSubtitle));
         RaisePropertyChanged(nameof(SelectionBody));

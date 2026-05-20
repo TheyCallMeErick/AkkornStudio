@@ -34,8 +34,8 @@ public sealed class ErEntityNodeViewModel : ViewModelBase
 {
     private const double HeaderHeight = 56d;
     private const double TabsHeight = 28d;
-    private const double ColumnsHeaderHeight = 22d;
-    private const double ColumnRowHeight = 24d;
+    private const double ColumnsHeaderHeight = 24d;
+    private const double ColumnRowHeight = 29d;
     private const int NormalDensityColumnLimit = 10;
 
     private string _id;
@@ -301,48 +301,55 @@ public sealed class ErEntityNodeViewModel : ViewModelBase
         }
     }
 
-    public IBrush NodeBackground => new SolidColorBrush(Color.Parse("#0F1626"));
+    public IBrush NodeBackground => new SolidColorBrush(Color.Parse("#0B1220"));
 
-    public IBrush HeaderBackground => new SolidColorBrush(Color.Parse("#121B2D"));
+    public IBrush HeaderBackground => new SolidColorBrush(Color.Parse("#0F1929"));
 
     public IBrush NodeBorderBrush =>
         IsSelected
             ? new SolidColorBrush(Color.Parse("#3B82F6"))
-            : VisualState switch
-            {
-                ErVisualState.Warning => new SolidColorBrush(Color.Parse("#F59E0B")),
-                ErVisualState.Error => new SolidColorBrush(Color.Parse("#EF4444")),
-                ErVisualState.Changed => new SolidColorBrush(Color.Parse("#C47A3A")),
-                ErVisualState.ConnectedHighlight => new SolidColorBrush(Color.Parse("#7FA36A")),
-                _ => new SolidColorBrush(Color.Parse("#273247")),
-            };
+            : IsHovered
+                ? new SolidColorBrush(Color.Parse("#2A3D5F"))
+                : VisualState switch
+                {
+                    ErVisualState.Warning => new SolidColorBrush(Color.Parse("#F59E0B")),
+                    ErVisualState.Error => new SolidColorBrush(Color.Parse("#EF4444")),
+                    ErVisualState.Changed => new SolidColorBrush(Color.Parse("#C47A3A")),
+                    ErVisualState.ConnectedHighlight => new SolidColorBrush(Color.Parse("#22C55E")),
+                    _ => new SolidColorBrush(Color.Parse("#1A2840")),
+                };
 
     public double NodeBorderThickness => IsSelected ? 2d : IsHovered ? 1.5d : 1d;
 
-    public double NodeOpacity => IsDimmed ? 0.34d : 1d;
+    public double NodeOpacity => IsDimmed ? 0.28d : 1d;
 
-    public IBrush HeaderTitleBrush => new SolidColorBrush(Color.Parse("#E8EAED"));
+    public IBrush HeaderTitleBrush =>
+        IsSelected
+            ? new SolidColorBrush(Color.Parse("#EEF4FF"))
+            : new SolidColorBrush(Color.Parse("#D8E6FA"));
 
-    public IBrush HeaderSchemaBrush => new SolidColorBrush(Color.Parse("#9CA3AF"));
+    public IBrush HeaderSchemaBrush => new SolidColorBrush(Color.Parse("#4A6A94"));
 
-    public IBrush HeaderMetaBrush => new SolidColorBrush(Color.Parse("#64748B"));
+    public IBrush HeaderMetaBrush => new SolidColorBrush(Color.Parse("#3A5070"));
 
     public string ObjectKindIconKind => IsView ? "EyeOutline" : "TableLarge";
 
     public IBrush HeaderAccentBrush =>
         IsView
-            ? new SolidColorBrush(Color.Parse("#D9A441"))
-            : new SolidColorBrush(Color.Parse("#3B82F6"));
+            ? new SolidColorBrush(Color.Parse("#B8860B"))
+            : IsSelected
+                ? new SolidColorBrush(Color.Parse("#2563EB"))
+                : new SolidColorBrush(Color.Parse("#1D4ED8"));
 
     public IBrush ObjectTypeBadgeBackground =>
         IsView
-            ? new SolidColorBrush(Color.Parse("#183246"))
-            : new SolidColorBrush(Color.Parse("#1F2A3F"));
+            ? new SolidColorBrush(Color.Parse("#12253A"))
+            : new SolidColorBrush(Color.Parse("#111E32"));
 
     public IBrush ObjectTypeBadgeForeground =>
         IsView
-            ? new SolidColorBrush(Color.Parse("#8FC5FF"))
-            : new SolidColorBrush(Color.Parse("#AFB9D0"));
+            ? new SolidColorBrush(Color.Parse("#60A5FA"))
+            : new SolidColorBrush(Color.Parse("#4A6A94"));
 
     public void HighlightColumns(IReadOnlySet<string> columnNames)
     {
@@ -383,6 +390,10 @@ public sealed class ErEntityNodeViewModel : ViewModelBase
         RaisePropertyChanged(nameof(NodeBorderBrush));
         RaisePropertyChanged(nameof(NodeBorderThickness));
         RaisePropertyChanged(nameof(NodeOpacity));
+        RaisePropertyChanged(nameof(NodeBackground));
+        RaisePropertyChanged(nameof(HeaderBackground));
+        RaisePropertyChanged(nameof(HeaderTitleBrush));
+        RaisePropertyChanged(nameof(HeaderAccentBrush));
     }
 
     private static string BuildCanonicalId(string schema, string name) =>
