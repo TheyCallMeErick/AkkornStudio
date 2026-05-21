@@ -544,7 +544,13 @@ public sealed class LogicalPlanner(NodeGraph graph, EmitContext emitContext)
         }
 
         if (!DatasetSourceTypes.Contains(source.Type))
-            return new LiteralExpr("NULL", PinDataType.Expression);
+        {
+            throw new PlanningException(
+                connection.FromNodeId,
+                PlannerErrorKind.UnconnectedColumnSource,
+                $"Node '{connection.FromNodeId}' ({source.Type}) is not a dataset source and cannot provide column '{connection.FromPinName}'."
+            );
+        }
 
         string alias = ResolveDatasetAlias(source);
         PinDataType pinType = source.ColumnPinTypes?.GetValueOrDefault(connection.FromPinName)

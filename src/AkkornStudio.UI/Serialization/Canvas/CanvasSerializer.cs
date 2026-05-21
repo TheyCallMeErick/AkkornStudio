@@ -9,6 +9,8 @@ namespace AkkornStudio.UI.Serialization;
 
 public static partial class CanvasSerializer
 {
+    public static event Action<string>? WarningRaised;
+
     private enum CanvasNodeFamily
     {
         Any,
@@ -38,4 +40,11 @@ public static partial class CanvasSerializer
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    private static void RaiseWarning(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+
+        WarningRaised?.Invoke(message);
+    }
 }

@@ -204,6 +204,32 @@ public sealed class LogicalPlannerTests
         Assert.Equal(PlannerErrorKind.CyclicDependency, ex.Kind);
     }
 
+    [Fact]
+    public void Plan_OrderByConnectedFromNonDatasetNode_ThrowsExplicitError()
+    {
+        NodeInstance table = CreateTable("t1", "public.employees");
+        NodeInstance nonDataset = new(
+            "sum1",
+            NodeType.Sum,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>());
+        NodeInstance output = CreateOutput("out");
+
+        NodeGraph graph = new()
+        {
+            Nodes = [table, nonDataset, output],
+            Connections =
+            [
+                new Connection("t1", "id", "out", "column"),
+                new Connection("sum1", "total", "out", "order_by"),
+            ],
+        };
+
+        PlanningException ex = Assert.Throws<PlanningException>(() => CreatePlanner(graph).Plan());
+        Assert.Equal(PlannerErrorKind.UnconnectedColumnSource, ex.Kind);
+        Assert.Contains("is not a dataset source", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static LogicalPlanner CreatePlanner(NodeGraph graph)
     {
         var emitContext = new EmitContext(

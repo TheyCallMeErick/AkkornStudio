@@ -100,7 +100,10 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
             () =>
             {
                 if (SelectedSqlCandidate is not null)
+                {
                     _copySql?.Invoke(SelectedSqlCandidate.Sql);
+                    CopySqlRequested?.Invoke(SelectedSqlCandidate.Sql);
+                }
             },
             () => CanCopySql
         );
@@ -131,6 +134,8 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
     public ObservableCollection<SchemaIssueGroupViewModel> GroupedIssues { get; } = [];
 
     public ObservableCollection<string> IgnoredTables { get; } = [];
+
+    public event Action<string>? CopySqlRequested;
 
     public SchemaAnalysisViewState State
     {

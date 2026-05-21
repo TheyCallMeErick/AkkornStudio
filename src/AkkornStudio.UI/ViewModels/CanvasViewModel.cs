@@ -996,6 +996,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
     public void LoadTemplate(QueryTemplate template)
     {
         var stateBeforeTemplate = new RestoreCanvasStateCommand(this, "Load Template");
+        _subCanvasController.AbortActiveEditorSession();
 
         Connections.Clear();
         Nodes.Clear();
@@ -1901,4 +1902,3 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
         }
     }
 }
-

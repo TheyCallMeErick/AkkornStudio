@@ -69,8 +69,7 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
         _openDdlRequested = openDdlRequested;
         _schemaAnalysisService = SchemaAnalysisServiceFactory.CreateDefault();
 
-        SchemaAnalysisPanel = new SchemaAnalysisPanelViewModel(
-            copySql: _ => { });
+        SchemaAnalysisPanel = new SchemaAnalysisPanelViewModel();
 
         OpenConnectionManagerCommand = new RelayCommand(OpenConnectionManager, () => !IsBusy);
         RefreshMetadataCommand = new RelayCommand(() => _ = RefreshMetadataAsync(true), () => !IsBusy && SelectedProfile is not null);
@@ -968,4 +967,3 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
             .ToArray();
     }
 }
-

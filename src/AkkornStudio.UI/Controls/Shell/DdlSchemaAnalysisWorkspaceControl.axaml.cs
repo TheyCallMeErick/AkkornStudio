@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -10,9 +11,31 @@ namespace AkkornStudio.UI.Controls.Shell;
 
 public partial class DdlSchemaAnalysisWorkspaceControl : UserControl
 {
+    private SchemaAnalysisPanelViewModel? _subscribedSchemaAnalysisPanel;
+
     public DdlSchemaAnalysisWorkspaceControl()
     {
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        UnsubscribePanelEvents();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        UnsubscribePanelEvents();
+
+        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
+            return;
+
+        _subscribedSchemaAnalysisPanel = vm.SchemaAnalysisPanel;
+        _subscribedSchemaAnalysisPanel.CopySqlRequested += OnCopySqlRequested;
     }
 
     private void OnHostKeyDown(object? sender, KeyEventArgs e)
@@ -84,10 +107,20 @@ public partial class DdlSchemaAnalysisWorkspaceControl : UserControl
 
     private async void CopySqlButton_OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
-            return;
+        _ = sender;
+        if (DataContext is DdlSchemaAnalysisWorkspaceViewModel vm)
+            await CopySqlToClipboardAsync(vm.SchemaAnalysisPanel.SelectedSqlCandidate?.Sql);
 
-        string? sql = vm.SchemaAnalysisPanel.SelectedSqlCandidate?.Sql;
+        e.Handled = true;
+    }
+
+    private async void OnCopySqlRequested(string sql)
+    {
+        await CopySqlToClipboardAsync(sql);
+    }
+
+    private async Task CopySqlToClipboardAsync(string? sql)
+    {
         if (string.IsNullOrWhiteSpace(sql))
             return;
 
@@ -96,7 +129,15 @@ public partial class DdlSchemaAnalysisWorkspaceControl : UserControl
             return;
 
         await topLevel.Clipboard.SetTextAsync(sql);
-        e.Handled = true;
+    }
+
+    private void UnsubscribePanelEvents()
+    {
+        if (_subscribedSchemaAnalysisPanel is null)
+            return;
+
+        _subscribedSchemaAnalysisPanel.CopySqlRequested -= OnCopySqlRequested;
+        _subscribedSchemaAnalysisPanel = null;
     }
 
     private void PlaygroundScope_OnPointerEntered(object? sender, PointerEventArgs e)
@@ -250,4 +291,3 @@ public partial class DdlSchemaAnalysisWorkspaceControl : UserControl
         e.Handled = true;
     }
 }
-

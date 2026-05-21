@@ -11,6 +11,9 @@ public class QueryExecutorServiceSecurityTests
     [InlineData("INSERT INTO users(id) VALUES (1)")]
     [InlineData("UPDATE users SET name = 'x'")]
     [InlineData("DELETE FROM users")]
+    [InlineData("WITH c AS (SELECT 1) DELETE FROM users")]
+    [InlineData("WITH c AS (SELECT 1) UPDATE users SET name = 'x'")]
+    [InlineData("WITH c AS (SELECT 'it''s' AS txt) DELETE FROM users")]
     [InlineData("DROP TABLE users")]
     [InlineData("SELECT 1; DELETE FROM users")]
     public void ValidatePreviewQuery_RejectsMutatingOrMultiStatementSql(string sql)

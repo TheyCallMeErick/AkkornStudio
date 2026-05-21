@@ -969,6 +969,58 @@ public class NodeGraphCompilerTests
     }
 
     [Fact]
+    public void Compile_CteSource_UsesNormalizedAliasTextPinLiteralWithEscapedDoubleQuote()
+    {
+        var cteSource = new NodeInstance(
+            "cte_src",
+            NodeType.CteSource,
+            new Dictionary<string, string> { ["alias_text"] = "\"foo\\\"bar\"" },
+            new Dictionary<string, string> { ["cte_name"] = "processos_elegiveis" }
+        );
+
+        var graph = new NodeGraph
+        {
+            Nodes = [cteSource],
+            SelectOutputs = [new SelectBinding("cte_src", "id_processo", "id_processo")],
+        };
+
+        CompiledNodeGraph compiled = new NodeGraphCompiler(graph, NodeFixtures.Postgres).Compile();
+        string sql = compiled.SelectExprs[0].Expr.Emit(NodeFixtures.Postgres);
+
+        Assert.Equal("\"foo\"\"bar\".\"id_processo\"", sql);
+    }
+
+    [Fact]
+    public void Compile_CteSource_ResolvesConnectedCteDefinitionNameTextPinLiteralWithEscapedDoubleQuote()
+    {
+        var cteDef = new NodeInstance(
+            "cte_def",
+            NodeType.CteDefinition,
+            new Dictionary<string, string> { ["name_text"] = "\"cte\\\"name\"" },
+            new Dictionary<string, string> { ["source_table"] = "orders" }
+        );
+
+        var cteSource = new NodeInstance(
+            "cte_src",
+            NodeType.CteSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>()
+        );
+
+        var graph = new NodeGraph
+        {
+            Nodes = [cteDef, cteSource],
+            Connections = [new Connection("cte_def", "table", "cte_src", "cte")],
+            SelectOutputs = [new SelectBinding("cte_src", "id_processo", "id_processo")],
+        };
+
+        CompiledNodeGraph compiled = new NodeGraphCompiler(graph, NodeFixtures.Postgres).Compile();
+        string sql = compiled.SelectExprs[0].Expr.Emit(NodeFixtures.Postgres);
+
+        Assert.Equal("\"cte\"\"name\".\"id_processo\"", sql);
+    }
+
+    [Fact]
     public void Compile_CteSource_ResolvesConnectedCteDefinitionNameTextInput()
     {
         var cteNameInput = new NodeInstance(
@@ -1007,6 +1059,68 @@ public class NodeGraphCompilerTests
         string sql = compiled.SelectExprs[0].Expr.Emit(NodeFixtures.Postgres);
 
         Assert.Equal("\"cte_def_name_input\".\"id_processo\"", sql);
+    }
+
+    [Fact]
+    public void Compile_CteSource_WithoutResolvableName_ThrowsExplicitError()
+    {
+        var cteSource = new NodeInstance(
+            "cte_src",
+            NodeType.CteSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>()
+        );
+
+        var graph = new NodeGraph
+        {
+            Nodes = [cteSource],
+            SelectOutputs = [new SelectBinding("cte_src", "id_processo", "id_processo")],
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            new NodeGraphCompiler(graph, NodeFixtures.Postgres).Compile()
+        );
+
+        Assert.Contains("could not resolve a CTE name", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(DatabaseProvider.Postgres, "TRUE")]
+    [InlineData(DatabaseProvider.SqlServer, "1 = 1")]
+    [InlineData(DatabaseProvider.MySql, "1 = 1")]
+    [InlineData(DatabaseProvider.SQLite, "1 = 1")]
+    public void Compile_CompileWhereWithoutConditions_UsesProviderAwareTruePredicate(
+        DatabaseProvider provider,
+        string expectedSql
+    )
+    {
+        var tableNode = new NodeInstance(
+            "tbl",
+            NodeType.TableSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            TableFullName: "public.orders"
+        );
+
+        var compileWhereNode = new NodeInstance(
+            "cw",
+            NodeType.CompileWhere,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>()
+        );
+
+        var graph = new NodeGraph
+        {
+            Nodes = [tableNode, compileWhereNode],
+            SelectOutputs = [new SelectBinding("tbl", "id", "id")],
+            WhereConditions = [new WhereBinding("cw", "result")],
+        };
+
+        EmitContext ctx = NodeFixtures.Ctx(provider);
+        CompiledNodeGraph compiled = new NodeGraphCompiler(graph, ctx).Compile();
+        string sql = compiled.WhereExprs[0].Emit(ctx);
+
+        Assert.Equal(expectedSql, sql);
     }
 
     [Fact]
@@ -1363,6 +1477,91 @@ public class QueryGeneratorServiceTests
     }
 
     [Fact]
+    public void Generate_HavingWithNonGroupedColumn_ThrowsExplicitError()
+    {
+        var tbl = new NodeInstance(
+            "tbl",
+            NodeType.TableSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            TableFullName: "orders"
+        );
+
+        var gt = new NodeInstance(
+            "gt",
+            NodeType.GreaterThan,
+            new Dictionary<string, string> { ["right"] = "100" },
+            new Dictionary<string, string>()
+        );
+
+        var graph = new NodeGraph
+        {
+            Nodes = [tbl, gt],
+            Connections = [new Connection("tbl", "total", "gt", "left")],
+            SelectOutputs = [new SelectBinding("tbl", "status")],
+            GroupBys = [new GroupByBinding("tbl", "status")],
+            Havings = [new HavingBinding("gt", "result")],
+        };
+
+        var svc = QueryGeneratorService.Create(DatabaseProvider.Postgres);
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            GenerateGraphFirst(svc, "orders", graph)
+        );
+
+        Assert.Contains("non-aggregated columns not present in GROUP BY", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_OrderByAscending_Postgres_EmitsExplicitNullsLast()
+    {
+        var tbl = new NodeInstance(
+            "tbl",
+            NodeType.TableSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            TableFullName: "orders"
+        );
+
+        var graph = new NodeGraph
+        {
+            Nodes = [tbl],
+            SelectOutputs = [new SelectBinding("tbl", "id")],
+            OrderBys = [new OrderBinding("tbl", "created_at", Descending: false)],
+        };
+
+        var svc = QueryGeneratorService.Create(DatabaseProvider.Postgres);
+        GeneratedQuery result = GenerateGraphFirst(svc, "orders", graph);
+
+        Assert.Contains("ORDER BY", result.Sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NULLS LAST", result.Sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_OrderByAscending_SqlServer_EmitsCaseNullOrderingFallback()
+    {
+        var tbl = new NodeInstance(
+            "tbl",
+            NodeType.TableSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            TableFullName: "orders"
+        );
+
+        var graph = new NodeGraph
+        {
+            Nodes = [tbl],
+            SelectOutputs = [new SelectBinding("tbl", "id")],
+            OrderBys = [new OrderBinding("tbl", "created_at", Descending: false)],
+        };
+
+        var svc = QueryGeneratorService.Create(DatabaseProvider.SqlServer);
+        GeneratedQuery result = GenerateGraphFirst(svc, "orders", graph);
+
+        Assert.Contains("CASE WHEN", result.Sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("IS NULL", result.Sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Generate_ComparisonWithTextLiteral_QuotesLiteralInSql()
     {
         var tbl = new NodeInstance(
@@ -1392,6 +1591,44 @@ public class QueryGeneratorServiceTests
         GeneratedQuery result = GenerateGraphFirst(svc, "orders", graph);
 
         Assert.Contains("'COMPLETED'", result.Sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(DatabaseProvider.Postgres, "WHERE TRUE")]
+    [InlineData(DatabaseProvider.SqlServer, "WHERE 1 = 1")]
+    [InlineData(DatabaseProvider.MySql, "WHERE 1 = 1")]
+    [InlineData(DatabaseProvider.SQLite, "WHERE 1 = 1")]
+    public void Generate_CompileWhereWithoutConditions_NormalizesTruePredicateByProvider(
+        DatabaseProvider provider,
+        string expectedWhereSql
+    )
+    {
+        var tableNode = new NodeInstance(
+            "tbl",
+            NodeType.TableSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            TableFullName: "orders"
+        );
+
+        var compileWhereNode = new NodeInstance(
+            "cw",
+            NodeType.CompileWhere,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>()
+        );
+
+        var graph = new NodeGraph
+        {
+            Nodes = [tableNode, compileWhereNode],
+            SelectOutputs = [new SelectBinding("tbl", "id")],
+            WhereConditions = [new WhereBinding("cw", "result")],
+        };
+
+        var svc = QueryGeneratorService.Create(provider);
+        GeneratedQuery result = GenerateGraphFirst(svc, "orders", graph);
+
+        Assert.Contains(expectedWhereSql, result.Sql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -2399,6 +2636,179 @@ public class QueryGeneratorServiceTests
             () => GenerateGraphFirst(svc, "cte_self", mainGraph)
         );
         Assert.Contains("not marked recursive", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_CompiledGraphOverload_WithSqlServerPivot_AppliesPivotClause()
+    {
+        var svc = QueryGeneratorService.Create(DatabaseProvider.SqlServer);
+        var compiled = new CompiledNodeGraph(
+            SelectExprs:
+            [
+                (new ColumnExpr("dbo.Sales", "Region", PinDataType.Text), (string?)null),
+                (new ColumnExpr("dbo.Sales", "Amount", PinDataType.Number), (string?)null),
+                (new ColumnExpr("dbo.Sales", "Month", PinDataType.Text), (string?)null),
+            ],
+            WhereExprs: [],
+            HavingExprs: [],
+            QualifyExprs: [],
+            OrderExprs: [],
+            GroupByExprs: [],
+            Distinct: false,
+            Limit: null,
+            Offset: null);
+
+        GeneratedQuery result = svc.Generate(
+            fromTable: "dbo.Sales",
+            compiled: compiled,
+            pivotMode: "PIVOT",
+            pivotConfig: "SUM(Amount) FOR Month IN ([Jan],[Feb])");
+
+        Assert.Contains("PIVOT", result.Sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SUM(Amount)", result.Sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_CompiledGraphOverload_WithPostgresPivot_DoesNotApplyPivotClause()
+    {
+        var svc = QueryGeneratorService.Create(DatabaseProvider.Postgres);
+        var compiled = new CompiledNodeGraph(
+            SelectExprs:
+            [
+                (new ColumnExpr("public.sales", "region", PinDataType.Text), (string?)null),
+                (new ColumnExpr("public.sales", "amount", PinDataType.Number), (string?)null),
+                (new ColumnExpr("public.sales", "month", PinDataType.Text), (string?)null),
+            ],
+            WhereExprs: [],
+            HavingExprs: [],
+            QualifyExprs: [],
+            OrderExprs: [],
+            GroupByExprs: [],
+            Distinct: false,
+            Limit: null,
+            Offset: null);
+
+        GeneratedQuery result = svc.Generate(
+            fromTable: "public.sales",
+            compiled: compiled,
+            pivotMode: "PIVOT",
+            pivotConfig: "SUM(amount) FOR month IN ('Jan','Feb')");
+
+        Assert.DoesNotContain("PIVOT", result.Sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("UNPIVOT", result.Sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_CompiledGraphOverload_WithUnsafeSqlServerPivotConfig_ThrowsExplicitError()
+    {
+        var svc = QueryGeneratorService.Create(DatabaseProvider.SqlServer);
+        var compiled = new CompiledNodeGraph(
+            SelectExprs:
+            [
+                (new ColumnExpr("dbo.Sales", "Region", PinDataType.Text), (string?)null),
+                (new ColumnExpr("dbo.Sales", "Amount", PinDataType.Number), (string?)null),
+                (new ColumnExpr("dbo.Sales", "Month", PinDataType.Text), (string?)null),
+            ],
+            WhereExprs: [],
+            HavingExprs: [],
+            QualifyExprs: [],
+            OrderExprs: [],
+            GroupByExprs: [],
+            Distinct: false,
+            Limit: null,
+            Offset: null);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            svc.Generate(
+                fromTable: "dbo.Sales",
+                compiled: compiled,
+                pivotMode: "PIVOT",
+                pivotConfig: "SUM(Amount) FOR Month IN ([Jan],`x`)"
+            )
+        );
+
+        Assert.Contains("Unsafe PIVOT/UNPIVOT configuration", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_WithInvalidSetOperator_ThrowsExplicitError()
+    {
+        var svc = QueryGeneratorService.Create(DatabaseProvider.Postgres);
+        var graph = new NodeGraph();
+        var setOperation = new SetOperationDefinition(
+            Operator: "INTERSEC",
+            QuerySql: "SELECT id FROM archived_orders"
+        );
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            GenerateGraphFirst(svc, "orders", graph, setOperation: setOperation)
+        );
+
+        Assert.Contains("Unsupported set operation operator", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("INTERSEC", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_WithWhereBindingsCountLowerThanWhereExpressions_ThrowsExplicitError()
+    {
+        var svc = QueryGeneratorService.Create(DatabaseProvider.Postgres);
+        var graph = new NodeGraph
+        {
+            Nodes = [],
+            WhereConditions = [new WhereBinding("legacy_only", "result", "OR")],
+        };
+
+        var compiled = new CompiledNodeGraph(
+            SelectExprs: [],
+            WhereExprs:
+            [
+                new LiteralExpr("1 = 1", PinDataType.Boolean),
+                new LiteralExpr("2 = 2", PinDataType.Boolean),
+            ],
+            HavingExprs: [],
+            QualifyExprs: [],
+            OrderExprs: [],
+            GroupByExprs: [],
+            Distinct: false,
+            Limit: null,
+            Offset: null
+        );
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            svc.Generate("orders", compiled, whereMeta: graph.WhereConditions)
+        );
+
+        Assert.Contains("WHERE metadata mismatch", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_WithQualifyExpressionsThatNormalizeToEmpty_DoesNotEmitDanglingWhere()
+    {
+        var svc = QueryGeneratorService.Create(DatabaseProvider.Postgres);
+        var compiled = new CompiledNodeGraph(
+            SelectExprs:
+            [
+                (new ColumnExpr("orders", "id", PinDataType.Integer), (string?)null),
+            ],
+            WhereExprs: [],
+            HavingExprs: [],
+            QualifyExprs:
+            [
+                new LiteralExpr("NULL", PinDataType.Expression),
+                new LiteralExpr("   ", PinDataType.Expression),
+            ],
+            OrderExprs: [],
+            GroupByExprs: [],
+            Distinct: false,
+            Limit: null,
+            Offset: null
+        );
+
+        GeneratedQuery result = svc.Generate("orders", compiled);
+
+        Assert.DoesNotContain("AS _qualify", result.Sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("WHERE\n", result.Sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("WHERE ;", result.Sql, StringComparison.OrdinalIgnoreCase);
     }
 
     private static GeneratedQuery GenerateGraphFirst(

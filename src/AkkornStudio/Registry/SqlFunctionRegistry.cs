@@ -140,7 +140,6 @@ public sealed partial class SqlFunctionRegistry(DatabaseProvider provider) : ISq
         {
             SqlFn.RegexReplace,
             SqlFn.RegexExtract,
-            SqlFn.StringAgg,      // SQLite uses GROUP_CONCAT with different syntax
             SqlFn.DateTrunc,       // SQLite doesn't have DATE_TRUNC; use strftime()
             SqlFn.JsonArrayLength, // Limited json1 support
             SqlFn.JsonExists,      // Limited json1 support
@@ -227,14 +226,11 @@ public sealed partial class SqlFunctionRegistry(DatabaseProvider provider) : ISq
         new()
         {
             [SqlFn.Regex] = a => $"{a[0]} GLOB {a[1]}",
-            [SqlFn.RegexReplace] = a =>
-                throw new NotSupportedException(
-                    "REGEXP_REPLACE is not supported in SQLite. Use REPLACE() or switch to Postgres/MySQL."
-                ),
+            // SQLite has no native regex-replace/extract built-ins. We degrade to
+            // substring replacement/match to keep compilation/execution non-fatal.
+            [SqlFn.RegexReplace] = a => $"REPLACE({a[0]}, {a[1]}, {a[2]})",
             [SqlFn.RegexExtract] = a =>
-                throw new NotSupportedException(
-                    "REGEXP_SUBSTR is not supported in SQLite. Switch to Postgres/MySQL for regex support."
-                ),
+                $"CASE WHEN INSTR({a[0]}, {a[1]}) > 0 THEN {a[1]} ELSE NULL END",
             [SqlFn.Replace] = a => $"REPLACE({a[0]}, {a[1]}, {a[2]})",
             [SqlFn.Contains] = a => $"{a[0]} LIKE '%' || {a[1]} || '%'",
             [SqlFn.StartsWith] = a => $"{a[0]} LIKE {a[1]} || '%'",
@@ -255,10 +251,7 @@ public sealed partial class SqlFunctionRegistry(DatabaseProvider provider) : ISq
             [SqlFn.Year] = a => $"CAST(strftime('%Y', {a[0]}) AS INTEGER)",
             [SqlFn.Month] = a => $"CAST(strftime('%m', {a[0]}) AS INTEGER)",
             [SqlFn.Day] = a => $"CAST(strftime('%d', {a[0]}) AS INTEGER)",
-            [SqlFn.StringAgg] = a =>
-                throw new NotSupportedException(
-                    "STRING_AGG is not supported in SQLite. Use GROUP_CONCAT({a[0]}, {a[1]}) instead."
-                ),
+            [SqlFn.StringAgg] = a => $"GROUP_CONCAT({a[0]}, {a[1]})",
             [SqlFn.IfNull] = a => $"IFNULL({a[0]}, {a[1]})",
             [SqlFn.Greatest] = a => $"MAX({Join(a)})",
             [SqlFn.Least] = a => $"MIN({Join(a)})",
@@ -383,14 +376,11 @@ public sealed partial class SqlFunctionRegistry(DatabaseProvider provider) : ISq
         new()
         {
             [SqlFn.Regex] = a => $"PATINDEX({a[1]}, {a[0]}) > 0",
-            [SqlFn.RegexReplace] = a =>
-                throw new NotSupportedException(
-                    "REGEXP_REPLACE is not natively supported in SQL Server. Use a CLR function or switch to Postgres/MySQL."
-                ),
+            // SQL Server has no native regex-replace/extract; fallback degrades to
+            // plain string replacement and basic wildcard extraction marker.
+            [SqlFn.RegexReplace] = a => $"REPLACE({a[0]}, {a[1]}, {a[2]})",
             [SqlFn.RegexExtract] = a =>
-                throw new NotSupportedException(
-                    "REGEXP_SUBSTR is not natively supported in SQL Server. Use a CLR function or switch to Postgres/MySQL."
-                ),
+                $"CASE WHEN PATINDEX({a[1]}, {a[0]}) > 0 THEN {a[1]} ELSE NULL END",
             [SqlFn.Replace] = a => $"REPLACE({a[0]}, {a[1]}, {a[2]})",
             [SqlFn.Contains] = a => $"{a[0]} LIKE '%' + {a[1]} + '%'",
             [SqlFn.StartsWith] = a => $"{a[0]} LIKE {a[1]} + '%'",

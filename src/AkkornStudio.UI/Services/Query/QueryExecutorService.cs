@@ -163,8 +163,12 @@ public sealed partial class QueryExecutorService
                 nameof(query)
             );
 
+        string effectiveToken = firstToken;
+        if (firstToken == "WITH" && TryResolveTokenAfterLeadingWith(trimmed, out string? postWithToken))
+            effectiveToken = postWithToken!;
+
         // Preview mode must remain read-only.
-        if (firstToken is "INSERT" or "UPDATE" or "DELETE" or "MERGE" or "TRUNCATE" or
+        if (effectiveToken is "INSERT" or "UPDATE" or "DELETE" or "MERGE" or "TRUNCATE" or
             "DROP" or "ALTER" or "CREATE" or "REPLACE" or "GRANT" or "REVOKE" or "CALL" or "EXEC")
             throw new ArgumentException(
                 L("queryExecutor.error.readOnlyOnly", "Preview mode only supports read-only SQL statements."),
@@ -258,6 +262,131 @@ public sealed partial class QueryExecutorService
 
     private static string NormalizeParameterName(string parameterName) =>
         QueryParameterPlaceholderParser.NormalizeName(parameterName);
+
+    private static bool TryResolveTokenAfterLeadingWith(string statement, out string? token)
+    {
+        token = null;
+        int index = 0;
+        while (index < statement.Length && char.IsWhiteSpace(statement[index]))
+            index++;
+
+        if (!statement.AsSpan(index).StartsWith("WITH", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        index += 4;
+        bool consumedDefinition = false;
+        while (index < statement.Length)
+        {
+            while (index < statement.Length && (char.IsWhiteSpace(statement[index]) || statement[index] == ','))
+                index++;
+
+            if (index >= statement.Length || !IsIdentifierStart(statement[index]))
+                return false;
+
+            index++;
+            while (index < statement.Length && IsIdentifierPart(statement[index]))
+                index++;
+
+            while (index < statement.Length && char.IsWhiteSpace(statement[index]))
+                index++;
+
+            if (index < statement.Length && statement[index] == '(')
+            {
+                if (!TrySkipBalancedParentheses(statement, ref index))
+                    return false;
+
+                while (index < statement.Length && char.IsWhiteSpace(statement[index]))
+                    index++;
+            }
+
+            if (!statement.AsSpan(index).StartsWith("AS", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            index += 2;
+            while (index < statement.Length && char.IsWhiteSpace(statement[index]))
+                index++;
+
+            if (index >= statement.Length || statement[index] != '(')
+                return false;
+
+            if (!TrySkipBalancedParentheses(statement, ref index))
+                return false;
+
+            consumedDefinition = true;
+            while (index < statement.Length && char.IsWhiteSpace(statement[index]))
+                index++;
+
+            if (index < statement.Length && statement[index] == ',')
+            {
+                index++;
+                continue;
+            }
+
+            break;
+        }
+
+        if (!consumedDefinition || index >= statement.Length)
+            return false;
+
+        token = Regex.Match(statement[index..], @"^\s*(\w+)", RegexOptions.CultureInvariant)
+            .Groups[1]
+            .Value
+            .ToUpperInvariant();
+        return !string.IsNullOrWhiteSpace(token);
+    }
+
+    private static bool TrySkipBalancedParentheses(string value, ref int index)
+    {
+        if (index >= value.Length || value[index] != '(')
+            return false;
+
+        int depth = 0;
+        bool inSingleQuote = false;
+        while (index < value.Length)
+        {
+            char current = value[index];
+            if (current == '\'')
+            {
+                if (inSingleQuote)
+                {
+                    if (index + 1 < value.Length && value[index + 1] == '\'')
+                    {
+                        index += 2;
+                        continue;
+                    }
+
+                    inSingleQuote = false;
+                }
+                else
+                {
+                    inSingleQuote = true;
+                }
+            }
+
+            if (!inSingleQuote)
+            {
+                if (current == '(')
+                    depth++;
+                else if (current == ')')
+                {
+                    depth--;
+                    if (depth == 0)
+                    {
+                        index++;
+                        return true;
+                    }
+                }
+            }
+
+            index++;
+        }
+
+        return false;
+    }
+
+    private static bool IsIdentifierStart(char c) => char.IsLetter(c) || c == '_';
+
+    private static bool IsIdentifierPart(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     private static (string Query, IReadOnlyList<QueryParameter>? Parameters) ExpandNamedListParameters(
         string query,

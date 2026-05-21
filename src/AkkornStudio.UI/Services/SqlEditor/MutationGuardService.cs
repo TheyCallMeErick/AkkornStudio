@@ -6,6 +6,10 @@ namespace AkkornStudio.UI.Services.SqlEditor;
 
 public sealed class MutationGuardService
 {
+    private const string SqlIdentifierTokenPattern = "(?:\\[[^\\]]+\\]|`[^`]+`|\"(?:\"\"|[^\"])+\"|[A-Za-z_][A-Za-z0-9_$]*)";
+    private const string SqlQualifiedIdentifierPattern = "(?:" + SqlIdentifierTokenPattern + ")(?:\\s*\\.\\s*(?:" + SqlIdentifierTokenPattern + "))*";
+    private const string SqlAliasPattern = "[A-Za-z_][A-Za-z0-9_]*";
+
     private readonly ILocalizationService _localization;
 
     public MutationGuardService(ILocalizationService? localization = null)
@@ -82,12 +86,14 @@ public sealed class MutationGuardService
         }
 
         bool requiresConfirmation = issues.Any(i => i.Severity == MutationGuardSeverity.Critical);
+        string? countQuery = BuildCountQuery(statement, upper);
+        AddCountQueryUnavailableIssueIfNeeded(issues, countQuery, localization);
         return new MutationGuardResult
         {
             IsSafe = !requiresConfirmation,
             RequiresConfirmation = requiresConfirmation,
             Issues = issues,
-            CountQuery = BuildCountQuery(statement, upper),
+            CountQuery = countQuery,
             SupportsDiff = true,
         };
     }
@@ -114,12 +120,14 @@ public sealed class MutationGuardService
         }
 
         bool requiresConfirmation = issues.Any(i => i.Severity == MutationGuardSeverity.Critical);
+        string? countQuery = BuildCountQuery(statement, upper);
+        AddCountQueryUnavailableIssueIfNeeded(issues, countQuery, localization);
         return new MutationGuardResult
         {
             IsSafe = !requiresConfirmation,
             RequiresConfirmation = requiresConfirmation,
             Issues = issues,
-            CountQuery = BuildCountQuery(statement, upper),
+            CountQuery = countQuery,
             SupportsDiff = true,
         };
     }
@@ -152,40 +160,63 @@ public sealed class MutationGuardService
 
     private static MutationGuardResult AnalyzeMerge(string statement, ILocalizationService localization)
     {
+        string? countQuery = BuildMergeCountQuery(statement);
+        var issues = new List<MutationGuardIssue>
+        {
+            new(
+                MutationGuardSeverity.Critical,
+                "MERGE_MUTATION",
+                L(localization, "sqlEditor.guard.merge.message", "MERGE can update, insert, or delete rows in the target table."),
+                L(localization, "sqlEditor.guard.merge.recommendation", "Confirm execution only after reviewing the target, source, and match condition.")),
+        };
+        AddCountQueryUnavailableIssueIfNeeded(issues, countQuery, localization);
+
         return new MutationGuardResult
         {
             IsSafe = false,
             RequiresConfirmation = true,
-            Issues =
-            [
-                new MutationGuardIssue(
-                    MutationGuardSeverity.Critical,
-                    "MERGE_MUTATION",
-                    L(localization, "sqlEditor.guard.merge.message", "MERGE can update, insert, or delete rows in the target table."),
-                    L(localization, "sqlEditor.guard.merge.recommendation", "Confirm execution only after reviewing the target, source, and match condition.")),
-            ],
-            CountQuery = BuildMergeCountQuery(statement),
+            Issues = issues,
+            CountQuery = countQuery,
             SupportsDiff = true,
         };
     }
 
     private static MutationGuardResult AnalyzeTruncate(string statement, ILocalizationService localization)
     {
+        string? countQuery = BuildTruncateCountQuery(statement);
+        var issues = new List<MutationGuardIssue>
+        {
+            new(
+                MutationGuardSeverity.Critical,
+                "TRUNCATE_MUTATION",
+                L(localization, "sqlEditor.guard.truncate.message", "TRUNCATE removes all rows from the target table."),
+                L(localization, "sqlEditor.guard.truncate.recommendation", "Confirm execution only when a full table reset is intended.")),
+        };
+        AddCountQueryUnavailableIssueIfNeeded(issues, countQuery, localization);
+
         return new MutationGuardResult
         {
             IsSafe = false,
             RequiresConfirmation = true,
-            Issues =
-            [
-                new MutationGuardIssue(
-                    MutationGuardSeverity.Critical,
-                    "TRUNCATE_MUTATION",
-                    L(localization, "sqlEditor.guard.truncate.message", "TRUNCATE removes all rows from the target table."),
-                    L(localization, "sqlEditor.guard.truncate.recommendation", "Confirm execution only when a full table reset is intended.")),
-            ],
-            CountQuery = BuildTruncateCountQuery(statement),
+            Issues = issues,
+            CountQuery = countQuery,
             SupportsDiff = true,
         };
+    }
+
+    private static void AddCountQueryUnavailableIssueIfNeeded(
+        List<MutationGuardIssue> issues,
+        string? countQuery,
+        ILocalizationService localization)
+    {
+        if (!string.IsNullOrWhiteSpace(countQuery))
+            return;
+
+        issues.Add(new MutationGuardIssue(
+            MutationGuardSeverity.Warning,
+            "COUNT_QUERY_UNAVAILABLE",
+            L(localization, "sqlEditor.guard.countQuery.unavailable.message", "Unable to build row-count estimation query for this mutation."),
+            L(localization, "sqlEditor.guard.countQuery.unavailable.recommendation", "Review the statement manually before confirming execution.")));
     }
 
     private static MutationGuardResult AnalyzeDdl(ILocalizationService localization)
@@ -214,17 +245,227 @@ public sealed class MutationGuardService
 
     private static string? ExtractWhereClause(string statement, string upper)
     {
-        int whereIndex = upper.IndexOf(" WHERE ", StringComparison.Ordinal);
+        _ = upper;
+
+        int whereIndex = FindTopLevelKeywordIndex(statement, "WHERE");
         if (whereIndex < 0)
             return null;
 
-        return statement[(whereIndex + " WHERE ".Length)..].Trim().TrimEnd(';');
+        return statement[(whereIndex + "WHERE".Length)..].Trim().TrimEnd(';');
+    }
+
+    private static int FindTopLevelKeywordIndex(string sql, string keyword)
+    {
+        int depth = 0;
+        bool inSingleQuote = false;
+        for (int i = 0; i < sql.Length; i++)
+        {
+            char c = sql[i];
+            if (c == '\'')
+            {
+                if (inSingleQuote)
+                {
+                    if (i + 1 < sql.Length && sql[i + 1] == '\'')
+                    {
+                        i++;
+                        continue;
+                    }
+
+                    inSingleQuote = false;
+                }
+                else
+                {
+                    inSingleQuote = true;
+                }
+
+                continue;
+            }
+
+            if (inSingleQuote)
+                continue;
+
+            if (c == '(')
+            {
+                depth++;
+                continue;
+            }
+
+            if (c == ')' && depth > 0)
+            {
+                depth--;
+                continue;
+            }
+
+            if (depth != 0)
+                continue;
+
+            if (!IsKeywordAt(sql, i, keyword))
+                continue;
+
+            return i;
+        }
+
+        return -1;
+    }
+
+    private static bool IsKeywordAt(string text, int index, string keyword)
+    {
+        if (index < 0 || index + keyword.Length > text.Length)
+            return false;
+
+        ReadOnlySpan<char> candidate = text.AsSpan(index, keyword.Length);
+        if (!candidate.Equals(keyword.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        bool leftBoundary = index == 0 || !IsIdentifierPart(text[index - 1]);
+        bool rightBoundary = index + keyword.Length == text.Length || !IsIdentifierPart(text[index + keyword.Length]);
+        return leftBoundary && rightBoundary;
     }
 
     private static bool IsTrivialWhere(string whereClause)
     {
-        string normalized = Regex.Replace(whereClause, @"\s+", string.Empty).ToUpperInvariant();
-        return normalized is "1=1" or "TRUE" or "(1=1)" or "(TRUE)";
+        if (string.IsNullOrWhiteSpace(whereClause))
+            return false;
+
+        string normalized = Regex.Replace(whereClause, @"\s+", " ").Trim();
+        return IsTrivialWhereExpression(normalized);
+    }
+
+    private static bool IsTrivialWhereExpression(string expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression))
+            return false;
+
+        string trimmed = StripOuterParentheses(expression).Trim();
+        string upper = trimmed.ToUpperInvariant();
+        if (upper is "1=1" or "1 = 1" or "TRUE")
+            return true;
+
+        IReadOnlyList<string> andParts = SplitTopLevelByAnd(trimmed);
+        if (andParts.Count <= 1)
+            return false;
+
+        return andParts.All(IsTrivialWhereExpression);
+    }
+
+    private static IReadOnlyList<string> SplitTopLevelByAnd(string expression)
+    {
+        var parts = new List<string>();
+        int depth = 0;
+        int start = 0;
+        bool inSingleQuote = false;
+        int i = 0;
+        while (i < expression.Length)
+        {
+            char c = expression[i];
+            if (c == '\'')
+            {
+                if (inSingleQuote)
+                {
+                    if (i + 1 < expression.Length && expression[i + 1] == '\'')
+                    {
+                        i += 2;
+                        continue;
+                    }
+
+                    inSingleQuote = false;
+                }
+                else
+                {
+                    inSingleQuote = true;
+                }
+            }
+            else if (!inSingleQuote)
+            {
+                if (c == '(')
+                {
+                    depth++;
+                }
+                else if (c == ')' && depth > 0)
+                {
+                    depth--;
+                }
+                else if (depth == 0 && IsAndTokenAt(expression, i))
+                {
+                    parts.Add(expression[start..i].Trim());
+                    i += 3;
+                    start = i;
+                    continue;
+                }
+            }
+
+            i++;
+        }
+
+        if (start == 0)
+            return [];
+
+        parts.Add(expression[start..].Trim());
+        return parts;
+    }
+
+    private static bool IsAndTokenAt(string expression, int index)
+    {
+        if (index + 3 > expression.Length)
+            return false;
+
+        ReadOnlySpan<char> token = expression.AsSpan(index, 3);
+        if (!token.Equals("AND".AsSpan(), StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        bool hasLeftBoundary = index == 0 || char.IsWhiteSpace(expression[index - 1]) || expression[index - 1] == ')';
+        bool hasRightBoundary = index + 3 >= expression.Length || char.IsWhiteSpace(expression[index + 3]) || expression[index + 3] == '(';
+        return hasLeftBoundary && hasRightBoundary;
+    }
+
+    private static string StripOuterParentheses(string value)
+    {
+        string current = value.Trim();
+        while (current.Length >= 2 && current[0] == '(' && current[^1] == ')' && OuterParenthesesEncloseWholeExpression(current))
+            current = current[1..^1].Trim();
+
+        return current;
+    }
+
+    private static bool OuterParenthesesEncloseWholeExpression(string value)
+    {
+        int depth = 0;
+        bool inSingleQuote = false;
+        for (int i = 0; i < value.Length; i++)
+        {
+            char c = value[i];
+            if (c == '\'')
+            {
+                if (inSingleQuote)
+                {
+                    if (i + 1 < value.Length && value[i + 1] == '\'')
+                    {
+                        i++;
+                        continue;
+                    }
+
+                    inSingleQuote = false;
+                }
+                else
+                {
+                    inSingleQuote = true;
+                }
+            }
+
+            if (inSingleQuote)
+                continue;
+
+            if (c == '(')
+                depth++;
+            else if (c == ')')
+            {
+                depth--;
+                if (depth == 0 && i != value.Length - 1)
+                    return false;
+            }
+        }
+
+        return depth == 0;
     }
 
     private static string? BuildCountQuery(string statement, string upper)
@@ -233,7 +474,7 @@ public sealed class MutationGuardService
         {
             Match usingMatch = Regex.Match(
                 statement,
-                @"^\s*DELETE\s+FROM\s+(?<target>[^\s;]+)(?:\s+(?:AS\s+)?(?<alias>[A-Za-z_][A-Za-z0-9_]*))?\s+USING\s+(?<using>.+?)(?:\s+WHERE\s+(?<where>.+?))?\s*;?\s*$",
+                @"^\s*DELETE\s+FROM\s+(?<target>" + SqlQualifiedIdentifierPattern + @")(?:\s+(?:AS\s+)?(?<alias>" + SqlAliasPattern + @"))?\s+USING\s+(?<using>.+?)(?:\s+WHERE\s+(?<where>.+?))?\s*;?\s*$",
                 RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
             if (usingMatch.Success)
             {
@@ -249,23 +490,25 @@ public sealed class MutationGuardService
 
             Match m = Regex.Match(
                 statement,
-                @"^\s*DELETE\s+FROM\s+([^\s;]+)\s*(?:WHERE\s+(.+?))?\s*;?\s*$",
+                @"^\s*DELETE\s+FROM\s+(?<target>" + SqlQualifiedIdentifierPattern + @")(?:\s+(?:AS\s+)?(?<alias>" + SqlAliasPattern + @"))?\s*(?:WHERE\s+(?<where>.+?))?\s*;?\s*$",
                 RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
             if (!m.Success)
                 return null;
 
-            string table = m.Groups[1].Value.Trim();
-            string where = m.Groups[2].Value.Trim().TrimEnd(';');
+            string table = m.Groups["target"].Value.Trim();
+            string targetAlias = m.Groups["alias"].Success ? m.Groups["alias"].Value.Trim() : string.Empty;
+            string where = m.Groups["where"].Value.Trim().TrimEnd(';');
+            string fromClause = string.IsNullOrWhiteSpace(targetAlias) ? table : $"{table} {targetAlias}";
             return string.IsNullOrWhiteSpace(where)
-                ? $"SELECT COUNT(*) FROM {table}"
-                : $"SELECT COUNT(*) FROM {table} WHERE {where}";
+                ? $"SELECT COUNT(*) FROM {fromClause}"
+                : $"SELECT COUNT(*) FROM {fromClause} WHERE {where}";
         }
 
         if (upper.StartsWith("UPDATE ", StringComparison.Ordinal))
         {
             Match fromMatch = Regex.Match(
                 statement,
-                @"^\s*UPDATE\s+(?<target>[^\s;]+)(?:\s+(?:AS\s+)?(?<alias>[A-Za-z_][A-Za-z0-9_]*))?\s+SET\s+.+?\s+FROM\s+(?<from>.+?)(?:\s+WHERE\s+(?<where>.+?))?\s*;?\s*$",
+                @"^\s*UPDATE\s+(?<target>" + SqlQualifiedIdentifierPattern + @")(?:\s+(?:AS\s+)?(?<alias>" + SqlAliasPattern + @"))?\s+SET\s+.+?\s+FROM\s+(?<from>.+?)(?:\s+WHERE\s+(?<where>.+?))?\s*;?\s*$",
                 RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
             if (fromMatch.Success)
             {
@@ -281,13 +524,13 @@ public sealed class MutationGuardService
 
             Match m = Regex.Match(
                 statement,
-                @"^\s*UPDATE\s+([^\s;]+)\s+SET\s+.+?(?:\s+WHERE\s+(.+?))?\s*;?\s*$",
+                @"^\s*UPDATE\s+(?<target>" + SqlQualifiedIdentifierPattern + @")\s+SET\s+.+?(?:\s+WHERE\s+(?<where>.+?))?\s*;?\s*$",
                 RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
             if (!m.Success)
                 return null;
 
-            string table = m.Groups[1].Value.Trim();
-            string where = m.Groups[2].Value.Trim().TrimEnd(';');
+            string table = m.Groups["target"].Value.Trim();
+            string where = m.Groups["where"].Value.Trim().TrimEnd(';');
             return string.IsNullOrWhiteSpace(where)
                 ? $"SELECT COUNT(*) FROM {table}"
                 : $"SELECT COUNT(*) FROM {table} WHERE {where}";
@@ -300,7 +543,7 @@ public sealed class MutationGuardService
     {
         Match m = Regex.Match(
             statement,
-            @"^\s*TRUNCATE\s+(?:TABLE\s+)?([^\s,;]+)",
+            @"^\s*TRUNCATE\s+(?:TABLE\s+)?(" + SqlQualifiedIdentifierPattern + @")",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (!m.Success)
             return null;
@@ -313,7 +556,7 @@ public sealed class MutationGuardService
     {
         Match m = Regex.Match(
             statement,
-            @"^\s*MERGE\s+INTO\s+([^\s;]+)",
+            @"^\s*MERGE\s+INTO\s+(" + SqlQualifiedIdentifierPattern + @")",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (!m.Success)
             return null;
@@ -414,8 +657,24 @@ public sealed class MutationGuardService
         while (index < value.Length)
         {
             char current = value[index];
-            if (current == '\'' && (index == 0 || value[index - 1] != '\\'))
-                inSingleQuote = !inSingleQuote;
+            if (current == '\'')
+            {
+                if (inSingleQuote)
+                {
+                    // SQL-standard escaped quote inside literal: ''.
+                    if (index + 1 < value.Length && value[index + 1] == '\'')
+                    {
+                        index += 2;
+                        continue;
+                    }
+
+                    inSingleQuote = false;
+                }
+                else
+                {
+                    inSingleQuote = true;
+                }
+            }
 
             if (!inSingleQuote)
             {

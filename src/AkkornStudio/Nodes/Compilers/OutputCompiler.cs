@@ -1,5 +1,6 @@
 using AkkornStudio.Expressions;
 using AkkornStudio.Expressions.Operations;
+using AkkornStudio.Core;
 using AkkornStudio.Nodes.Definitions;
 
 namespace AkkornStudio.Nodes.Compilers;
@@ -34,7 +35,7 @@ public sealed class OutputCompiler : INodeCompiler
         IReadOnlyList<ISqlExpression> conditions = ResolveCompileWhereConditions(node, ctx);
 
         if (conditions.Count == 0)
-            return new LiteralExpr("1 = 1", PinDataType.Boolean);
+            return new LiteralExpr(GetTruePredicateSql(ctx.EmitContext.Provider), PinDataType.Boolean);
 
         if (conditions.Count == 1)
             return conditions[0];
@@ -69,4 +70,7 @@ public sealed class OutputCompiler : INodeCompiler
 
         return dynamicConditions.Select(c => ctx.Resolve(c.FromNodeId, c.FromPinName)).ToList();
     }
+
+    private static string GetTruePredicateSql(DatabaseProvider provider) =>
+        provider == DatabaseProvider.Postgres ? "TRUE" : "1 = 1";
 }

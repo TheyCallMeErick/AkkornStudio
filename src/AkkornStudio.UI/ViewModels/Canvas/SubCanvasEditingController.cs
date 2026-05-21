@@ -127,6 +127,17 @@ internal sealed class SubCanvasEditingController
             ? _localizationService["main.viewEditor.exitA11y"]
             : _localizationService["main.cteEditor.exitA11y"];
 
+    public void AbortActiveEditorSession()
+    {
+        if (!_sessionState.IsActive)
+            return;
+
+        _sessionState = CanvasSubEditorStateMachine.Exit();
+        _setCteSession?.Invoke(null);
+        _setViewSession?.Invoke(null);
+        _notifyStateChanged();
+    }
+
     public bool CanEnterSelectedCteEditor()
     {
         if (IsInCteEditor)
@@ -854,4 +865,3 @@ internal sealed class SubCanvasEditingController
         return string.Equals(value, key, StringComparison.Ordinal) ? fallback : value;
     }
 }
-

@@ -276,33 +276,97 @@ public static partial class CanvasSerializer
         double cx = nodes.Average(n => n.X);
         double cy = nodes.Average(n => n.Y);
 
+        var addedNodes = new List<NodeViewModel>(nodes.Count);
+        var addedConnections = new List<ConnectionViewModel>(conns.Count);
         var idMap = new Dictionary<string, NodeViewModel>(StringComparer.Ordinal);
-        foreach (SavedNode sn in nodes)
+        try
         {
-            SavedNode positioned = sn with
+            foreach (SavedNode sn in nodes)
             {
-                NodeId = Guid.NewGuid().ToString(),
-                X = sn.X - cx + canvasPos.X,
-                Y = sn.Y - cy + canvasPos.Y,
-            };
-            (NodeViewModel? nvm, _) = BuildNodeVm(positioned, columnLookup);
-            if (nvm is null)
-                continue;
-            idMap[sn.NodeId] = nvm;
-            vm.Nodes.Add(nvm);
+                SavedNode positioned = sn with
+                {
+                    NodeId = Guid.NewGuid().ToString(),
+                    X = sn.X - cx + canvasPos.X,
+                    Y = sn.Y - cy + canvasPos.Y,
+                };
+                (NodeViewModel? nvm, _) = BuildNodeVm(positioned, columnLookup);
+                if (nvm is null)
+                    continue;
+                idMap[sn.NodeId] = nvm;
+                addedNodes.Add(nvm);
+                vm.Nodes.Add(nvm);
+            }
+
+            foreach (SavedConnection sc in conns)
+            {
+                if (!idMap.TryGetValue(sc.FromNodeId, out NodeViewModel? fromNode))
+                    throw new InvalidOperationException(
+                        $"Subgraph paste failed: missing source node '{sc.FromNodeId}' for connection '{sc.FromPinName} -> {sc.ToPinName}'."
+                    );
+                if (!idMap.TryGetValue(sc.ToNodeId, out NodeViewModel? toNode))
+                    throw new InvalidOperationException(
+                        $"Subgraph paste failed: missing destination node '{sc.ToNodeId}' for connection '{sc.FromPinName} -> {sc.ToPinName}'."
+                    );
+
+                if (
+                    !TryResolvePins(
+                        fromNode,
+                        sc.FromPinName,
+                        toNode,
+                        sc.ToPinName,
+                        out PinViewModel? fromPin,
+                        out PinViewModel? toPin
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Subgraph paste failed: cannot resolve pins '{sc.FromNodeId}.{sc.FromPinName}' -> '{sc.ToNodeId}.{sc.ToPinName}'."
+                    );
+                }
+
+                int beforeCount = vm.Connections.Count;
+                if (!TryConnect(vm.Connections, fromPin!, toPin!))
+                {
+                    throw new InvalidOperationException(
+                        $"Subgraph paste failed: incompatible pins '{sc.FromNodeId}.{sc.FromPinName}' -> '{sc.ToNodeId}.{sc.ToPinName}'."
+                    );
+                }
+
+                if (vm.Connections.Count <= beforeCount)
+                    throw new InvalidOperationException(
+                        "Subgraph paste failed: connection insertion did not mutate collection."
+                    );
+
+                ConnectionViewModel created = vm.Connections[^1];
+                addedConnections.Add(created);
+            }
         }
-
-        foreach (SavedConnection sc in conns)
+        catch
         {
-            if (!idMap.TryGetValue(sc.FromNodeId, out NodeViewModel? fromNode))
-                continue;
-            if (!idMap.TryGetValue(sc.ToNodeId, out NodeViewModel? toNode))
-                continue;
+            foreach (ConnectionViewModel addedConnection in addedConnections)
+                vm.Connections.Remove(addedConnection);
 
-            if (!TryResolvePins(fromNode, sc.FromPinName, toNode, sc.ToPinName, out PinViewModel? fromPin, out PinViewModel? toPin))
-                continue;
+            foreach (NodeViewModel addedNode in addedNodes)
+                vm.Nodes.Remove(addedNode);
 
-            TryConnect(vm.Connections, fromPin!, toPin!);
+            RecomputeConnectedFlags(vm);
+            throw;
+        }
+    }
+
+    private static void RecomputeConnectedFlags(CanvasViewModel vm)
+    {
+        foreach (NodeViewModel node in vm.Nodes)
+        {
+            foreach (PinViewModel pin in node.InputPins)
+            {
+                pin.IsConnected = vm.Connections.Any(c => c.ToPin == pin || c.FromPin == pin);
+            }
+
+            foreach (PinViewModel pin in node.OutputPins)
+            {
+                pin.IsConnected = vm.Connections.Any(c => c.FromPin == pin || c.ToPin == pin);
+            }
         }
     }
 

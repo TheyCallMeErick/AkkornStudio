@@ -60,6 +60,47 @@ public sealed class MutationGuardServiceTests
         Assert.Equal("SELECT COUNT(*) FROM orders WHERE 1 = 1", result.CountQuery);
     }
 
+    [Theory]
+    [InlineData("DELETE FROM orders WHERE ( 1 = 1 );")]
+    [InlineData("DELETE FROM orders WHERE ((TRUE));")]
+    [InlineData("DELETE FROM orders WHERE 1=1 AND TRUE;")]
+    [InlineData("UPDATE orders SET status = 'x' WHERE (1=1) AND (TRUE);")]
+    public void Analyze_TrivialWhereVariants_RequireConfirmation(string sql)
+    {
+        var sut = new MutationGuardService();
+
+        MutationGuardResult result = sut.Analyze(sql);
+
+        Assert.False(result.IsSafe);
+        Assert.True(result.RequiresConfirmation);
+        Assert.Contains(result.Issues, i => i.Code == "TRIVIAL_WHERE" && i.Severity == MutationGuardSeverity.Critical);
+    }
+
+    [Fact]
+    public void Analyze_NonTrivialOrPredicate_DoesNotFlagTrivialWhere()
+    {
+        var sut = new MutationGuardService();
+
+        MutationGuardResult result = sut.Analyze("DELETE FROM orders WHERE 1=1 OR id = 10;");
+
+        Assert.True(result.IsSafe);
+        Assert.False(result.RequiresConfirmation);
+        Assert.DoesNotContain(result.Issues, i => i.Code == "TRIVIAL_WHERE");
+    }
+
+    [Fact]
+    public void Analyze_DeleteWithWhereKeywordInsideStringLiteral_UsesTopLevelWhereOnly()
+    {
+        var sut = new MutationGuardService();
+
+        MutationGuardResult result = sut.Analyze("DELETE FROM orders WHERE (msg = 'UPDATE WHERE id=1' OR id = 1);");
+
+        Assert.True(result.IsSafe);
+        Assert.False(result.RequiresConfirmation);
+        Assert.DoesNotContain(result.Issues, i => i.Code == "TRIVIAL_WHERE");
+        Assert.Equal("SELECT COUNT(*) FROM orders WHERE (msg = 'UPDATE WHERE id=1' OR id = 1)", result.CountQuery);
+    }
+
     [Fact]
     public void Analyze_UpdateWithoutWhere_RequiresConfirmation()
     {
@@ -100,6 +141,67 @@ public sealed class MutationGuardServiceTests
     }
 
     [Fact]
+    public void Analyze_DeleteWithAlias_PreservesAliasInCountQuery()
+    {
+        var sut = new MutationGuardService();
+
+        MutationGuardResult result = sut.Analyze("DELETE FROM users u WHERE u.id > 5;");
+
+        Assert.True(result.IsSafe);
+        Assert.False(result.RequiresConfirmation);
+        Assert.Equal("SELECT COUNT(*) FROM users u WHERE u.id > 5", result.CountQuery);
+    }
+
+    [Fact]
+    public void Analyze_DeleteWithQuotedTargetAndAlias_PreservesAliasInCountQuery()
+    {
+        var sut = new MutationGuardService();
+
+        MutationGuardResult result = sut.Analyze("DELETE FROM \"public\".\"users\" u WHERE u.id > 5;");
+
+        Assert.True(result.IsSafe);
+        Assert.False(result.RequiresConfirmation);
+        Assert.Equal("SELECT COUNT(*) FROM \"public\".\"users\" u WHERE u.id > 5", result.CountQuery);
+    }
+
+    [Fact]
+    public void Analyze_DeleteWithQuotedTargetContainingSpaces_PreservesFullQualifiedIdentifier()
+    {
+        var sut = new MutationGuardService();
+
+        MutationGuardResult result = sut.Analyze("DELETE FROM \"sales region\".\"order items\" oi WHERE oi.id > 5;");
+
+        Assert.True(result.IsSafe);
+        Assert.False(result.RequiresConfirmation);
+        Assert.Equal("SELECT COUNT(*) FROM \"sales region\".\"order items\" oi WHERE oi.id > 5", result.CountQuery);
+    }
+
+    [Fact]
+    public void Analyze_DeleteWithBracketQuotedTargetContainingSpaces_PreservesFullQualifiedIdentifier()
+    {
+        var sut = new MutationGuardService();
+
+        MutationGuardResult result = sut.Analyze("DELETE FROM [sales region].[order items] oi WHERE oi.id > 5;");
+
+        Assert.True(result.IsSafe);
+        Assert.False(result.RequiresConfirmation);
+        Assert.Equal("SELECT COUNT(*) FROM [sales region].[order items] oi WHERE oi.id > 5", result.CountQuery);
+    }
+
+    [Fact]
+    public void Analyze_DeleteWhenCountQueryCannotBeBuilt_AddsExplicitWarningIssue()
+    {
+        var sut = new MutationGuardService();
+
+        MutationGuardResult result = sut.Analyze("DELETE FROM \"public\".\"users\" AS \"u\" WHERE \"u\".id > 5;");
+
+        Assert.True(result.IsSafe);
+        Assert.False(result.RequiresConfirmation);
+        Assert.Null(result.CountQuery);
+        Assert.Contains(result.Issues, i => i.Code == "COUNT_QUERY_UNAVAILABLE" && i.Severity == MutationGuardSeverity.Warning);
+    }
+
+    [Fact]
     public void Analyze_WithUpdateFrom_PrefixesCountQueryWithCte()
     {
         var sut = new MutationGuardService();
@@ -123,6 +225,19 @@ public sealed class MutationGuardServiceTests
         Assert.False(result.RequiresConfirmation);
         Assert.True(result.SupportsDiff);
         Assert.Equal("WITH blocked AS (SELECT id FROM customers WHERE blocked = true) SELECT COUNT(*) FROM orders o, blocked b WHERE o.customer_id = b.id", result.CountQuery);
+    }
+
+    [Fact]
+    public void Analyze_WithDeleteAndDoubledSingleQuoteInCte_DoesNotBypassMutationDetection()
+    {
+        var sut = new MutationGuardService();
+
+        MutationGuardResult result = sut.Analyze("WITH sample AS (SELECT 'it''s' AS txt) DELETE FROM orders;");
+
+        Assert.False(result.IsSafe);
+        Assert.True(result.RequiresConfirmation);
+        Assert.Contains(result.Issues, i => i.Code == "NO_WHERE" && i.Severity == MutationGuardSeverity.Critical);
+        Assert.Equal("WITH sample AS (SELECT 'it''s' AS txt) SELECT COUNT(*) FROM orders", result.CountQuery);
     }
 
     [Fact]

@@ -17,7 +17,7 @@ public sealed class SchemaMissingRequiredCommentSqlCandidateFactoryTests
         Assert.NotNull(candidate);
         Assert.Equal(SqlCandidateSafety.NonDestructive, candidate!.Safety);
         Assert.Equal(CandidateVisibility.VisibleActionable, candidate.Visibility);
-        Assert.Equal("COMMENT ON TABLE \"public\".\"orders\" IS 'TODO: add technical comment for table orders';", candidate.Sql);
+        Assert.Equal("COMMENT ON TABLE \"public\".\"orders\" IS 'Technical description for table orders.';", candidate.Sql);
     }
 
     [Fact]
@@ -26,7 +26,7 @@ public sealed class SchemaMissingRequiredCommentSqlCandidateFactoryTests
         SqlFixCandidate? candidate = _factory.CreateCandidate(CreateColumnIssue(), DatabaseProvider.Postgres, "s-1");
 
         Assert.NotNull(candidate);
-        Assert.Equal("COMMENT ON COLUMN \"public\".\"orders\".\"customer_id\" IS 'TODO: add technical comment for column orders.customer_id';", candidate!.Sql);
+        Assert.Equal("COMMENT ON COLUMN \"public\".\"orders\".\"customer_id\" IS 'Technical description for column orders.customer_id.';", candidate!.Sql);
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class SchemaMissingRequiredCommentSqlCandidateFactoryTests
         SqlFixCandidate? candidate = _factory.CreateCandidate(CreateTableIssue(schemaName: null), DatabaseProvider.MySql, "s-1");
 
         Assert.NotNull(candidate);
-        Assert.Equal("ALTER TABLE `orders` COMMENT = 'TODO: add technical comment for table orders';", candidate!.Sql);
+        Assert.Equal("ALTER TABLE `orders` COMMENT = 'Technical description for table orders.';", candidate!.Sql);
     }
 
     [Fact]

@@ -132,6 +132,8 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
         IReadOnlyList<JoinDefinition>? joins = null,
         IReadOnlyList<WhereBinding>? whereMeta = null,
         SetOperationDefinition? setOperation = null,
+        string? pivotMode = null,
+        string? pivotConfig = null,
         string? queryHints = null
     )
     {
@@ -140,7 +142,7 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
         SqlResult result = _compiler.Compile(query);
         string sql = ApplyQualifyClause(result.Sql, compiled.QualifyExprs);
         sql = ApplySetOperation(sql, setOperation);
-        sql = ApplyPivotOperation(sql, null, null);
+        sql = ApplyPivotOperation(sql, pivotMode, pivotConfig);
         sql = ApplyQueryHints(sql, queryHints);
         return new GeneratedQuery(sql, result.NamedBindings, BuildDebugTree(compiled));
     }
@@ -338,8 +340,9 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
             query.Distinct();
         ApplyWheres(query, compiled.WhereExprs, whereMeta);
         ApplyOrders(query, compiled.OrderExprs);
-        ApplyGroupBys(query, ResolveGroupByExpressions(compiled));
-        ApplyHavings(query, compiled.HavingExprs);
+        IReadOnlyList<ISqlExpression> groupByExprs = ResolveGroupByExpressions(compiled);
+        ApplyGroupBys(query, groupByExprs);
+        ApplyHavings(query, compiled.HavingExprs, groupByExprs);
         if (compiled.Limit.HasValue)
             query.Limit(compiled.Limit.Value);
         if (compiled.Offset.HasValue)
@@ -365,7 +368,11 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
 
         string? normalizedOperator = NormalizeSetOperator(setOperation.Operator);
         if (normalizedOperator is null)
-            return sql;
+        {
+            throw new InvalidOperationException(
+                $"Unsupported set operation operator '{setOperation.Operator}'. Expected one of: UNION, UNION ALL, INTERSECT, EXCEPT."
+            );
+        }
 
         string left = TrimTrailingSemicolon(sql);
         string right = TrimTrailingSemicolon(setOperation.QuerySql);
@@ -409,13 +416,47 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
             return sql;
 
         string config = (pivotConfig ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(config) || config.Contains(';', StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(config))
             return sql;
+
+        if (!IsSafePivotConfig(config))
+        {
+            throw new InvalidOperationException(
+                "Unsafe PIVOT/UNPIVOT configuration detected. Only simple pivot clauses are allowed."
+            );
+        }
 
         string baseSql = TrimTrailingSemicolon(sql);
         string sourceAlias = mode == "PIVOT" ? "_pivot_src" : "_unpivot_src";
         string targetAlias = mode == "PIVOT" ? "_pivot" : "_unpivot";
         return $"SELECT * FROM ({baseSql}) AS {sourceAlias}\n{mode} ({config}) AS {targetAlias}";
+    }
+
+    private static bool IsSafePivotConfig(string config)
+    {
+        if (config.Contains(';', StringComparison.Ordinal))
+            return false;
+        if (config.Contains("--", StringComparison.Ordinal))
+            return false;
+        if (config.Contains("/*", StringComparison.Ordinal) || config.Contains("*/", StringComparison.Ordinal))
+            return false;
+        if (config.Contains('\'') || config.Contains('"') || config.Contains('`'))
+            return false;
+
+        int depth = 0;
+        foreach (char c in config)
+        {
+            if (c == '(')
+                depth++;
+            else if (c == ')')
+            {
+                depth--;
+                if (depth < 0)
+                    return false;
+            }
+        }
+
+        return depth == 0;
     }
 
     private static string? NormalizeSetOperator(string? @operator)
@@ -702,6 +743,13 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
         if (whereExprs.Count == 0)
             return;
 
+        if (bindings.Count > 0 && bindings.Count < whereExprs.Count)
+        {
+            throw new InvalidOperationException(
+                $"WHERE metadata mismatch: found {whereExprs.Count} predicate expression(s) but only {bindings.Count} logic binding(s)."
+            );
+        }
+
         var predicates = new List<(string Sql, string Op)>();
         for (int i = 0; i < whereExprs.Count; i++)
         {
@@ -773,12 +821,12 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
 
         if (trimmed.Equals("TRUE", StringComparison.OrdinalIgnoreCase))
         {
-            return _provider == DatabaseProvider.SqlServer ? "1 = 1" : "TRUE";
+            return _provider == DatabaseProvider.Postgres ? "TRUE" : "1 = 1";
         }
 
         if (trimmed.Equals("FALSE", StringComparison.OrdinalIgnoreCase))
         {
-            return _provider == DatabaseProvider.SqlServer ? "1 = 0" : "FALSE";
+            return _provider == DatabaseProvider.Postgres ? "FALSE" : "1 = 0";
         }
 
         return trimmed;
@@ -789,10 +837,25 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
         foreach ((ISqlExpression expr, bool desc) in orders)
         {
             string sql = expr.Emit(_emitCtx);
+            if (_provider == DatabaseProvider.Postgres)
+            {
+                string direction = desc ? "DESC" : "ASC";
+                string nulls = desc ? "NULLS FIRST" : "NULLS LAST";
+                q.OrderByRaw($"{sql} {direction} {nulls}");
+                continue;
+            }
+
+            // Normalize NULL ordering across providers that lack NULLS FIRST/LAST syntax.
             if (desc)
+            {
+                q.OrderByRaw($"CASE WHEN {sql} IS NULL THEN 0 ELSE 1 END ASC");
                 q.OrderByRaw($"{sql} DESC");
+            }
             else
-                q.OrderByRaw(sql);
+            {
+                q.OrderByRaw($"CASE WHEN {sql} IS NULL THEN 1 ELSE 0 END ASC");
+                q.OrderByRaw($"{sql} ASC");
+            }
         }
     }
 
@@ -863,10 +926,125 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
             || upper.Contains("GROUP_CONCAT(", StringComparison.Ordinal);
     }
 
-    private void ApplyHavings(Query q, IReadOnlyList<ISqlExpression> havings)
+    private void ApplyHavings(
+        Query q,
+        IReadOnlyList<ISqlExpression> havings,
+        IReadOnlyList<ISqlExpression> groupBys
+    )
     {
+        ValidateHavingGroupByCompatibility(havings, groupBys);
+
         foreach (ISqlExpression h in havings)
             q.HavingRaw(h.Emit(_emitCtx));
+    }
+
+    private void ValidateHavingGroupByCompatibility(
+        IReadOnlyList<ISqlExpression> havings,
+        IReadOnlyList<ISqlExpression> groupBys
+    )
+    {
+        if (havings.Count == 0 || groupBys.Count == 0)
+            return;
+
+        var groupedColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (ISqlExpression groupExpr in groupBys)
+            CollectReferencedColumnsOutsideAggregates(groupExpr, insideAggregate: false, groupedColumns);
+
+        foreach (ISqlExpression havingExpr in havings)
+        {
+            var requiredColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            CollectReferencedColumnsOutsideAggregates(
+                havingExpr,
+                insideAggregate: false,
+                requiredColumns
+            );
+
+            List<string> missing = requiredColumns
+                .Where(column => !groupedColumns.Contains(column))
+                .ToList();
+            if (missing.Count == 0)
+                continue;
+
+            throw new InvalidOperationException(
+                $"HAVING contains non-aggregated columns not present in GROUP BY: {string.Join(", ", missing)}."
+            );
+        }
+    }
+
+    private void CollectReferencedColumnsOutsideAggregates(
+        ISqlExpression expr,
+        bool insideAggregate,
+        ISet<string> sink
+    )
+    {
+        switch (expr)
+        {
+            case ColumnExpr col when !insideAggregate:
+                sink.Add(col.Emit(_emitCtx));
+                return;
+
+            case AggregateExpr agg:
+                if (agg.Inner is not null)
+                    CollectReferencedColumnsOutsideAggregates(agg.Inner, insideAggregate: true, sink);
+                return;
+
+            case FunctionCallExpr f:
+                bool aggregateFn = IsAggregateFunctionName(f.FunctionName);
+                foreach (ISqlExpression arg in f.Args)
+                {
+                    CollectReferencedColumnsOutsideAggregates(
+                        arg,
+                        insideAggregate || aggregateFn,
+                        sink
+                    );
+                }
+                return;
+
+            case AliasExpr a:
+                CollectReferencedColumnsOutsideAggregates(a.Inner, insideAggregate, sink);
+                return;
+
+            case CastExpr c:
+                CollectReferencedColumnsOutsideAggregates(c.Input, insideAggregate, sink);
+                return;
+
+            case ComparisonExpr c:
+                CollectReferencedColumnsOutsideAggregates(c.Left, insideAggregate, sink);
+                CollectReferencedColumnsOutsideAggregates(c.Right, insideAggregate, sink);
+                return;
+
+            case BetweenExpr b:
+                CollectReferencedColumnsOutsideAggregates(b.Input, insideAggregate, sink);
+                CollectReferencedColumnsOutsideAggregates(b.Lo, insideAggregate, sink);
+                CollectReferencedColumnsOutsideAggregates(b.Hi, insideAggregate, sink);
+                return;
+
+            case LogicGateExpr logic:
+                foreach (ISqlExpression operand in logic.Operands)
+                    CollectReferencedColumnsOutsideAggregates(operand, insideAggregate, sink);
+                return;
+
+            case NotExpr n:
+                CollectReferencedColumnsOutsideAggregates(n.Operand, insideAggregate, sink);
+                return;
+
+            case IsNullExpr n:
+                CollectReferencedColumnsOutsideAggregates(n.Input, insideAggregate, sink);
+                return;
+
+            case CaseExpr c:
+                foreach (WhenClause when in c.Whens)
+                {
+                    CollectReferencedColumnsOutsideAggregates(when.Condition, insideAggregate, sink);
+                    CollectReferencedColumnsOutsideAggregates(when.Result, insideAggregate, sink);
+                }
+                if (c.Else is not null)
+                    CollectReferencedColumnsOutsideAggregates(c.Else, insideAggregate, sink);
+                return;
+
+            default:
+                return;
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

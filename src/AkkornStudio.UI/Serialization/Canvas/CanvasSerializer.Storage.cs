@@ -111,29 +111,7 @@ public static partial class CanvasSerializer
         try
         {
             byte[] bytes = File.ReadAllBytes(path);
-            string json = DecodeCanvasJson(bytes);
-            if (LooksLikeDocumentWorkspaceEnvelope(json))
-            {
-                SavedWorkspaceDocumentsCanvas? workspace = JsonSerializer.Deserialize<SavedWorkspaceDocumentsCanvas>(json, _opts);
-                if (workspace?.Documents is null || workspace.Documents.Count == 0)
-                    return false;
-
-                return workspace.Version is >= 5 and <= CurrentSchemaVersion;
-            }
-
-            if (LooksLikeLegacyWorkspaceEnvelope(json))
-            {
-                SavedWorkspaceCanvas? workspace = JsonSerializer.Deserialize<SavedWorkspaceCanvas>(json, _opts);
-                if (workspace?.QueryCanvas is null || workspace.DdlCanvas is null)
-                    return false;
-
-                return workspace.Version == 4
-                    && workspace.QueryCanvas.Version == CurrentCanvasSchemaVersion
-                    && workspace.DdlCanvas.Version == CurrentCanvasSchemaVersion;
-            }
-
-            SavedCanvas? saved = JsonSerializer.Deserialize<SavedCanvas>(json, _opts);
-            return saved?.Version == CurrentCanvasSchemaVersion;
+            return IsValidCanvasPayload(bytes);
         }
         catch
         {
@@ -248,19 +226,62 @@ public static partial class CanvasSerializer
                 );
             })
             .OrderByDescending(v => v.CreatedAt)
+            .ThenByDescending(v => v.VersionId, StringComparer.Ordinal)
+            .ThenByDescending(v => v.VersionPath, StringComparer.Ordinal)
             .ToList();
     }
 
     public static async Task RestoreLocalVersionAsync(string targetFilePath, string versionFilePath)
     {
-        await CreateAutomaticBackupAsync(targetFilePath);
         byte[] bytes = await File.ReadAllBytesAsync(versionFilePath);
+        if (!IsValidCanvasPayload(bytes))
+        {
+            throw new InvalidDataException(
+                $"Version file '{versionFilePath}' is not a valid supported canvas payload."
+            );
+        }
+
+        await CreateAutomaticBackupAsync(targetFilePath);
 
         string? parentDir = Path.GetDirectoryName(targetFilePath);
         if (!string.IsNullOrWhiteSpace(parentDir))
             Directory.CreateDirectory(parentDir);
 
         await File.WriteAllBytesAsync(targetFilePath, bytes);
+    }
+
+    private static bool IsValidCanvasPayload(byte[] bytes)
+    {
+        try
+        {
+            string json = DecodeCanvasJson(bytes);
+            if (LooksLikeDocumentWorkspaceEnvelope(json))
+            {
+                SavedWorkspaceDocumentsCanvas? workspace = JsonSerializer.Deserialize<SavedWorkspaceDocumentsCanvas>(json, _opts);
+                if (workspace?.Documents is null || workspace.Documents.Count == 0)
+                    return false;
+
+                return workspace.Version is >= 5 and <= CurrentSchemaVersion;
+            }
+
+            if (LooksLikeLegacyWorkspaceEnvelope(json))
+            {
+                SavedWorkspaceCanvas? workspace = JsonSerializer.Deserialize<SavedWorkspaceCanvas>(json, _opts);
+                if (workspace?.QueryCanvas is null || workspace.DdlCanvas is null)
+                    return false;
+
+                return workspace.Version == 4
+                    && workspace.QueryCanvas.Version == CurrentCanvasSchemaVersion
+                    && workspace.DdlCanvas.Version == CurrentCanvasSchemaVersion;
+            }
+
+            SavedCanvas? saved = JsonSerializer.Deserialize<SavedCanvas>(json, _opts);
+            return saved?.Version == CurrentCanvasSchemaVersion;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsGZipPayload(ReadOnlySpan<byte> bytes) =>
@@ -323,10 +344,19 @@ public static partial class CanvasSerializer
 
     private static void PruneOldFiles(string dir, int keep)
     {
-        FileInfo[] files = new DirectoryInfo(dir)
-            .EnumerateFiles()
-            .OrderByDescending(f => f.LastWriteTimeUtc)
-            .ToArray();
+        FileInfo[] files;
+        try
+        {
+            files = new DirectoryInfo(dir)
+                .EnumerateFiles()
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .ToArray();
+        }
+        catch (Exception ex)
+        {
+            RaiseWarning($"Could not enumerate prune candidates in '{dir}': {ex.Message}");
+            return;
+        }
 
         foreach (FileInfo stale in files.Skip(keep))
         {
@@ -334,9 +364,9 @@ public static partial class CanvasSerializer
             {
                 stale.Delete();
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort cleanup.
+                RaiseWarning($"Could not delete stale file '{stale.FullName}': {ex.Message}");
             }
         }
     }

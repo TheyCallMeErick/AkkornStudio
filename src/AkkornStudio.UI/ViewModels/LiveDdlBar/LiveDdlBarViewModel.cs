@@ -109,7 +109,6 @@ public sealed class LiveDdlBarViewModel : ViewModelBase
         _schemaAnalysisService = SchemaAnalysisServiceFactory.CreateDefault();
         DiagnosticsPanel = new DdlDiagnosticsPanelViewModel(nodeId => _ = FocusNodeById(nodeId));
         SchemaAnalysisPanel = new SchemaAnalysisPanelViewModel(
-            copySql: sql => { /* TODO: Implement clipboard injection or platform abstraction */ },
             applyToCanvas: OnApplyFixToCanvas
         );
         SchemaComparePanel = new DdlSchemaCompareWorkspaceViewModel(_canvas.ConnectionManager);

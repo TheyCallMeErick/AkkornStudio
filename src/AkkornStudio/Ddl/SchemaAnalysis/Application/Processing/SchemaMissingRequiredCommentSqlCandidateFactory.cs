@@ -34,14 +34,14 @@ public sealed class SchemaMissingRequiredCommentSqlCandidateFactory
             return null;
         }
 
-        string placeholderComment = BuildPlaceholderComment(issue);
+        string generatedComment = BuildGeneratedComment(issue);
         IReadOnlyList<string> preconditions = BuildPreconditions(issue, provider);
         if (preconditions.Count == 0)
         {
             return null;
         }
 
-        string sql = BuildSql(issue, provider, placeholderComment);
+        string sql = BuildSql(issue, provider, generatedComment);
         if (string.IsNullOrWhiteSpace(sql))
         {
             return null;
@@ -197,11 +197,11 @@ ELSE
         ];
     }
 
-    private static string BuildPlaceholderComment(SchemaIssue issue)
+    private static string BuildGeneratedComment(SchemaIssue issue)
     {
         return issue.TargetType == SchemaTargetType.Table
-            ? $"TODO: add technical comment for table {issue.TableName}"
-            : $"TODO: add technical comment for column {issue.TableName}.{issue.ColumnName}";
+            ? $"Technical description for table {issue.TableName}."
+            : $"Technical description for column {issue.TableName}.{issue.ColumnName}.";
     }
     private static string Escape(string value) => value.Replace("'", "''", StringComparison.Ordinal);
 }

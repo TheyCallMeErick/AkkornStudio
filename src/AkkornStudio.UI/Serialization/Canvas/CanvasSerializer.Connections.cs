@@ -227,9 +227,44 @@ public static partial class CanvasSerializer
         if (savedConnection.Breakpoints is not { Count: > 0 })
             return;
 
-        connection.SetBreakpoints([.. savedConnection.Breakpoints.Select(b => new WireBreakpoint(new(b.X, b.Y)))]);
+        List<WireBreakpoint> validBreakpoints = [];
+        foreach (SavedWireBreakpoint b in savedConnection.Breakpoints)
+        {
+            if (!double.IsFinite(b.X) || !double.IsFinite(b.Y))
+            {
+                RaiseWarning(
+                    $"Skipped invalid wire breakpoint for connection '{savedConnection.FromNodeId}.{savedConnection.FromPinName} -> {savedConnection.ToNodeId}.{savedConnection.ToPinName}' (X={b.X}, Y={b.Y})."
+                );
+                continue;
+            }
+
+            validBreakpoints.Add(new WireBreakpoint(new(b.X, b.Y)));
+        }
+
+        if (validBreakpoints.Count == 0)
+            return;
+
+        connection.SetBreakpoints(validBreakpoints);
     }
 
-    private static bool IsConnectionCompatible(PinViewModel fromPin, PinViewModel toPin) =>
-        toPin.EvaluateConnection(fromPin).IsAllowed;
+    private static bool IsConnectionCompatible(PinViewModel fromPin, PinViewModel toPin)
+    {
+        try
+        {
+            return toPin.EvaluateConnection(fromPin).IsAllowed;
+        }
+        catch (Exception ex)
+        {
+            string fromLabel = fromPin is null
+                ? "<null>"
+                : $"{fromPin.Owner.Id}.{fromPin.Name}";
+            string toLabel = toPin is null
+                ? "<null>"
+                : $"{toPin.Owner.Id}.{toPin.Name}";
+            RaiseWarning(
+                $"Skipped connection '{fromLabel} -> {toLabel}' due to compatibility evaluation error: {ex.Message}"
+            );
+            return false;
+        }
+    }
 }

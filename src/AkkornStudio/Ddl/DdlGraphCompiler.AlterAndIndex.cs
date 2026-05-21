@@ -60,10 +60,8 @@ public sealed partial class DdlGraphCompiler
         IReadOnlyList<string> includeColumns = ResolveConstraintColumnNames(indexNode.Id, "include_column", allColumnsByNodeId);
         if (includeColumns.Count > 0 && _provider is not DatabaseProvider.SqlServer and not DatabaseProvider.Postgres)
         {
-            AddWarning(
-                "W-DDL-INDEX-INCLUDE-UNSUPPORTED",
-                $"Provider {_provider} does not support INCLUDE columns in CREATE INDEX; include columns will be ignored.",
-                indexNode.Id
+            throw new InvalidOperationException(
+                $"Provider {_provider} does not support INCLUDE columns in CREATE INDEX."
             );
         }
 
