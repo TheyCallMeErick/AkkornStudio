@@ -127,4 +127,58 @@ public class PreviewServiceButtonStateTests
         Assert.NotNull(method);
         Assert.True(method.GetParameters().Length > 0); // Takes a Button parameter
     }
+
+    [Fact]
+    public void CanRunPreviewButton_DisablesWhenLiveSqlExistsButExecutionTemplateMissing()
+    {
+        bool result = InvokeCanRunPreviewButton(
+            isMutatingCommand: false,
+            rawSql: "SELECT * FROM users WHERE id = @p0",
+            executionSqlTemplate: null
+        );
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void CanRunPreviewButton_DisablesWhenMutatingEvenWithExecutionTemplate()
+    {
+        bool result = InvokeCanRunPreviewButton(
+            isMutatingCommand: true,
+            rawSql: "DELETE FROM users WHERE id = @p0",
+            executionSqlTemplate: "DELETE FROM users WHERE id = @p0"
+        );
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void CanRunPreviewButton_EnablesWhenNoLiveSqlText()
+    {
+        bool result = InvokeCanRunPreviewButton(
+            isMutatingCommand: false,
+            rawSql: "",
+            executionSqlTemplate: null
+        );
+
+        Assert.True(result);
+    }
+
+    private static bool InvokeCanRunPreviewButton(
+        bool isMutatingCommand,
+        string rawSql,
+        string? executionSqlTemplate
+    )
+    {
+        var method = typeof(PreviewService).GetMethod(
+            "CanRunPreviewButton",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
+        );
+
+        Assert.NotNull(method);
+
+        object? result = method!.Invoke(null, [isMutatingCommand, rawSql, executionSqlTemplate]);
+        Assert.IsType<bool>(result);
+        return (bool)result;
+    }
 }

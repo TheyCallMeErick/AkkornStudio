@@ -118,6 +118,25 @@ public class DdlGeneratorServiceTests
         Assert.Contains("((lower(name)))", sql, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Generate_CreateIndex_WithExpression_SqlServer_ThrowsExplicitError()
+    {
+        var expr = new CreateIndexExpr(
+            "dbo",
+            "users",
+            "ix_users_lower_name",
+            isUnique: false,
+            keyColumns: [new DdlIndexKeyExpr(ExpressionSql: "lower(name)")],
+            includeColumns: [],
+            ifNotExists: true
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.SqlServer);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => generator.Generate([expr]));
+        Assert.Contains("does not support arbitrary expression keys", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData(DatabaseProvider.SqlServer, "sp_rename")]
     [InlineData(DatabaseProvider.MySql, "MODIFY COLUMN")]
@@ -179,7 +198,7 @@ public class DdlGeneratorServiceTests
 
     [Theory]
     [InlineData(DatabaseProvider.Postgres, "CREATE OR REPLACE VIEW")]
-    [InlineData(DatabaseProvider.MySql, "CREATE OR REPLACE VIEW")]
+    [InlineData(DatabaseProvider.MySql, "DROP VIEW IF EXISTS")]
     [InlineData(DatabaseProvider.SqlServer, "CREATE VIEW")]
     [InlineData(DatabaseProvider.SQLite, "CREATE VIEW")]
     public void Generate_CreateView_EmitsProviderSpecificSyntax(DatabaseProvider provider, string expectedToken)
@@ -200,7 +219,7 @@ public class DdlGeneratorServiceTests
 
     [Theory]
     [InlineData(DatabaseProvider.Postgres, "CREATE OR REPLACE VIEW")]
-    [InlineData(DatabaseProvider.MySql, "CREATE OR REPLACE VIEW")]
+    [InlineData(DatabaseProvider.MySql, "DROP VIEW IF EXISTS")]
     [InlineData(DatabaseProvider.SqlServer, "ALTER VIEW")]
     [InlineData(DatabaseProvider.SQLite, "DROP VIEW IF EXISTS")]
     public void Generate_AlterView_EmitsProviderSpecificSyntax(DatabaseProvider provider, string expectedToken)

@@ -3,6 +3,7 @@ using Avalonia.Media;
 using AkkornStudio.CanvasKit;
 using AkkornStudio.Nodes;
 using AkkornStudio.Nodes.PinTypes;
+using System.Collections.ObjectModel;
 
 namespace AkkornStudio.UI.ViewModels;
 
@@ -36,6 +37,7 @@ public sealed class ConnectionViewModel : ViewModelBase
     private bool _isSelected;
     private CanvasWireRoutingMode _routingMode = CanvasWireRoutingMode.Bezier;
     private List<WireBreakpoint> _breakpoints = [];
+    private ReadOnlyCollection<WireBreakpoint> _breakpointsView = null!;
 
     /// <summary>Unique identifier for this connection.</summary>
     public string Id { get; } = Guid.NewGuid().ToString("N")[..8];
@@ -48,6 +50,7 @@ public sealed class ConnectionViewModel : ViewModelBase
         FromPin = fromPin;
         _fromPoint = fromPoint;
         _toPoint = toPoint;
+        _breakpointsView = _breakpoints.AsReadOnly();
     }
 
     /// <summary>The pin data flows TO (must be Input). Can be null while dragging.</summary>
@@ -128,11 +131,12 @@ public sealed class ConnectionViewModel : ViewModelBase
         }
     }
 
-    public IReadOnlyList<WireBreakpoint> Breakpoints => _breakpoints;
+    public IReadOnlyList<WireBreakpoint> Breakpoints => _breakpointsView;
 
     internal void SetBreakpoints(IReadOnlyList<WireBreakpoint> breakpoints)
     {
         _breakpoints = [.. breakpoints];
+        _breakpointsView = _breakpoints.AsReadOnly();
         RaisePropertyChanged(nameof(Breakpoints));
         RaisePropertyChanged(nameof(BezierPath));
     }

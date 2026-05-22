@@ -2,6 +2,7 @@
 using AkkornStudio.UI.Services.Benchmark;
 using System.Reflection;
 using AkkornStudio.Core;
+using AkkornStudio.Metadata;
 using AkkornStudio.UI.Services.Localization;
 using AkkornStudio.UI.Services.Modal;
 using AkkornStudio.UI.ViewModels;
@@ -239,7 +240,10 @@ public class ConnectionManagerUxStateTests
     [Fact]
     public async Task LoadDatabaseTablesAsync_WithoutSearchMenu_ReportsFailureAndKeepsDialogVisible()
     {
-        var vm = new ConnectionManagerViewModel
+        var activationWorkflow = new RecordingActivationWorkflow(
+            new ConnectionActivationResult(ConnectionActivationOutcome.Connected));
+
+        var vm = new ConnectionManagerViewModel(activationWorkflow: activationWorkflow)
         {
             IsVisible = true,
             SearchMenu = null,
@@ -271,7 +275,53 @@ public class ConnectionManagerUxStateTests
 
         Assert.True(vm.IsVisible);
         Assert.False(vm.IsConnecting);
+        Assert.Equal(0, activationWorkflow.CallCount);
         Assert.Contains(LocalizationService.Instance["connection.status.failedPrefix"], vm.TestStatus, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadDatabaseTablesAsync_WhenCanvasIsNull_DoesNotOpenClearCanvasPromptEvenIfWorkflowRequestsIt()
+    {
+        var profile = new ConnectionProfile
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = "Local",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db",
+            Username = "u",
+            Password = "p",
+        };
+        ConnectionConfig config = profile.ToConnectionConfig();
+        var activationWorkflow = new RecordingActivationWorkflow(
+            new ConnectionActivationResult(
+                Outcome: ConnectionActivationOutcome.Connected,
+                Config: config,
+                Metadata: BuildMetadata(),
+                ShouldOpenClearCanvasPrompt: true));
+
+        var vm = new ConnectionManagerViewModel(activationWorkflow: activationWorkflow)
+        {
+            IsVisible = true,
+            SearchMenu = new SearchMenuViewModel(),
+            Canvas = null,
+        };
+
+        MethodInfo method = typeof(ConnectionManagerViewModel)
+            .GetMethod(
+                "LoadDatabaseTablesAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                types: [typeof(ConnectionProfile)],
+                modifiers: null
+            )!;
+
+        var task = (Task)method.Invoke(vm, [profile])!;
+        await task;
+
+        Assert.Equal(1, activationWorkflow.CallCount);
+        Assert.False(vm.IsClearCanvasPromptVisible);
     }
 
     [Fact]
@@ -342,6 +392,75 @@ public class ConnectionManagerUxStateTests
             card.ProviderIconAssetUri);
     }
 
+    [Fact]
+    public void ResolveConnectCancellationTokenSafely_WhenCtsDisposed_ReturnsCancellationTokenNone()
+    {
+        var vm = new ConnectionManagerViewModel();
+        var cts = new CancellationTokenSource();
+        cts.Dispose();
+        SetPrivateField(vm, "_connectCts", cts);
+
+        CancellationToken token = InvokeResolveConnectCancellationTokenSafely(vm);
+
+        Assert.Equal(CancellationToken.None, token);
+    }
+
+    [Fact]
+    public void ResolveConnectCancellationTokenSafely_WhenCtsAlive_ReturnsConnectedToken()
+    {
+        var vm = new ConnectionManagerViewModel();
+        using var cts = new CancellationTokenSource();
+        SetPrivateField(vm, "_connectCts", cts);
+
+        CancellationToken token = InvokeResolveConnectCancellationTokenSafely(vm);
+
+        Assert.True(token.CanBeCanceled);
+    }
+
+    [Fact]
+    public void ActiveMetadata_WhenNoActiveProfile_ReturnsNullEvenIfCanvasStillHasMetadata()
+    {
+        var vm = new ConnectionManagerViewModel();
+        var canvas = new CanvasViewModel();
+        canvas.DatabaseMetadata = BuildMetadata(databaseName: "canvas_db");
+        vm.Canvas = canvas;
+        vm.ActiveProfileId = null;
+
+        Assert.Null(vm.ActiveMetadata);
+        Assert.Contains("Conecte-se", vm.ActiveMetadataDetails, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ActiveMetadata_WhenServiceMetadataIsStale_PrefersCanvasMetadataMatchingActiveProfile()
+    {
+        var vm = new ConnectionManagerViewModel();
+        var profile = new ConnectionProfile
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = "Local",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "target_db",
+            Username = "u",
+            Password = "p",
+        };
+        vm.Profiles.Add(profile);
+        vm.ActiveProfileId = profile.Id;
+
+        var canvas = new CanvasViewModel
+        {
+            DatabaseMetadata = BuildMetadata(databaseName: "target_db")
+        };
+        vm.Canvas = canvas;
+        SetDatabaseServiceLoadedMetadata(vm, BuildMetadata(databaseName: "stale_db"));
+
+        DbMetadata? resolved = vm.ActiveMetadata;
+
+        Assert.NotNull(resolved);
+        Assert.Equal("target_db", resolved!.DatabaseName);
+    }
+
     private sealed class RecordingModalManager(bool hasSubscriber = true) : IGlobalModalManager
     {
         public event Action<GlobalModalRequest>? ModalRequested;
@@ -371,6 +490,64 @@ public class ConnectionManagerUxStateTests
                 KeepStartVisible: keepStartVisible
             ));
     }
+
+    private sealed class RecordingActivationWorkflow(ConnectionActivationResult result) : IConnectionActivationWorkflow
+    {
+        private readonly ConnectionActivationResult _result = result;
+        public int CallCount { get; private set; }
+
+        public Task<ConnectionActivationResult> ExecuteAsync(
+            ConnectionProfile profile,
+            SearchMenuViewModel? searchMenu,
+            CanvasViewModel? canvas,
+            Func<ConnectionConfig, SearchMenuViewModel, CancellationToken, Task<DbMetadata?>> loadMetadataAsync,
+            CancellationToken ct)
+        {
+            _ = profile;
+            _ = searchMenu;
+            _ = canvas;
+            _ = loadMetadataAsync;
+            _ = ct;
+            CallCount++;
+            return Task.FromResult(_result);
+        }
+    }
+
+    private static DbMetadata BuildMetadata(string databaseName = "db") =>
+        new(
+            DatabaseName: databaseName,
+            Provider: DatabaseProvider.Postgres,
+            ServerVersion: "16",
+            CapturedAt: DateTimeOffset.UtcNow,
+            Schemas: [],
+            AllForeignKeys: []);
+
+    private static CancellationToken InvokeResolveConnectCancellationTokenSafely(ConnectionManagerViewModel vm)
+    {
+        MethodInfo? method = typeof(ConnectionManagerViewModel).GetMethod(
+            "ResolveConnectCancellationTokenSafely",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(method);
+        return (CancellationToken)method!.Invoke(vm, null)!;
+    }
+
+    private static void SetPrivateField<T>(ConnectionManagerViewModel vm, string fieldName, T value)
+    {
+        FieldInfo? field = typeof(ConnectionManagerViewModel).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        field!.SetValue(vm, value);
+    }
+
+    private static void SetDatabaseServiceLoadedMetadata(ConnectionManagerViewModel vm, DbMetadata metadata)
+    {
+        FieldInfo? serviceField = typeof(ConnectionManagerViewModel).GetField("_dbConnectionService", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(serviceField);
+        object? service = serviceField!.GetValue(vm);
+        Assert.NotNull(service);
+
+        FieldInfo? metadataField = service!.GetType().GetField("_loadedMetadata", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(metadataField);
+        metadataField!.SetValue(service, metadata);
+    }
 }
-
-

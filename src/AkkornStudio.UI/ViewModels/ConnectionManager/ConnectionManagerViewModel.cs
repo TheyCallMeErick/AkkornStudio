@@ -1214,7 +1214,15 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     {
         try
         {
-            SearchMenuViewModel searchMenu = SearchMenu ?? new SearchMenuViewModel();
+            SearchMenuViewModel? searchMenu = SearchMenu;
+            if (searchMenu is null)
+            {
+                string reason = $"{L("connection.error.searchMenuNotInitialized", "search menu not initialized")}.";
+                ApplyTestStatus(_statusPresenter.FailedWithPrefix(reason));
+                NotifyConnectionFailed(reason);
+                return;
+            }
+
             ConnectionActivationResult result = await _activationWorkflow.ExecuteAsync(
                 profile,
                 searchMenu,
@@ -1229,7 +1237,10 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             switch (result.Outcome)
             {
                 case ConnectionActivationOutcome.Connected:
-                    if (result.ShouldOpenClearCanvasPrompt && result.Metadata is not null && result.Config is not null)
+                    if (Canvas is not null
+                        && result.ShouldOpenClearCanvasPrompt
+                        && result.Metadata is not null
+                        && result.Config is not null)
                         OpenClearCanvasPrompt(result.Metadata, result.Config);
                     else
                         CloseClearCanvasPrompt(dismissedByUser: false);
@@ -1417,7 +1428,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         IsReloadingSchema = true;
         try
         {
-            CancellationToken token = _connectCts?.Token ?? CancellationToken.None;
+            CancellationToken token = ResolveConnectCancellationTokenSafely();
             await LoadDatabaseTablesAsync(activeProfile, token);
             await SyncDatabaseOptionsAsync(token);
             SyncSchemaOptions();
@@ -1529,7 +1540,32 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         RaisePropertyChanged(nameof(IsDatabaseSelectionVisible));
     }
 
-    private DbMetadata? ResolveCurrentMetadata() => _dbConnectionService.LoadedMetadata ?? Canvas?.DatabaseMetadata;
+    private DbMetadata? ResolveCurrentMetadata()
+    {
+        ConnectionProfile? activeProfile = Profiles.FirstOrDefault(p =>
+            string.Equals(p.Id, ActiveProfileId, StringComparison.OrdinalIgnoreCase));
+        if (activeProfile is null)
+            return null;
+
+        DbMetadata? serviceMetadata = _dbConnectionService.LoadedMetadata;
+        DbMetadata? canvasMetadata = Canvas?.DatabaseMetadata;
+
+        if (IsMetadataForActiveProfile(serviceMetadata, activeProfile))
+            return serviceMetadata;
+        if (IsMetadataForActiveProfile(canvasMetadata, activeProfile))
+            return canvasMetadata;
+
+        return serviceMetadata ?? canvasMetadata;
+    }
+
+    private static bool IsMetadataForActiveProfile(DbMetadata? metadata, ConnectionProfile profile)
+    {
+        if (metadata is null)
+            return false;
+
+        return metadata.Provider == profile.Provider
+            && string.Equals(metadata.DatabaseName, profile.Database, StringComparison.OrdinalIgnoreCase);
+    }
 
     private async Task SwitchDatabaseAsync(string databaseName)
     {
@@ -1543,26 +1579,42 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
 
             if (activeProfile is not null)
             {
-                activeProfile.Database = databaseName;
-                RaisePropertyChanged(nameof(ActiveConnectionLabel));
-                RaisePropertyChanged(nameof(ConnectionHealthTooltip));
+                ConnectionProfile runtimeProfile = CloneProfile(activeProfile);
+                runtimeProfile.Database = databaseName;
 
                 OperationResultDto<ConnectionDetailsDto> saveResult = await _connectionCatalogService.SaveAsync(
-                    ConnectionContractMapper.ToDetails(activeProfile),
+                    ConnectionContractMapper.ToDetails(runtimeProfile),
                     CancellationToken.None);
+
                 if (saveResult.Success && saveResult.Payload is not null)
+                {
+                    activeProfile.Database = databaseName;
+                    RaisePropertyChanged(nameof(ActiveConnectionLabel));
+                    RaisePropertyChanged(nameof(ConnectionHealthTooltip));
                     await ReloadProfilesFromCatalogAsync(saveResult.Payload.Id);
+                    ProfilesChanged?.Invoke();
+                }
+                else
+                {
+                    Canvas?.Diagnostics.AddWarning(
+                        area: L("diagnostics.area.connection", "Connection"),
+                        message: string.Format(
+                            L(
+                                "connection.warning.databaseSwitchNotPersisted",
+                                "A troca para o banco '{0}' foi aplicada na sessão, mas não pôde ser persistida no perfil."),
+                            databaseName),
+                        recommendation: L(
+                            "connection.warning.databaseSwitchNotPersistedRecommendation",
+                            "Revise permissões de gravação do catálogo e salve o perfil novamente."),
+                        openPanel: false);
+                }
 
-                ProfilesChanged?.Invoke();
-
-                CancellationToken token = _connectCts?.Token ?? CancellationToken.None;
+                CancellationToken token = ResolveConnectCancellationTokenSafely();
                 ConnectionProfile? updatedActiveProfile = Profiles.FirstOrDefault(p =>
                     string.Equals(p.Id, ActiveProfileId, StringComparison.OrdinalIgnoreCase));
-                if (updatedActiveProfile is not null)
-                {
-                    await LoadDatabaseTablesAsync(updatedActiveProfile, token);
-                    await RefreshActiveLatencyAsync(updatedActiveProfile, token);
-                }
+                ConnectionProfile profileForReload = updatedActiveProfile ?? runtimeProfile;
+                await LoadDatabaseTablesAsync(profileForReload, token);
+                await RefreshActiveLatencyAsync(profileForReload, token);
             }
 
             ActiveServerVersion = await _dbConnectionService.GetServerVersionAsync()
@@ -1580,6 +1632,38 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         {
             IsReloadingSchema = false;
         }
+    }
+
+    private CancellationToken ResolveConnectCancellationTokenSafely()
+    {
+        try
+        {
+            return _connectCts?.Token ?? CancellationToken.None;
+        }
+        catch (ObjectDisposedException)
+        {
+            return CancellationToken.None;
+        }
+    }
+
+    private static ConnectionProfile CloneProfile(ConnectionProfile profile)
+    {
+        return new ConnectionProfile
+        {
+            Id = profile.Id,
+            Name = profile.Name,
+            Provider = profile.Provider,
+            Host = profile.Host,
+            Port = profile.Port,
+            Database = profile.Database,
+            Username = profile.Username,
+            Password = profile.Password,
+            RememberPassword = profile.RememberPassword,
+            UseSsl = profile.UseSsl,
+            TrustServerCertificate = profile.TrustServerCertificate,
+            UseIntegratedSecurity = profile.UseIntegratedSecurity,
+            TimeoutSeconds = profile.TimeoutSeconds,
+        };
     }
 
     public async Task SwitchConnectionAsync(ConnectionProfile profile)

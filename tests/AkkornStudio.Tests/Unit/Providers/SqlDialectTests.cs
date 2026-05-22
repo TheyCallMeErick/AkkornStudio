@@ -136,6 +136,27 @@ public class SqlDialectTests
     }
 
     [Fact]
+    public void SqlServerDialect_FormatPagination_WithOffsetAndNoLimit_StillEmitsFetchClause()
+    {
+        var dialect = new SqlServerDialect();
+
+        string pagination = dialect.FormatPagination(limit: null, offset: 25);
+
+        Assert.Equal($"OFFSET 25 ROWS FETCH NEXT {long.MaxValue} ROWS ONLY", pagination);
+    }
+
+    [Fact]
+    public void SqlServerDialect_GetColumnsQuery_UsesPrimaryKeyConstraintInsteadOfIdentityFlag()
+    {
+        var dialect = new SqlServerDialect();
+
+        string sql = dialect.GetColumnsQuery();
+
+        Assert.Contains("CONSTRAINT_TYPE = 'PRIMARY KEY'", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("IsIdentity", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ApplyQueryHints_SqlServer_AppendsOptionClause()
     {
         var dialect = new SqlServerDialect();
@@ -146,16 +167,24 @@ public class SqlDialectTests
         Assert.Contains("MAXDOP 1", sql.ToUpperInvariant());
     }
 
-    [Theory]
-    [InlineData(DatabaseProvider.Postgres)]
-    [InlineData(DatabaseProvider.MySql)]
-    public void ApplyQueryHints_SelectCommentDialects_InjectComment(DatabaseProvider provider)
+    [Fact]
+    public void ApplyQueryHints_MySql_InjectsSelectCommentHint()
     {
-        ISqlDialect dialect = CreateDialect(provider);
+        ISqlDialect dialect = CreateDialect(DatabaseProvider.MySql);
 
         string sql = dialect.ApplyQueryHints("SELECT id FROM users", "BKA(users)");
 
         Assert.Contains("/*+", sql);
+    }
+
+    [Fact]
+    public void ApplyQueryHints_Postgres_IsNoOp()
+    {
+        ISqlDialect dialect = CreateDialect(DatabaseProvider.Postgres);
+
+        string sql = dialect.ApplyQueryHints("SELECT id FROM users;", "SeqScan(users)");
+
+        Assert.Equal("SELECT id FROM users", sql);
     }
 
     [Fact]

@@ -111,7 +111,25 @@ public sealed record CteBinding(
 /// </summary>
 public sealed class NodeGraph
 {
-    public IReadOnlyList<NodeInstance> Nodes { get; init; } = [];
+    private IReadOnlyList<NodeInstance> _nodes = [];
+    private Dictionary<string, NodeInstance>? _nodeMap;
+
+    public IReadOnlyList<NodeInstance> Nodes
+    {
+        get => _nodes;
+        init
+        {
+            if (_nodes is System.Collections.Specialized.INotifyCollectionChanged previousNotifyingCollection)
+                previousNotifyingCollection.CollectionChanged -= HandleNodesCollectionChanged;
+
+            _nodes = value ?? throw new ArgumentNullException(nameof(value));
+
+            if (_nodes is System.Collections.Specialized.INotifyCollectionChanged notifyingCollection)
+                notifyingCollection.CollectionChanged += HandleNodesCollectionChanged;
+
+            _nodeMap = null;
+        }
+    }
     public IReadOnlyList<Connection> Connections { get; init; } = [];
 
     // ── Common table expressions ─────────────────────────────────────────────
@@ -135,9 +153,22 @@ public sealed class NodeGraph
 
     // ── Derived lookups (computed on first access) ────────────────────────────
 
-    private Dictionary<string, NodeInstance>? _nodeMap;
-    public IReadOnlyDictionary<string, NodeInstance> NodeMap =>
-        _nodeMap ??= Nodes.ToDictionary(n => n.Id);
+    public IReadOnlyDictionary<string, NodeInstance> NodeMap
+    {
+        get
+        {
+            // For non-observable mutable lists, rebuild on every access to avoid stale cache.
+            if (_nodes is not System.Collections.Specialized.INotifyCollectionChanged)
+                return _nodes.ToDictionary(n => n.Id);
+
+            return _nodeMap ??= _nodes.ToDictionary(n => n.Id);
+        }
+    }
+
+    private void HandleNodesCollectionChanged(
+        object? sender,
+        System.Collections.Specialized.NotifyCollectionChangedEventArgs args
+    ) => _nodeMap = null;
 
     /// <summary>
     /// Returns all Connection objects that wire INTO the given node's input pin.

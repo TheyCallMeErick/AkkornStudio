@@ -191,5 +191,36 @@ public class LiveSqlBarViewModelThreadSafetyTests
         // RawSql should have been recompiled (and no race condition occurred)
         Assert.NotNull(liveSql.RawSql);
     }
-}
 
+    [Fact]
+    public void Recompile_WhenExceptionOccurs_PreservesLastValidSqlPreview()
+    {
+        var canvas = new CanvasViewModel();
+        var liveSql = new LiveSqlBarViewModel(canvas);
+
+        SetPrivateField(liveSql, "_rawSql", "SELECT 1");
+        SetPrivateField(liveSql, "_displaySql", "SELECT 1");
+        SetPrivateField(liveSql, "_executionSqlTemplate", "SELECT 1");
+        SetPrivateField(liveSql, "_isMutatingCommand", false);
+        SetPrivateField(liveSql, "_provider", (DatabaseProvider)int.MaxValue);
+
+        liveSql.Recompile();
+
+        Assert.Equal("SELECT 1", liveSql.RawSql);
+        Assert.Equal("SELECT 1", liveSql.DisplaySql);
+        Assert.Equal("SELECT 1", liveSql.ExecutionSqlTemplate);
+        Assert.False(liveSql.IsValid);
+        Assert.False(string.IsNullOrWhiteSpace(liveSql.CompileError));
+        Assert.Contains(liveSql.ErrorHints, hint => hint.StartsWith("Compile error:", StringComparison.Ordinal));
+    }
+
+    private static void SetPrivateField<T>(object target, string fieldName, T value)
+    {
+        FieldInfo field = target.GetType().GetField(
+            fieldName,
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+        ) ?? throw new InvalidOperationException($"Could not locate field '{fieldName}'.");
+
+        field.SetValue(target, value);
+    }
+}

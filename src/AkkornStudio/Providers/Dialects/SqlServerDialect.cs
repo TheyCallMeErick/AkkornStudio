@@ -25,21 +25,34 @@ public sealed class SqlServerDialect : ISqlDialect
     public string GetColumnsQuery() =>
         @"
             SELECT
-                COLUMN_NAME,
-                DATA_TYPE,
-                CASE WHEN IS_NULLABLE = 'YES' THEN 1 ELSE 0 END AS IS_NULLABLE,
+                c.COLUMN_NAME,
+                c.DATA_TYPE,
+                CASE WHEN c.IS_NULLABLE = 'YES' THEN 1 ELSE 0 END AS IS_NULLABLE,
                 CASE
-                    WHEN COLUMNPROPERTY(OBJECT_ID(TABLE_SCHEMA + '.' + TABLE_NAME), COLUMN_NAME, 'IsIdentity') = 1
+                    WHEN EXISTS
+                    (
+                        SELECT 1
+                        FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                        INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                            ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                            AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+                            AND tc.TABLE_NAME = kcu.TABLE_NAME
+                        WHERE
+                            tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+                            AND kcu.TABLE_SCHEMA = c.TABLE_SCHEMA
+                            AND kcu.TABLE_NAME = c.TABLE_NAME
+                            AND kcu.COLUMN_NAME = c.COLUMN_NAME
+                    )
                     THEN 1
                     ELSE 0
                 END AS IS_PRIMARY_KEY
             FROM
-                INFORMATION_SCHEMA.COLUMNS
+                INFORMATION_SCHEMA.COLUMNS c
             WHERE
-                TABLE_SCHEMA = @schema
-                AND TABLE_NAME = @table
+                c.TABLE_SCHEMA = @schema
+                AND c.TABLE_NAME = @table
             ORDER BY
-                ORDINAL_POSITION
+                c.ORDINAL_POSITION
         ";
 
     public string GetPrimaryKeysQuery() =>
@@ -79,11 +92,10 @@ public sealed class SqlServerDialect : ISqlDialect
         if (!offset.HasValue)
             return limit.HasValue ? $"OFFSET 0 ROWS FETCH NEXT {limit} ROWS ONLY" : "";
 
-        var parts = new List<string> { $"OFFSET {offset} ROWS" };
         if (limit.HasValue)
-            parts.Add($"FETCH NEXT {limit} ROWS ONLY");
+            return $"OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY";
 
-        return string.Join(" ", parts);
+        return $"OFFSET {offset} ROWS FETCH NEXT {long.MaxValue} ROWS ONLY";
     }
 
     public string ApplyQueryHints(string sql, string? queryHints)
@@ -242,6 +254,12 @@ public sealed class SqlServerDialect : ISqlDialect
     {
         if (keyColumns.Count == 0)
             throw new InvalidOperationException("CREATE INDEX requires at least one key column.");
+        if (keyColumns.Any(k => k.IsExpression))
+        {
+            throw new InvalidOperationException(
+                "SQL Server CREATE INDEX does not support arbitrary expression keys. Use a persisted computed column and index that column."
+            );
+        }
 
         string schema = string.IsNullOrWhiteSpace(schemaName) ? "dbo" : schemaName.Trim();
         string table = string.IsNullOrWhiteSpace(tableName)
@@ -252,9 +270,7 @@ public sealed class SqlServerDialect : ISqlDialect
             : indexName.Trim();
 
         string qualifiedTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
-        string keyList = string.Join(", ", keyColumns
-            .Where(k => !k.IsExpression)
-            .Select(k => QuoteIdentifier(k.ColumnName!)));
+        string keyList = string.Join(", ", keyColumns.Select(k => QuoteIdentifier(k.ColumnName!)));
         string includeClause = includeColumns.Count == 0
             ? string.Empty
             : $" INCLUDE ({string.Join(", ", includeColumns.Select(QuoteIdentifier))})";

@@ -99,6 +99,9 @@ public sealed partial class InfiniteCanvas : Panel
     private ConnectionViewModel? _dragBreakpointWire;
     private int _dragBreakpointIndex = -1;
     private Point _dragBreakpointInitialPosition;
+    private UndoRedoStack? _observedUndoRedo;
+    private Action? _undoCommandExecutionCompletedHandler;
+    private bool _wireSyncDeferredByCommandBatch;
 
     public InfiniteCanvas()
     {
@@ -219,6 +222,7 @@ public sealed partial class InfiniteCanvas : Panel
     private void Rebuild()
     {
         Log($">>> REBUILD started");
+        DetachUndoRedoExecutionObserver();
         foreach (NodeControl? nc in _scene.Children.OfType<NodeControl>().ToList())
             _scene.Children.Remove(nc);
         _nodeControlCache.Clear();
@@ -229,6 +233,8 @@ public sealed partial class InfiniteCanvas : Panel
             _core.Viewport = null;
             return;
         }
+
+        AttachUndoRedoExecutionObserver(ViewModel.UndoRedo);
         _core.Viewport = ViewModel;
         _pinDrag = new PinDragInteraction(ViewModel, _scene);
         ViewModel.Nodes.CollectionChanged += (_, e) =>
@@ -348,8 +354,16 @@ public sealed partial class InfiniteCanvas : Panel
                         Canvas.SetLeft(capturedNc, capturedVm.Position.X);
                         Canvas.SetTop(capturedNc, capturedVm.Position.Y);
                         Log($"    Canvas position set for {capturedVm.Title}");
-                        RequestWireSync();
-                        Log($"    RequestWireSync queued for position change");
+                        if (ViewModel?.UndoRedo.IsCommandExecutionInProgress == true)
+                        {
+                            _wireSyncDeferredByCommandBatch = true;
+                            Log("    RequestWireSync deferred until command batch completion");
+                        }
+                        else
+                        {
+                            RequestWireSync();
+                            Log($"    RequestWireSync queued for position change");
+                        }
                         InvalidateArrange();
                         Log($"    InvalidateArrange called for position change");
                     }
@@ -480,6 +494,35 @@ public sealed partial class InfiniteCanvas : Panel
 
     public void InvalidateWires() => SyncWires();
 
+    private void AttachUndoRedoExecutionObserver(UndoRedoStack undoRedo)
+    {
+        if (ReferenceEquals(_observedUndoRedo, undoRedo))
+            return;
+
+        DetachUndoRedoExecutionObserver();
+
+        _observedUndoRedo = undoRedo;
+        _undoCommandExecutionCompletedHandler = () =>
+        {
+            if (!_wireSyncDeferredByCommandBatch)
+                return;
+
+            _wireSyncDeferredByCommandBatch = false;
+            RequestWireSync();
+        };
+        _observedUndoRedo.CommandExecutionCompleted += _undoCommandExecutionCompletedHandler;
+    }
+
+    private void DetachUndoRedoExecutionObserver()
+    {
+        if (_observedUndoRedo is not null && _undoCommandExecutionCompletedHandler is not null)
+            _observedUndoRedo.CommandExecutionCompleted -= _undoCommandExecutionCompletedHandler;
+
+        _observedUndoRedo = null;
+        _undoCommandExecutionCompletedHandler = null;
+        _wireSyncDeferredByCommandBatch = false;
+    }
+
     private void SyncTransform()
     {
         if (ViewModel is null)
@@ -558,4 +601,3 @@ public sealed partial class InfiniteCanvas : Panel
         return updatedPins.Count;
     }
 }
-

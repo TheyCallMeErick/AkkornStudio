@@ -350,7 +350,7 @@
                   Classes="sql-cta explain"
                   Margin="0,0,8,0"
                   ToolTip.Tip="{Binding [tooltip.openExplainPlan], Source={x:Static loc:LocalizationService.Instance}}"
-                  IsEnabled="{Binding HasSql}"
+                  IsEnabled="{Binding CanExecutePreviewActions}"
                   AutomationProperties.Name="{Binding [tooltip.openExplainPlan], Source={x:Static loc:LocalizationService.Instance}}">
             <StackPanel Orientation="Horizontal" Spacing="7">
               <mi:MaterialIcon Kind="TableSearch" Width="14" Height="14"/>
@@ -362,7 +362,7 @@
                   Name="BenchmarkBtn"
                   Classes="sql-cta benchmark"
                   ToolTip.Tip="{Binding [tooltip.openBenchmark], Source={x:Static loc:LocalizationService.Instance}}"
-                  IsEnabled="{Binding HasSql}"
+                  IsEnabled="{Binding CanExecutePreviewActions}"
                   AutomationProperties.Name="{Binding [tooltip.openBenchmark], Source={x:Static loc:LocalizationService.Instance}}">
             <StackPanel Orientation="Horizontal" Spacing="7">
               <mi:MaterialIcon Kind="TimerOutline" Width="14" Height="14"/>

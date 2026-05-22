@@ -273,7 +273,7 @@ public sealed partial class NodeControl : UserControl
     {
         if (DataContext is not NodeViewModel)
             return null;
-        const double tol = 10;
+        double tol = ComputePinHitTestTolerance();
 
         foreach (PinShapeControl psc in this.GetLogicalDescendants().OfType<PinShapeControl>())
         {
@@ -315,6 +315,17 @@ public sealed partial class NodeControl : UserControl
         }
 
         return null;
+    }
+
+    private double ComputePinHitTestTolerance()
+    {
+        const double baseTolerance = 10;
+        CanvasViewModel? canvasVm = FindCanvasVm();
+        if (canvasVm is null)
+            return baseTolerance;
+
+        double normalizedZoom = CanvasViewportController.NormalizeZoom(canvasVm.Zoom);
+        return baseTolerance * Math.Abs(normalizedZoom);
     }
 
     private CanvasViewModel? FindCanvasVm()

@@ -6,6 +6,7 @@ using AkkornStudio.Metadata;
 using AkkornStudio.Nodes;
 using AkkornStudio.UI.Services.Localization;
 using AkkornStudio.UI.ViewModels.Canvas;
+using AkkornStudio.UI.ViewModels.UndoRedo;
 using AkkornStudio.UI.ViewModels.UndoRedo.Commands;
 using AkkornStudio.UI.ViewModels.Validation.Conventions;
 
@@ -36,9 +37,11 @@ public sealed class PropertyPanelViewModel : ViewModelBase
     private readonly UndoRedoStack _undo;
     private readonly LocalizationService _loc = LocalizationService.Instance;
     private readonly Func<IEnumerable<ConnectionViewModel>> _connectionsResolver;
+    private readonly Func<IEnumerable<NodeViewModel>>? _nodesResolver;
     private readonly Func<DbMetadata?> _metadataResolver;
     private readonly Action<NodeViewModel, IReadOnlyList<(string Name, string? Value)>>? _parametersCommitted;
     private readonly Func<NodeViewModel, bool>? _setPrimaryFromSource;
+    private readonly Action<ICanvasCommand> _executeCommand;
     private Action? _openSelectedJoinInErDiagram;
     private Action? _refineAutoProjection;
     private Action? _resetAutoProjection;
@@ -62,13 +65,31 @@ public sealed class PropertyPanelViewModel : ViewModelBase
         Func<IEnumerable<ConnectionViewModel>>? connectionsResolver = null,
         Func<DbMetadata?>? metadataResolver = null,
         Action<NodeViewModel, IReadOnlyList<(string Name, string? Value)>>? parametersCommitted = null,
-        Func<NodeViewModel, bool>? setPrimaryFromSource = null)
+        Func<NodeViewModel, bool>? setPrimaryFromSource = null,
+        Func<IEnumerable<NodeViewModel>>? nodesResolver = null,
+        Action<ICanvasCommand>? executeCommand = null)
     {
         _undo = undo;
         _connectionsResolver = connectionsResolver ?? (() => []);
+        _nodesResolver = nodesResolver;
         _metadataResolver = metadataResolver ?? (() => null);
         _parametersCommitted = parametersCommitted;
         _setPrimaryFromSource = setPrimaryFromSource;
+        _executeCommand = executeCommand ?? _undo.Execute;
+        Parameters.CollectionChanged += (_, e) =>
+        {
+            if (e.OldItems is not null)
+            {
+                foreach (ParameterRowViewModel row in e.OldItems)
+                    DetachParameterRowHandler(row);
+            }
+
+            if (e.NewItems is not null)
+            {
+                foreach (ParameterRowViewModel row in e.NewItems)
+                    EnsureParameterRowHandler(row);
+            }
+        };
         _loc.PropertyChanged += (_, _) =>
         {
             RaisePropertyChanged(nameof(NodeAliasLabel));
@@ -686,7 +707,7 @@ public sealed class PropertyPanelViewModel : ViewModelBase
             }
         }
 
-        AttachParameterRowHandlers(node);
+        AttachParameterRowHandlers();
 
         foreach (PinViewModel pin in node.InputPins)
             InputPins.Add(new PinInfoRowViewModel(pin));
@@ -712,6 +733,15 @@ public sealed class PropertyPanelViewModel : ViewModelBase
     {
         if (SelectedNode is null || !ReferenceEquals(SelectedNode, node))
             return;
+
+        if (_nodesResolver is not null
+            && !_nodesResolver().Any(existing => ReferenceEquals(existing, node)))
+        {
+            // The selected node was detached from canvas; drop panel state safely.
+            SelectedNode = null;
+            Clear();
+            return;
+        }
 
         ParameterRowViewModel? row = Parameters.FirstOrDefault(parameter =>
             string.Equals(parameter.Name, paramName, StringComparison.OrdinalIgnoreCase));
@@ -969,27 +999,47 @@ public sealed class PropertyPanelViewModel : ViewModelBase
     private static string QualifyName(string schema, string name) =>
         string.IsNullOrWhiteSpace(schema) ? name : $"{schema}.{name}";
 
-    private void AttachParameterRowHandlers(NodeViewModel node)
+    private void AttachParameterRowHandlers()
     {
         foreach (ParameterRowViewModel row in Parameters)
+            EnsureParameterRowHandler(row);
+    }
+
+    private void EnsureParameterRowHandler(ParameterRowViewModel row)
+    {
+        if (_parameterRowPropertyHandlers.ContainsKey(row))
+            return;
+
+        PropertyChangedEventHandler handler = (_, e) =>
         {
-            PropertyChangedEventHandler handler = (_, e) =>
+            if (e.PropertyName != nameof(ParameterRowViewModel.Value))
+                return;
+
+            NodeViewModel? selectedNode = SelectedNode;
+            if (selectedNode is null)
+                return;
+
+            if (!IsSchemaParameter(selectedNode, row.Name))
+                return;
+
+            foreach (ParameterRowViewModel targetRow in Parameters.Where(parameter =>
+                         IsObjectNameOnlyParameter(selectedNode, parameter.Name)
+                         || IsQualifiedObjectParameter(selectedNode, parameter.Name)))
             {
-                if (e.PropertyName != nameof(ParameterRowViewModel.Value))
-                    return;
+                ApplyTextSuggestions(selectedNode, targetRow);
+            }
+        };
 
-                if (!IsSchemaParameter(node, row.Name))
-                    return;
+        row.PropertyChanged += handler;
+        _parameterRowPropertyHandlers[row] = handler;
+    }
 
-                foreach (ParameterRowViewModel targetRow in Parameters.Where(parameter =>
-                             IsObjectNameOnlyParameter(node, parameter.Name) || IsQualifiedObjectParameter(node, parameter.Name)))
-                {
-                    ApplyTextSuggestions(node, targetRow);
-                }
-            };
-
-            row.PropertyChanged += handler;
-            _parameterRowPropertyHandlers[row] = handler;
+    private void DetachParameterRowHandler(ParameterRowViewModel row)
+    {
+        if (_parameterRowPropertyHandlers.TryGetValue(row, out PropertyChangedEventHandler? handler))
+        {
+            row.PropertyChanged -= handler;
+            _parameterRowPropertyHandlers.Remove(row);
         }
     }
 
@@ -1012,16 +1062,29 @@ public sealed class PropertyPanelViewModel : ViewModelBase
         if (SelectedNode is null)
             return;
 
-        var committedChanges = new List<(string Name, string? Value)>();
+        List<ParameterRowViewModel> dirtyRows = Parameters.Where(r => r.IsDirty).ToList();
+        var committedChanges = new List<(string Name, string? Value)>(dirtyRows.Count);
+        using UndoRedoStack.UndoRedoTransaction transaction = _undo.BeginTransaction("Edit Parameters");
 
-        foreach (ParameterRowViewModel? row in Parameters.Where(r => r.IsDirty))
+        try
         {
-            SelectedNode.Parameters.TryGetValue(row.Name, out string? old);
-            _undo.Execute(new EditParameterCommand(SelectedNode, row.Name, old, row.Value));
-            committedChanges.Add((row.Name, row.Value));
-
-            row.MarkClean();
+            foreach (ParameterRowViewModel row in dirtyRows)
+            {
+                SelectedNode.Parameters.TryGetValue(row.Name, out string? old);
+                _executeCommand(new EditParameterCommand(SelectedNode, row.Name, old, row.Value));
+                committedChanges.Add((row.Name, row.Value));
+            }
+            transaction.Commit();
         }
+        catch
+        {
+            foreach (ParameterRowViewModel row in Parameters)
+                ApplyTextSuggestions(SelectedNode, row);
+            throw;
+        }
+
+        foreach (ParameterRowViewModel row in dirtyRows)
+            row.MarkClean();
 
         foreach (ParameterRowViewModel row in Parameters)
             ApplyTextSuggestions(SelectedNode, row);

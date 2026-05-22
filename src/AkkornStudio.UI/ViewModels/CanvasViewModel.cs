@@ -317,7 +317,8 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
             () => Connections,
             () => DatabaseMetadata,
             OnPropertyPanelParametersCommitted,
-            TrySetPrimaryFromSourceNode);
+            TrySetPrimaryFromSourceNode,
+            () => Nodes);
         ApplyProjectConventionSettings(_projectConventionSettings);
         PropertyPanel.SelectedWireCurveMode = WireCurveMode;
         _localizationService = localizationService ?? LocalizationService.Instance;
@@ -780,14 +781,22 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
         if (outputs.Count == 1)
             return outputs[0];
 
-        NodeViewModel? externalSink = outputs.FirstOrDefault(output =>
-            !Connections.Any(c =>
-                c.FromPin.Owner == output
-                && c.ToPin is not null
-                && c.ToPin.Owner.Type == NodeType.CteDefinition
-                && c.ToPin.Name.Equals("query", StringComparison.OrdinalIgnoreCase)));
+        List<NodeViewModel> externalSinks = outputs
+            .Where(IsExternalResultOutputSink)
+            .ToList();
 
-        return externalSink ?? outputs[0];
+        return externalSinks.Count == 1
+            ? externalSinks[0]
+            : null;
+    }
+
+    private bool IsExternalResultOutputSink(NodeViewModel output)
+    {
+        return !Connections.Any(c =>
+            c.FromPin.Owner == output
+            && c.ToPin is not null
+            && c.ToPin.Owner.Type == NodeType.CteDefinition
+            && c.ToPin.Name.Equals("query", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsTransientConnectionDragChange(NotifyCollectionChangedEventArgs e)
@@ -876,8 +885,27 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
             {
                 subgraph = JsonSerializer.Deserialize<SavedSubquerySubgraph>(payload);
             }
-            catch
+            catch (Exception ex)
             {
+                Toasts.ShowWarning(
+                    L("toast.subqueryPayloadInvalid", "A subconsulta possui dados internos inválidos."),
+                    string.Format(
+                        L(
+                            "toast.subqueryPayloadInvalidDetails",
+                            "Node: {0}. Reabra o editor da subconsulta para regenerar o payload."),
+                        owner.Title));
+                Diagnostics.AddWarning(
+                    area: L("diagnostics.area.subqueryPayload", "Subquery Payload"),
+                    message: string.Format(
+                        L(
+                            "diagnostics.subqueryPayloadDeserializeError",
+                            "Falha ao desserializar payload da subconsulta '{0}': {1}"),
+                        owner.Title,
+                        ex.Message),
+                    recommendation: L(
+                        "diagnostics.subqueryPayloadRecommendation",
+                        "Abra e salve novamente a subconsulta para restaurar o payload interno."),
+                    openPanel: false);
                 continue;
             }
 
@@ -936,7 +964,24 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
             () => _nodeManager.SpawnTableNode(tableFullName, columns.Select(c => (c.Name, c.Type)), position));
 
         if (!handled)
+        {
+            Toasts.ShowWarning(
+                L("toast.schemaTableInsertFailed", "Não foi possível inserir a tabela no canvas atual."),
+                tableFullName);
+            Diagnostics.AddWarning(
+                area: L("diagnostics.area.schemaTableInsert", "Schema Table Insert"),
+                message: string.Format(
+                    L(
+                        "diagnostics.schemaTableInsertNotHandled",
+                        "A inserção de tabela '{0}' não foi tratada pelo domínio '{1}'."),
+                    tableFullName,
+                    _domainStrategy.DomainName),
+                recommendation: L(
+                    "diagnostics.schemaTableInsertRecommendation",
+                    "Verifique o contexto do canvas atual e a estratégia de domínio antes de tentar novamente."),
+                openPanel: false);
             return false;
+        }
 
         IsDirty = true;
         return true;
@@ -1319,6 +1364,8 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
 
     public void ClearConnectionSelection()
     {
+        ConnectionViewModel? previousSelectedConnection = SelectedConnection;
+        ConnectionViewModel? previousSelectedBreakpointConnection = SelectedBreakpointConnection;
         ClearSelectedWireBreakpoint();
 
         bool changed = false;
@@ -1328,6 +1375,22 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
                 continue;
 
             connection.IsSelected = false;
+            changed = true;
+        }
+
+        if (previousSelectedConnection is not null
+            && !Connections.Contains(previousSelectedConnection)
+            && previousSelectedConnection.IsSelected)
+        {
+            previousSelectedConnection.IsSelected = false;
+            changed = true;
+        }
+
+        if (previousSelectedBreakpointConnection is not null
+            && !Connections.Contains(previousSelectedBreakpointConnection)
+            && previousSelectedBreakpointConnection.IsSelected)
+        {
+            previousSelectedBreakpointConnection.IsSelected = false;
             changed = true;
         }
 
@@ -1865,10 +1928,10 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
         if (_connectionsCollectionChangedHandler is not null)
             Connections.CollectionChanged -= _connectionsCollectionChangedHandler;
 
-        // Unsubscribe from all node validation handlers
-        foreach (var handler in _nodeValidationHandlers.Values)
-            foreach (var node in Nodes)
-                node.PropertyChanged -= handler;
+        // Unsubscribe from all tracked node validation handlers, including
+        // handlers associated with nodes that are no longer present in Nodes.
+        foreach ((NodeViewModel node, PropertyChangedEventHandler handler) in _nodeValidationHandlers.ToArray())
+            node.PropertyChanged -= handler;
         _nodeValidationHandlers.Clear();
     }
 

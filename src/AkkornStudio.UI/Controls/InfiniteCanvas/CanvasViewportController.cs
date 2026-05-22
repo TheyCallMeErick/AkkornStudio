@@ -7,12 +7,16 @@ namespace AkkornStudio.UI.Controls;
 
 public sealed class CanvasViewportController
 {
+    private const double MinZoomMagnitude = 1e-6;
     private Point _panStartScreen;
 
     public bool IsPanning { get; private set; }
 
     public Point ScreenToCanvas(ICanvasViewportState viewport, Point screen) =>
-        new((screen.X - viewport.PanOffset.X) / viewport.Zoom, (screen.Y - viewport.PanOffset.Y) / viewport.Zoom);
+        new(
+            (screen.X - viewport.PanOffset.X) / NormalizeZoom(viewport.Zoom),
+            (screen.Y - viewport.PanOffset.Y) / NormalizeZoom(viewport.Zoom)
+        );
 
     public void SyncVisuals(
         ICanvasViewportState viewport,
@@ -72,4 +76,7 @@ public sealed class CanvasViewportController
         e.Handled = true;
         return true;
     }
+
+    internal static double NormalizeZoom(double zoom) =>
+        Math.Abs(zoom) < MinZoomMagnitude ? 1.0 : zoom;
 }

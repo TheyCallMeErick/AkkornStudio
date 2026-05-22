@@ -239,8 +239,10 @@ public sealed class MySqlDialect : ISqlDialect
             ? QuoteIdentifier(view)
             : $"{QuoteIdentifier(schema)}.{QuoteIdentifier(view)}";
 
-        string prefix = orReplace ? "CREATE OR REPLACE VIEW" : "CREATE VIEW";
-        return $"{prefix} {qualified} AS\n{body};";
+        if (!orReplace)
+            return $"CREATE VIEW {qualified} AS\n{body};";
+
+        return $"DROP VIEW IF EXISTS {qualified};\nCREATE VIEW {qualified} AS\n{body};";
     }
 
     public string EmitAlterView(
@@ -256,7 +258,7 @@ public sealed class MySqlDialect : ISqlDialect
             ? QuoteIdentifier(view)
             : $"{QuoteIdentifier(schema)}.{QuoteIdentifier(view)}";
 
-        return $"CREATE OR REPLACE VIEW {qualified} AS\n{body};";
+        return $"DROP VIEW IF EXISTS {qualified};\nCREATE VIEW {qualified} AS\n{body};";
     }
 
     public string EmitAlterTableAddColumn(string schemaName, string tableName, string columnFragment)

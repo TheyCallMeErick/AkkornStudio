@@ -109,7 +109,10 @@ public class PreviewService(Window window, CanvasViewModel vm, ILogger<PreviewSe
                 };
                 _liveSqlPropertyChangedHandler = (_, e) =>
                 {
-                    if (e.PropertyName == nameof(LiveSqlBarViewModel.IsMutatingCommand))
+                    if (e.PropertyName is nameof(LiveSqlBarViewModel.IsMutatingCommand)
+                        or nameof(LiveSqlBarViewModel.RawSql)
+                        or nameof(LiveSqlBarViewModel.ExecutionSqlTemplate)
+                        or nameof(LiveSqlBarViewModel.IsValid))
                         UpdateRunEnabled(run);
                 };
 
@@ -144,11 +147,27 @@ public class PreviewService(Window window, CanvasViewModel vm, ILogger<PreviewSe
 
     private void UpdateRunEnabled(Button run)
     {
-        bool hasErrors = _vm.HasErrors;
-        bool isMutating = _vm.LiveSql.IsMutatingCommand;
-        // Only disable if it's a mutating command - canvas errors shouldn't block query execution
-        bool shouldEnable = !isMutating;
-        run.IsEnabled = shouldEnable;
+        run.IsEnabled = CanRunPreviewButton(
+            _vm.LiveSql.IsMutatingCommand,
+            _vm.LiveSql.RawSql,
+            _vm.LiveSql.ExecutionSqlTemplate
+        );
+    }
+
+    private static bool CanRunPreviewButton(
+        bool isMutatingCommand,
+        string rawSql,
+        string? executionSqlTemplate
+    )
+    {
+        if (isMutatingCommand)
+            return false;
+
+        // If Live SQL text exists, execution requires a concrete template.
+        if (!string.IsNullOrWhiteSpace(rawSql))
+            return !string.IsNullOrWhiteSpace(executionSqlTemplate);
+
+        return true;
     }
 
     // ── Cancel ────────────────────────────────────────────────────────────────
@@ -217,12 +236,22 @@ public class PreviewService(Window window, CanvasViewModel vm, ILogger<PreviewSe
         var ct = _runCts.Token;
 
         bool useLiveSql = !string.IsNullOrWhiteSpace(_vm.LiveSql.RawSql);
+        if (useLiveSql && string.IsNullOrWhiteSpace(_vm.LiveSql.ExecutionSqlTemplate))
+        {
+            _logger.LogWarning("Live SQL execution blocked: execution template is empty");
+            _vm.DataPreview.ShowError(
+                L(
+                    "preview.error.missingExecutionTemplate",
+                    "Cannot execute preview: SQL template is incomplete. Review query diagnostics and fix compilation issues."
+                )
+            );
+            return;
+        }
+
         string sql = useLiveSql
             ? _vm.LiveSql.RawSql
             : (string.IsNullOrWhiteSpace(_vm.QueryText) ? "SELECT 1 AS test" : _vm.QueryText);
-        string executionSql = useLiveSql && !string.IsNullOrWhiteSpace(_vm.LiveSql.ExecutionSqlTemplate)
-            ? _vm.LiveSql.ExecutionSqlTemplate!
-            : sql;
+        string executionSql = useLiveSql ? _vm.LiveSql.ExecutionSqlTemplate! : sql;
         IReadOnlyList<QueryParameter>? suggestedParameters = useLiveSql && _vm.LiveSql.ExecutionParameters.Count > 0
             ? _vm.LiveSql.ExecutionParameters
             : null;

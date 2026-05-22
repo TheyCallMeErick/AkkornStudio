@@ -226,11 +226,11 @@ public sealed partial class InfiniteCanvas
                 if (selectedWireCandidate.RoutingMode == CanvasWireRoutingMode.Orthogonal)
                 {
                     int breakpointIndex = BezierWireLayer.FindBreakpointAt(selectedWireCandidate, canvas, tolerance: 8);
-                    if (breakpointIndex >= 0)
+                    if (TryGetBreakpointPosition(selectedWireCandidate, breakpointIndex, out Point breakpointPosition))
                     {
                         _dragBreakpointWire = selectedWireCandidate;
                         _dragBreakpointIndex = breakpointIndex;
-                        _dragBreakpointInitialPosition = selectedWireCandidate.Breakpoints[breakpointIndex].Position;
+                        _dragBreakpointInitialPosition = breakpointPosition;
                         ViewModel?.SelectConnection(selectedWireCandidate);
                         ViewModel?.SelectWireBreakpoint(selectedWireCandidate, breakpointIndex);
                         SyncWires();
@@ -382,6 +382,20 @@ public sealed partial class InfiniteCanvas
         }
 
         return WireContextBreakpointAction.NoneAction();
+    }
+
+    internal static bool TryGetBreakpointPosition(
+        ConnectionViewModel wire,
+        int breakpointIndex,
+        out Point breakpointPosition)
+    {
+        breakpointPosition = default;
+
+        if (breakpointIndex < 0 || breakpointIndex >= wire.Breakpoints.Count)
+            return false;
+
+        breakpointPosition = wire.Breakpoints[breakpointIndex].Position;
+        return true;
     }
 
     internal static IReadOnlyList<NodeDefinition> ResolveCompatibleWireInsertDefinitions(
@@ -640,8 +654,8 @@ public sealed partial class InfiniteCanvas
 
         if (_dragBreakpointWire is not null && _dragBreakpointIndex >= 0)
         {
-            Point finalPosition = _dragBreakpointIndex < _dragBreakpointWire.Breakpoints.Count
-                ? _dragBreakpointWire.Breakpoints[_dragBreakpointIndex].Position
+            Point finalPosition = TryGetBreakpointPosition(_dragBreakpointWire, _dragBreakpointIndex, out Point currentBreakpointPosition)
+                ? currentBreakpointPosition
                 : _dragBreakpointInitialPosition;
 
             if (ViewModel is not null)
