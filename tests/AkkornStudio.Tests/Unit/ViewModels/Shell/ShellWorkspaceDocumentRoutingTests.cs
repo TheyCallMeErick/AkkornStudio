@@ -772,6 +772,33 @@ public class ShellWorkspaceDocumentRoutingTests
     }
 
     [Fact]
+    public async Task TryCloseWorkspaceDocument_WhenSubEditorHasUnsavedChanges_BlocksClose()
+    {
+        var shell = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
+        shell.EnterCanvas();
+        CanvasViewModel queryCanvas = Assert.IsType<CanvasViewModel>(shell.ActiveQueryCanvasDocument);
+        NodeViewModel cte = BuildBasicCteEditableGraph(queryCanvas);
+
+        Assert.True(await queryCanvas.EnterCteEditorAsync(cte));
+        NodeViewModel editedNode = queryCanvas.SpawnNode(
+            NodeDefinitionRegistry.Get(NodeType.Equals),
+            new Avalonia.Point(420, 220));
+        Assert.True(queryCanvas.IsInCteEditor);
+        Assert.True(queryCanvas.IsDirty);
+
+        Guid queryId = Assert.Single(shell.OpenWorkspaceDocuments
+            .Where(document => document.Descriptor.DocumentType == WorkspaceDocumentType.QueryCanvas))
+            .Descriptor.DocumentId;
+
+        bool closed = shell.TryCloseWorkspaceDocument(queryId);
+
+        Assert.False(closed);
+        Assert.Contains(shell.OpenWorkspaceDocuments, document => document.Descriptor.DocumentId == queryId);
+        Assert.True(queryCanvas.IsInCteEditor);
+        Assert.Contains(queryCanvas.Nodes, node => node.Id == editedNode.Id);
+    }
+
+    [Fact]
     public void RestoreWorkspaceDocuments_RebuildsDocumentOrderAndActiveSelection()
     {
         var shell = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
@@ -1015,5 +1042,43 @@ public class ShellWorkspaceDocumentRoutingTests
         return Assert.Single(canvas.Nodes.Where(node =>
             node.IsTableSource
             && string.Equals(node.Subtitle, tableName, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static NodeViewModel BuildBasicCteEditableGraph(CanvasViewModel canvas)
+    {
+        canvas.Nodes.Clear();
+        canvas.Connections.Clear();
+        canvas.UndoRedo.Clear();
+
+        NodeViewModel table = new("public.orders", [("id", PinDataType.Number)], new Avalonia.Point(0, 0));
+        NodeViewModel columns = new(NodeDefinitionRegistry.Get(NodeType.ColumnList), new Avalonia.Point(130, 0));
+        NodeViewModel result = new(NodeDefinitionRegistry.Get(NodeType.ResultOutput), new Avalonia.Point(260, 0));
+        NodeViewModel cte = new(NodeDefinitionRegistry.Get(NodeType.CteDefinition), new Avalonia.Point(400, 0));
+        cte.Parameters["name"] = "orders_cte";
+
+        canvas.Nodes.Add(table);
+        canvas.Nodes.Add(columns);
+        canvas.Nodes.Add(result);
+        canvas.Nodes.Add(cte);
+
+        Connect(canvas, table, "id", columns, "columns");
+        Connect(canvas, columns, "result", result, "columns");
+        Connect(canvas, result, "result", cte, "query");
+        return cte;
+    }
+
+    private static void Connect(
+        CanvasViewModel canvas,
+        NodeViewModel fromNode,
+        string fromPin,
+        NodeViewModel toNode,
+        string toPin)
+    {
+        PinViewModel from = fromNode.OutputPins.First(pin => pin.Name == fromPin);
+        PinViewModel to = toNode.InputPins.First(pin => pin.Name == toPin);
+        canvas.Connections.Add(new ConnectionViewModel(from, from.AbsolutePosition, to.AbsolutePosition)
+        {
+            ToPin = to,
+        });
     }
 }

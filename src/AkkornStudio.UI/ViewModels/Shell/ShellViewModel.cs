@@ -685,6 +685,14 @@ public sealed class ShellViewModel : ViewModelBase
 
     public bool TryCloseWorkspaceDocument(Guid documentId)
     {
+        OpenWorkspaceDocument? targetDocument = _workspaceRouter.OpenDocuments
+            .FirstOrDefault(document => document.Descriptor.DocumentId == documentId);
+        if (targetDocument?.DocumentViewModel is CanvasViewModel canvas
+            && !canvas.TryAbortActiveSubEditorSession())
+        {
+            return false;
+        }
+
         bool closed = _workspaceRouter.TryClose(documentId);
         if (!closed)
             return false;

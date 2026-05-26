@@ -100,6 +100,27 @@ public sealed class CanvasTableTrackerTests
         Assert.False(tracker.Contains("customers"));
     }
 
+    [Fact]
+    public void Contains_QualifiedName_MatchesUnqualifiedEntry()
+    {
+        ICanvasTableTracker tracker = new CanvasTableTracker();
+        tracker.Add("orders");
+
+        Assert.True(tracker.Contains("dbo.orders"));
+    }
+
+    [Fact]
+    public void Remove_QualifiedName_MatchesUnqualifiedEntry()
+    {
+        ICanvasTableTracker tracker = new CanvasTableTracker();
+        tracker.Add("orders");
+
+        bool removed = tracker.Remove("dbo.orders");
+
+        Assert.True(removed);
+        Assert.Equal(0, tracker.Count);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

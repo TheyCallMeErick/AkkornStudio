@@ -96,6 +96,35 @@ public sealed class LogicalPlannerTests
     }
 
     [Fact]
+    public void Plan_JoinFromParameters_WithInvalidOperator_ThrowsInvalidJoinOperator()
+    {
+        NodeInstance left = CreateTable("left", "public.employees");
+        NodeInstance join = new(
+            "j1",
+            NodeType.Join,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>
+            {
+                ["join_type"] = "INNER",
+                ["right_source"] = "public.departments d",
+                ["left_expr"] = "employees.department_id",
+                ["right_expr"] = "d.id",
+                ["operator"] = "INVALID_OP",
+            });
+        NodeInstance output = CreateOutput("out");
+
+        NodeGraph graph = new()
+        {
+            Nodes = [left, join, output],
+            Connections = [new Connection("left", "id", "out", "column")],
+        };
+
+        PlanningException ex = Assert.Throws<PlanningException>(() => CreatePlanner(graph).Plan());
+        Assert.Equal(PlannerErrorKind.InvalidJoinOperator, ex.Kind);
+        Assert.Contains("INVALID_OP", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Plan_DuplicateExplicitAliases_ThrowsDuplicateAlias()
     {
         NodeInstance first = CreateTable("t1", "public.employees", alias: "dup");

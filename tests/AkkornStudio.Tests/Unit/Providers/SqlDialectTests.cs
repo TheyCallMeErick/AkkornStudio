@@ -197,6 +197,54 @@ public class SqlDialectTests
         Assert.Equal("SELECT * FROM users", sql);
     }
 
+    [Fact]
+    public void SqliteDialect_AlterColumnType_ThrowsExplicitNotSupportedError()
+    {
+        var dialect = new SqliteDialect();
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            dialect.EmitAlterTableAlterColumnType("main", "orders", "total", "DECIMAL(10,2)", true));
+
+        Assert.Contains("does not support ALTER COLUMN TYPE", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Rebuild the table", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SqlServerDialect_ObjectIdAndRenameStatements_EscapeSingleQuotesInIdentifiers()
+    {
+        var dialect = new SqlServerDialect();
+
+        string createTable = dialect.EmitCreateTable(
+            "dbo'unsafe",
+            "users'unsafe",
+            ifNotExists: true,
+            columnFragments: ["[id] INT NOT NULL"],
+            constraintFragments: []);
+        string renameColumn = dialect.EmitAlterTableRenameColumn(
+            "dbo",
+            "users",
+            "old'name",
+            "new'name");
+
+        Assert.Contains("OBJECT_ID(N'dbo''unsafe.users''unsafe', N'U')", createTable, StringComparison.Ordinal);
+        Assert.Contains("sp_rename N'dbo.users.old''name', N'new''name', 'COLUMN'", renameColumn, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(DatabaseProvider.Postgres)]
+    [InlineData(DatabaseProvider.MySql)]
+    [InlineData(DatabaseProvider.SqlServer)]
+    [InlineData(DatabaseProvider.SQLite)]
+    public void EmitCreateTableColumn_WhenDataTypeIsBlank_ThrowsExplicitError(DatabaseProvider provider)
+    {
+        ISqlDialect dialect = CreateDialect(provider);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            dialect.EmitCreateTableColumn("id", "", isNullable: false));
+
+        Assert.Contains("data type is required", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     [Fact]

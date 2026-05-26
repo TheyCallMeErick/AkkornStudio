@@ -15,6 +15,7 @@ using AkkornStudio.UI.ViewModels.Canvas;
 using AkkornStudio.UI.ViewModels.Canvas.Strategies;
 using AkkornStudio.UI.Services.QueryPreview;
 using AkkornStudio.UI.Services.Ddl;
+using AkkornStudio.UI.Services;
 using AkkornStudio.UI.ViewModels.UndoRedo;
 using AkkornStudio.UI.ViewModels.UndoRedo.Commands;
 using AkkornStudio.UI.ViewModels.Validation.Conventions;
@@ -291,6 +292,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
     public RelayCommand ToggleSnapCommand => _layoutManager.ToggleSnapCommand;
 
     public bool HasTwoSelectedTableSources => _autoJoinController.HasTwoSelectedTableSources;
+    public bool CanRunAutoJoin => _autoJoinController.CanRunAutoJoin;
 
 
     public CanvasViewModel()
@@ -415,7 +417,11 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
                 _pinManager.ConnectPins(from, to);
                 IsDirty = true;
             },
-            notifyRunSelectedAutoJoinCanExecute: () => RunSelectedAutoJoinCommand?.NotifyCanExecuteChanged()
+            notifyRunSelectedAutoJoinCanExecute: () =>
+            {
+                RunSelectedAutoJoinCommand?.NotifyCanExecuteChanged();
+                RaisePropertyChanged(nameof(CanRunAutoJoin));
+            }
         );
 
         // Build commands
@@ -471,7 +477,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
         );
         RunSelectedAutoJoinCommand = new RelayCommand(
             _autoJoinController.RunSelectedAutoJoin,
-            () => HasTwoSelectedTableSources
+            () => CanRunAutoJoin
         );
 
         // Link commands into validation manager for CanExecute refresh
@@ -570,6 +576,8 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
     {
         IsDirty = true;
         RaisePropertyChanged(nameof(IsCanvasEmpty));
+        bool selectedNodesChanged = false;
+        bool selectedPanelNodeDetached = false;
 
         if (e.NewItems is not null)
         {
@@ -577,20 +585,64 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
             {
                 AttachNodeTracking(node);
                 node.SyncComparisonInlineSummary(Connections);
+
+                if (node.IsSelected)
+                    selectedNodesChanged = true;
             }
         }
 
         if (e.OldItems is not null)
         {
             foreach (NodeViewModel node in e.OldItems)
+            {
+                if (node.IsSelected)
+                    selectedNodesChanged = true;
+                if (ReferenceEquals(PropertyPanel.SelectedNode, node))
+                    selectedPanelNodeDetached = true;
                 DetachNodeTracking(node);
+            }
         }
+
+        if (!selectedPanelNodeDetached
+            && PropertyPanel.SelectedNode is NodeViewModel selectedNode
+            && !Nodes.Contains(selectedNode))
+        {
+            selectedPanelNodeDetached = true;
+        }
+
+        if (selectedNodesChanged || selectedPanelNodeDetached)
+            RefreshPropertyPanelSelectionState();
 
         _validationManager?.ScheduleValidation();
         RaisePropertyChanged(nameof(HasTwoSelectedTableSources));
+        RaisePropertyChanged(nameof(CanRunAutoJoin));
         RunSelectedAutoJoinCommand.NotifyCanExecuteChanged();
         ApplyExplainNodeHighlight(ExplainPlan.HighlightedTableName);
         RefreshPrimaryFromSourceMarkers();
+    }
+
+    private void RefreshPropertyPanelSelectionState()
+    {
+        if (PropertyPanel.HasSelectedWire)
+            return;
+
+        List<NodeViewModel> selected = _selectionManager.SelectedNodes();
+        if (selected.Count == 1)
+        {
+            NodeViewModel node = selected[0];
+            if (!ReferenceEquals(PropertyPanel.SelectedNode, node))
+                PropertyPanel.ShowNode(node);
+            return;
+        }
+
+        if (selected.Count > 1)
+        {
+            PropertyPanel.ShowMultiSelection(selected);
+            return;
+        }
+
+        if (PropertyPanel.SelectedNode is not null || PropertyPanel.IsVisible)
+            PropertyPanel.Clear();
     }
 
     private void AttachNodeTracking(NodeViewModel node)
@@ -629,6 +681,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
         NotifyLayerCommandsCanExecuteChanged();
         NotifyCteEditorCommandsCanExecuteChanged();
         RaisePropertyChanged(nameof(HasTwoSelectedTableSources));
+        RaisePropertyChanged(nameof(CanRunAutoJoin));
         RunSelectedAutoJoinCommand.NotifyCanExecuteChanged();
     }
 
@@ -843,6 +896,9 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
     public Task<bool> ExitCteEditorAsync(bool forceDiscard = false) =>
         _subCanvasController.ExitCteEditorAsync(forceDiscard);
 
+    public bool TryAbortActiveSubEditorSession(bool forceDiscard = false) =>
+        _subCanvasController.AbortActiveEditorSession(forceDiscard);
+
     public Task<bool> EnterViewEditorAsync(NodeViewModel viewNode) =>
         _subCanvasController.EnterViewEditorAsync(viewNode);
 
@@ -1041,7 +1097,8 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
     public void LoadTemplate(QueryTemplate template)
     {
         var stateBeforeTemplate = new RestoreCanvasStateCommand(this, "Load Template");
-        _subCanvasController.AbortActiveEditorSession();
+        if (!TryAbortActiveSubEditorSession())
+            return;
 
         Connections.Clear();
         Nodes.Clear();
@@ -1294,6 +1351,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
     {
         _domainStrategy.OnParameterChanged(node, paramName, Connections, Nodes);
         RefreshComparisonInlineSummaries();
+        _validationManager?.ScheduleValidation();
     }
 
     private void RefreshComparisonInlineSummaries()
@@ -1636,6 +1694,37 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewpor
 
         foreach ((string key, string value) in values)
             _previewParameterInputs[key] = value;
+    }
+
+    internal int PrunePreviewParameterInputs(
+        ConnectionConfig? config,
+        IReadOnlyCollection<string> activeParameterStorageKeys)
+    {
+        if (config is null)
+            return 0;
+
+        string scopePrefix = PreviewParameterInputScopeKey.BuildScopePrefix(config);
+        var keepKeys = new HashSet<string>(
+            activeParameterStorageKeys
+                .Where(static key => !string.IsNullOrWhiteSpace(key))
+                .Select(key => PreviewParameterInputScopeKey.BuildScopedKey(config, key)),
+            StringComparer.OrdinalIgnoreCase);
+
+        List<string> keysToRemove = [];
+        foreach (string key in _previewParameterInputs.Keys)
+        {
+            if (!key.StartsWith(scopePrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (keepKeys.Contains(key))
+                continue;
+
+            keysToRemove.Add(key);
+        }
+
+        foreach (string key in keysToRemove)
+            _previewParameterInputs.Remove(key);
+
+        return keysToRemove.Count;
     }
 
     /// <summary>

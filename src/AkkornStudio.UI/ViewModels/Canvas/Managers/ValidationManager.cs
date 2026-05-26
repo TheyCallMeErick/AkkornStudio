@@ -17,6 +17,9 @@ public sealed class ValidationManager(CanvasViewModel canvasViewModel) : ViewMod
     private readonly ILogger<ValidationManager> _logger = NullLogger<ValidationManager>.Instance;
     private readonly object _validationLock = new();  // Synchronization for _validationCts
     private CancellationTokenSource? _validationCts;
+    private int _requestedValidationVersion;
+    private int _completedValidationVersion;
+    private bool _validationInProgress;
 
     private bool _hasErrors;
     private int _errorCount;
@@ -74,6 +77,7 @@ public sealed class ValidationManager(CanvasViewModel canvasViewModel) : ViewMod
     {
         lock (_validationLock)
         {
+            _requestedValidationVersion++;
             _validationCts?.Cancel();
             _validationCts?.Dispose();
             _validationCts = new CancellationTokenSource();
@@ -91,23 +95,45 @@ public sealed class ValidationManager(CanvasViewModel canvasViewModel) : ViewMod
         }
     }
 
-    private void RunValidationSafely()
+    private async void RunValidationSafely()
     {
+        int targetVersion;
+        lock (_validationLock)
+        {
+            if (_validationInProgress || _completedValidationVersion >= _requestedValidationVersion)
+                return;
+
+            _validationInProgress = true;
+            targetVersion = _requestedValidationVersion;
+        }
+
         try
         {
-            RunValidation();
+            ValidationComputation computation = await Task.Run(ComputeValidation);
+            ApplyValidation(computation);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception during validation");
         }
+        finally
+        {
+            bool shouldRerun;
+            lock (_validationLock)
+            {
+                _completedValidationVersion = Math.Max(_completedValidationVersion, targetVersion);
+                _validationInProgress = false;
+                shouldRerun = _requestedValidationVersion > _completedValidationVersion;
+            }
+
+            // Coalesce rapid updates: if state changed while validation was running,
+            // re-run immediately after completion.
+            if (shouldRerun)
+                Avalonia.Threading.Dispatcher.UIThread.Post(RunValidationSafely);
+        }
     }
 
-    /// <summary>
-    /// Runs validation immediately: checks graph validity, orphan nodes, and naming conventions.
-    /// Updates all validation properties and notifies command buttons of state changes.
-    /// </summary>
-    private void RunValidation()
+    private ValidationComputation ComputeValidation()
     {
         NamingConventionPolicy namingPolicy = _canvasViewModel.BuildNamingConventionPolicy();
         IReadOnlyList<ValidationIssue> allIssues = GraphValidator.Validate(
@@ -115,53 +141,77 @@ public sealed class ValidationManager(CanvasViewModel canvasViewModel) : ViewMod
             namingPolicy,
             _canvasViewModel.AliasConventions
         );
-        var byNode = allIssues
+        Dictionary<string, IReadOnlyList<ValidationIssue>> byNode = allIssues
             .Where(i => !string.IsNullOrEmpty(i.NodeId))
             .GroupBy(i => i.NodeId)
-            .ToDictionary(g => g.Key, g => (IEnumerable<ValidationIssue>)g);
-
-        // Detect orphan nodes and mark them for visual dimming
-        IReadOnlySet<string> orphanIds = OrphanNodeDetector.DetectOrphanIds(_canvasViewModel);
-        foreach (NodeViewModel node in _canvasViewModel.Nodes)
-        {
-            node.IsOrphan = orphanIds.Contains(node.Id);
-            node.SetValidation(
-                byNode.TryGetValue(node.Id, out IEnumerable<ValidationIssue>? issues) ? issues : []
+            .ToDictionary(
+                g => g.Key!,
+                g => (IReadOnlyList<ValidationIssue>)g.ToList(),
+                StringComparer.OrdinalIgnoreCase
             );
-        }
 
-        // Update validation summary in a single pass over all nodes
-        bool hasErrors = false;
-        bool hasOrphans = false;
-        bool hasNaming = false;
-        int errorCount = 0;
-        int warningCount = 0;
-        int orphanCount = 0;
-        foreach (NodeViewModel node in _canvasViewModel.Nodes)
-        {
-            if (node.HasError) hasErrors = true;
-            if (node.IsOrphan) { hasOrphans = true; orphanCount++; }
-            foreach (ValidationIssue issue in node.ValidationIssues)
-            {
-                if (issue.Severity == IssueSeverity.Error) errorCount++;
-                else if (issue.Severity == IssueSeverity.Warning) warningCount++;
-                if (issue.Code.StartsWith("NAMING_")) hasNaming = true;
-            }
-        }
-        HasErrors = hasErrors;
-        ErrorCount = errorCount;
-        WarningCount = warningCount;
-        HasOrphanNodes = hasOrphans;
-        OrphanCount = orphanCount;
-        HasNamingViolations = hasNaming;
-        NamingConformance = NamingConventionValidator.ConformancePercent(
+        HashSet<string> orphanIds = [.. OrphanNodeDetector.DetectOrphanIds(_canvasViewModel)];
+
+        int errorCount = allIssues.Count(i => i.Severity == IssueSeverity.Error);
+        int warningCount = allIssues.Count(i => i.Severity == IssueSeverity.Warning);
+        bool hasNaming = allIssues.Any(i => i.Code.StartsWith("NAMING_", StringComparison.Ordinal));
+        int namingConformance = NamingConventionValidator.ConformancePercent(
             _canvasViewModel,
             namingPolicy,
             _canvasViewModel.AliasConventions
         );
 
+        return new ValidationComputation(
+            ByNodeIssues: byNode,
+            OrphanIds: orphanIds,
+            ErrorCount: errorCount,
+            WarningCount: warningCount,
+            HasErrors: errorCount > 0,
+            HasOrphanNodes: orphanIds.Count > 0,
+            OrphanCount: orphanIds.Count,
+            HasNamingViolations: hasNaming,
+            NamingConformance: namingConformance
+        );
+    }
+
+    /// <summary>
+    /// Applies validation results to node/view-model state and refreshes command state.
+    /// Must run on UI thread.
+    /// </summary>
+    private void ApplyValidation(ValidationComputation computation)
+    {
+        foreach (NodeViewModel node in _canvasViewModel.Nodes)
+        {
+            node.IsOrphan = computation.OrphanIds.Contains(node.Id);
+            node.SetValidation(
+                computation.ByNodeIssues.TryGetValue(node.Id, out IReadOnlyList<ValidationIssue>? issues)
+                    ? issues
+                    : []
+            );
+        }
+
+        HasErrors = computation.HasErrors;
+        ErrorCount = computation.ErrorCount;
+        WarningCount = computation.WarningCount;
+        HasOrphanNodes = computation.HasOrphanNodes;
+        OrphanCount = computation.OrphanCount;
+        HasNamingViolations = computation.HasNamingViolations;
+        NamingConformance = computation.NamingConformance;
+
         // Notify command buttons of state changes
         CleanupOrphansCommand?.NotifyCanExecuteChanged();
         AutoFixNamingCommand?.NotifyCanExecuteChanged();
     }
+
+    private sealed record ValidationComputation(
+        IReadOnlyDictionary<string, IReadOnlyList<ValidationIssue>> ByNodeIssues,
+        IReadOnlySet<string> OrphanIds,
+        int ErrorCount,
+        int WarningCount,
+        bool HasErrors,
+        bool HasOrphanNodes,
+        int OrphanCount,
+        bool HasNamingViolations,
+        int NamingConformance
+    );
 }

@@ -2565,6 +2565,67 @@ public class QueryGeneratorServiceTests
     }
 
     [Fact]
+    public void Generate_WithSelfReferenceByFromTable_RecursiveWithoutTermination_ThrowsInvalidOperation()
+    {
+        var mainSource = new NodeInstance(
+            "main_src",
+            NodeType.CteSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>
+            {
+                ["cte_name"] = "cte_self",
+                ["alias"] = "s",
+            }
+        );
+
+        var mainGraph = new NodeGraph
+        {
+            Nodes = [mainSource],
+            Ctes = [new CteBinding("cte_self", "cte_self", new NodeGraph(), Recursive: true)],
+            SelectOutputs = [new SelectBinding("main_src", "id", "id")],
+        };
+
+        var svc = QueryGeneratorService.Create(DatabaseProvider.Postgres);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(
+            () => GenerateGraphFirst(svc, "cte_self", mainGraph)
+        );
+        Assert.Contains("termination guard", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_WithSelfReferenceByFromTable_RecursiveWithLimitTermination_AllowsGeneration()
+    {
+        var mainSource = new NodeInstance(
+            "main_src",
+            NodeType.CteSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>
+            {
+                ["cte_name"] = "cte_self",
+                ["alias"] = "s",
+            }
+        );
+
+        var recursiveGraph = new NodeGraph
+        {
+            Limit = 10,
+        };
+
+        var mainGraph = new NodeGraph
+        {
+            Nodes = [mainSource],
+            Ctes = [new CteBinding("cte_self", "cte_self", recursiveGraph, Recursive: true)],
+            SelectOutputs = [new SelectBinding("main_src", "id", "id")],
+        };
+
+        var svc = QueryGeneratorService.Create(DatabaseProvider.Postgres);
+        GeneratedQuery result = GenerateGraphFirst(svc, "cte_self", mainGraph);
+
+        Assert.Contains("WITH RECURSIVE", result.Sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Generate_WithDependentCtes_ByAliasedFromTable_EmitsDependenciesBeforeDependents()
     {
         var mainSource = new NodeInstance(
@@ -2607,6 +2668,96 @@ public class QueryGeneratorServiceTests
         Assert.True(aDef.Success, "Expected cte_a definition in SQL.");
         Assert.True(bDef.Success, "Expected cte_b definition in SQL.");
         Assert.True(aDef.Index < bDef.Index, "cte_a must be emitted before cte_b.");
+    }
+
+    [Fact]
+    public void Generate_WithPostgresCaseMismatchedCteReference_DoesNotInferDependency()
+    {
+        var mainSource = new NodeInstance(
+            "main_src",
+            NodeType.CteSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>
+            {
+                ["cte_name"] = "cte_b",
+                ["alias"] = "b",
+            }
+        );
+
+        var mainGraph = new NodeGraph
+        {
+            Nodes = [mainSource],
+            // Reversed order on purpose. For Postgres (case-sensitive), "CTE_A"
+            // must not match "cte_a", so original order is preserved.
+            Ctes =
+            [
+                new CteBinding("cte_b", "CTE_A", new NodeGraph()),
+                new CteBinding("cte_a", "orders", new NodeGraph()),
+            ],
+            SelectOutputs = [new SelectBinding("main_src", "id", "id")],
+        };
+
+        var svc = QueryGeneratorService.Create(DatabaseProvider.Postgres);
+        GeneratedQuery result = GenerateGraphFirst(svc, "cte_b", mainGraph);
+
+        Match aDef = Regex.Match(
+            result.Sql,
+            "[\\\"`\\[]?cte_a[\\\"`\\]]?\\s+AS\\s*\\(",
+            RegexOptions.IgnoreCase
+        );
+        Match bDef = Regex.Match(
+            result.Sql,
+            "[\\\"`\\[]?cte_b[\\\"`\\]]?\\s+AS\\s*\\(",
+            RegexOptions.IgnoreCase
+        );
+
+        Assert.True(aDef.Success, "Expected cte_a definition in SQL.");
+        Assert.True(bDef.Success, "Expected cte_b definition in SQL.");
+        Assert.True(bDef.Index < aDef.Index, "Postgres case mismatch should preserve original CTE order.");
+    }
+
+    [Fact]
+    public void Generate_WithNonPostgresCaseMismatchedCteReference_StillInfersDependency()
+    {
+        var mainSource = new NodeInstance(
+            "main_src",
+            NodeType.CteSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>
+            {
+                ["cte_name"] = "cte_b",
+                ["alias"] = "b",
+            }
+        );
+
+        var mainGraph = new NodeGraph
+        {
+            Nodes = [mainSource],
+            Ctes =
+            [
+                new CteBinding("cte_b", "CTE_A", new NodeGraph()),
+                new CteBinding("cte_a", "orders", new NodeGraph()),
+            ],
+            SelectOutputs = [new SelectBinding("main_src", "id", "id")],
+        };
+
+        var svc = QueryGeneratorService.Create(DatabaseProvider.SqlServer);
+        GeneratedQuery result = GenerateGraphFirst(svc, "cte_b", mainGraph);
+
+        Match aDef = Regex.Match(
+            result.Sql,
+            "[\\\"`\\[]?cte_a[\\\"`\\]]?\\s+AS\\s*\\(",
+            RegexOptions.IgnoreCase
+        );
+        Match bDef = Regex.Match(
+            result.Sql,
+            "[\\\"`\\[]?cte_b[\\\"`\\]]?\\s+AS\\s*\\(",
+            RegexOptions.IgnoreCase
+        );
+
+        Assert.True(aDef.Success, "Expected cte_a definition in SQL.");
+        Assert.True(bDef.Success, "Expected cte_b definition in SQL.");
+        Assert.True(aDef.Index < bDef.Index, "Non-Postgres providers should keep case-insensitive dependency matching.");
     }
 
     [Fact]

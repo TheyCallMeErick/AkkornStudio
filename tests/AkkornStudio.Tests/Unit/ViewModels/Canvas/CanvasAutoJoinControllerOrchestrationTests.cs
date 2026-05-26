@@ -77,9 +77,28 @@ public class CanvasAutoJoinControllerOrchestrationTests
         Assert.DoesNotContain(ctx.Nodes, n => n.Type == NodeType.Join);
     }
 
+    [Fact]
+    public void RunSelectedAutoJoin_WhenSuggestionAnalysisThrows_FallsBackToManualDialogAndUnavailableWarning()
+    {
+        var ctx = CreateControllerContext(
+            CreateTable("public.orders", ("id", PinDataType.Number), ("customer_id", PinDataType.Number)),
+            CreateTable("public.customers", ("id", PinDataType.Number)),
+            suggestionService: new ThrowingSuggestionService()
+        );
+        Assert.True(ctx.Controller.HasTwoSelectedTableSources);
+
+        ctx.Controller.RunSelectedAutoJoin();
+
+        Assert.True(ctx.ManualJoinDialog.IsVisible);
+        Assert.True(ctx.Toasts.IsVisible);
+        Assert.Equal(ToastSeverity.Warning, ctx.Toasts.Severity);
+        Assert.DoesNotContain(ctx.Nodes, n => n.Type == NodeType.Join);
+    }
+
     private static (CanvasAutoJoinController Controller, ObservableCollection<NodeViewModel> Nodes, ObservableCollection<ConnectionViewModel> Connections, ManualJoinDialogViewModel ManualJoinDialog, ToastCenterViewModel Toasts) CreateControllerContext(
         NodeViewModel first,
-        NodeViewModel second)
+        NodeViewModel second,
+        ICanvasAutoJoinSuggestionService? suggestionService = null)
     {
         first.IsSelected = true;
         second.IsSelected = true;
@@ -117,7 +136,7 @@ public class CanvasAutoJoinControllerOrchestrationTests
             toasts,
             LocalizationService.Instance,
             null,
-            null,
+            suggestionService,
             null,
             (Func<NodeDefinition, Point, NodeViewModel>)SpawnNode,
             (Action<PinViewModel, PinViewModel>)ConnectPins,
@@ -128,6 +147,17 @@ public class CanvasAutoJoinControllerOrchestrationTests
 
     private static NodeViewModel CreateTable(string fullName, params (string name, PinDataType type)[] cols)
         => new(fullName, cols, new Point(100, 100));
-}
 
+    private sealed class ThrowingSuggestionService : ICanvasAutoJoinSuggestionService
+    {
+        public IReadOnlyList<JoinSuggestion> AnalyzeNewTable(string newTableFullName, IReadOnlyCollection<NodeViewModel> nodes)
+            => throw new InvalidOperationException("suggestion analysis failed");
+
+        public IReadOnlyList<JoinSuggestion> AnalyzeAllTables(IReadOnlyCollection<NodeViewModel> nodes)
+            => throw new InvalidOperationException("suggestion analysis failed");
+
+        public IReadOnlyList<JoinSuggestion> AnalyzePair(NodeViewModel left, NodeViewModel right, IReadOnlyCollection<NodeViewModel> nodes)
+            => throw new InvalidOperationException("suggestion analysis failed");
+    }
+}
 

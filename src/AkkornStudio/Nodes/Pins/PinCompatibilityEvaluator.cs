@@ -55,7 +55,7 @@ public static class PinCompatibilityEvaluator
             return BuildAllowedDecision(source, destination, context);
 
         if (source.EffectiveDataType.IsNumericScalar() && destination.EffectiveDataType.IsNumericScalar())
-            return BuildAllowedDecision(source, destination, context);
+            return EvaluateNumericScalarCompatibility(source, destination, context);
 
         if (source.EffectiveDataType != destination.EffectiveDataType)
             return PinConnectionDecision.Rejected(PinConnectionReasonCode.ScalarTypeMismatch);
@@ -208,6 +208,25 @@ public static class PinCompatibilityEvaluator
 
     private static PinDataType? ResolveColumnScalarType(PinModel pin) =>
         pin.ColumnRefMeta?.ScalarType ?? pin.ExpectedColumnScalarType;
+
+    private static PinConnectionDecision EvaluateNumericScalarCompatibility(
+        PinModel source,
+        PinModel destination,
+        PinConnectionContext context)
+    {
+        PinDataType sourceType = source.EffectiveDataType;
+        PinDataType destinationType = destination.EffectiveDataType;
+
+        // Prevent precision-loss/narrowing at connection time.
+        // Decimal/Number -> Integer can truncate fractional values and should be explicit in the graph.
+        if (destinationType == PinDataType.Integer
+            && sourceType is PinDataType.Decimal or PinDataType.Number)
+        {
+            return PinConnectionDecision.Rejected(PinConnectionReasonCode.ScalarTypeMismatch);
+        }
+
+        return BuildAllowedDecision(source, destination, context);
+    }
 
     private static bool IsStructuralMismatch(PinDataType source, PinDataType destination)
     {

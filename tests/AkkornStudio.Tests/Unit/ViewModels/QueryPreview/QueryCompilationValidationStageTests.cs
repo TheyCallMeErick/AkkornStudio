@@ -17,6 +17,8 @@ public class QueryCompilationValidationStageTests
         int notJsonCalls = 0;
         int outputReachabilityCalls = 0;
         int sourceConflictCalls = 0;
+        int implicitCrossJoinCalls = 0;
+        int selectStarProjectionCalls = 0;
         int paginationCalls = 0;
         int hintsCalls = 0;
         int pivotCalls = 0;
@@ -30,6 +32,8 @@ public class QueryCompilationValidationStageTests
             (resultNode, errors) => notJsonCalls++,
             (resultNode, errors) => outputReachabilityCalls++,
             (resultNode, joins, errors) => sourceConflictCalls++,
+            (joins, errors) => implicitCrossJoinCalls++,
+            (resultNode, errors) => selectStarProjectionCalls++,
             (resultNode, errors) => paginationCalls++,
             (resultNode, errors) => hintsCalls++,
             (resultNode, errors) => pivotCalls++);
@@ -52,6 +56,8 @@ public class QueryCompilationValidationStageTests
         Assert.Equal(1, notJsonCalls);
         Assert.Equal(1, outputReachabilityCalls);
         Assert.Equal(1, sourceConflictCalls);
+        Assert.Equal(1, implicitCrossJoinCalls);
+        Assert.Equal(1, selectStarProjectionCalls);
         Assert.Equal(1, paginationCalls);
         Assert.Equal(1, hintsCalls);
         Assert.Equal(1, pivotCalls);
@@ -69,6 +75,8 @@ public class QueryCompilationValidationStageTests
             (resultNode, errors) => errors.Add("not-json-error"),
             (resultNode, errors) => errors.Add("output-reachability-error"),
             (resultNode, joins, errors) => errors.Add("source-conflict-error"),
+            (joins, errors) => errors.Add("implicit-cross-join-error"),
+            (resultNode, errors) => errors.Add("select-star-error"),
             (resultNode, errors) => errors.Add("pagination-error"),
             (resultNode, errors) => errors.Add("hints-error"),
             (resultNode, errors) => errors.Add("pivot-error"));
@@ -92,6 +100,8 @@ public class QueryCompilationValidationStageTests
         Assert.Contains("not-json-error", errors);
         Assert.Contains("output-reachability-error", errors);
         Assert.Contains("source-conflict-error", errors);
+        Assert.Contains("implicit-cross-join-error", errors);
+        Assert.Contains("select-star-error", errors);
         Assert.Contains("pagination-error", errors);
         Assert.Contains("hints-error", errors);
         Assert.Contains("pivot-error", errors);

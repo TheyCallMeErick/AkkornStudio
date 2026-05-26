@@ -30,9 +30,11 @@ public sealed class PostgresMetadataQueries : IMetadataQueryProvider
             SELECT a.attname AS column_name
             FROM   pg_constraint pk
             JOIN   pg_attribute a ON pk.conrelid = a.attrelid AND a.attnum = ANY(pk.conkey)
+            JOIN   pg_class pk_table ON pk.conrelid = pk_table.oid
+            JOIN   pg_namespace pk_schema ON pk_table.relnamespace = pk_schema.oid
             WHERE  pk.contype = 'p'
-              AND  pg_class_schema.relname = @schema
-              AND  pg_class_table.relname = @table
+              AND  pk_schema.nspname = @schema
+              AND  pk_table.relname = @table
         ) pk ON pk.column_name = c.column_name
         LEFT JOIN (
             SELECT DISTINCT
@@ -46,6 +48,8 @@ public sealed class PostgresMetadataQueries : IMetadataQueryProvider
             JOIN   pg_attribute a ON fk.conrelid = a.attrelid AND a.attnum = ANY(fk.conkey)
             JOIN   pg_class parent_c ON fk.confrelid = parent_c.oid
             WHERE  fk.contype = 'f'
+              AND  child_n.nspname = @schema
+              AND  child_c.relname = @table
         ) fk_ref ON fk_ref.table_schema = c.table_schema
                  AND fk_ref.table_name = c.table_name
                  AND fk_ref.column_name = c.column_name

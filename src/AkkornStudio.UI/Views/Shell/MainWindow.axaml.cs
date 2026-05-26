@@ -432,6 +432,7 @@ public partial class MainWindow : Window
             if (CurrentShell.IsStartVisible)
                 EnterCanvasMode();
 
+            _preview?.NotifyConnectionContextChanged();
             CurrentShell.Toasts.ShowSuccess(
                 L("toast.connectionActivated", "Conexao ativa."),
                 L("toast.connectionActivatedDetails", "Pronto para executar consultas e operacoes de importacao."));
@@ -447,6 +448,7 @@ public partial class MainWindow : Window
                 L("toast.connectionFailed", "Falha ao conectar."),
                 toastDetails);
 
+            _preview?.NotifyConnectionContextChanged();
             CurrentShell.SqlEditor.NotifyConnectionContextChanged();
         };
 
@@ -457,6 +459,7 @@ public partial class MainWindow : Window
                 connectionManager.ActiveProfileId
             );
 
+            _preview?.NotifyConnectionContextChanged();
             CurrentShell.SqlEditor.NotifyConnectionContextChanged();
         };
 

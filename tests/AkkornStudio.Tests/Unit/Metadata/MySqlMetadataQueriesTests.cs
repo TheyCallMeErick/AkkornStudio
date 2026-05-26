@@ -17,6 +17,8 @@ public sealed class MySqlMetadataQueriesTests
         Assert.Contains("'information_schema'", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("'performance_schema'", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("'sys'", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CREATE_OPTIONS", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NOT LIKE '%TEMPORARY%'", sql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

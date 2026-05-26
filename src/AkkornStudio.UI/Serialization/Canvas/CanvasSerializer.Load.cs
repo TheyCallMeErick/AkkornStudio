@@ -245,6 +245,8 @@ public static partial class CanvasSerializer
                 skippedNodes.Add((sn.NodeId, sn.NodeType, skipReason ?? "Unknown error"));
                 continue;
             }
+
+            ValidateEmbeddedSubgraphPayloads(nodeVm, warnings);
             nodeMap[sn.NodeId] = nodeVm;
             vm.Nodes.Add(nodeVm);
         }
@@ -308,6 +310,69 @@ public static partial class CanvasSerializer
             warnings.Count > 0 ? warnings : null,
             activeDocumentType: null,
             sqlEditorSeedScripts: sqlEditorSeedScripts.Count > 0 ? sqlEditorSeedScripts : null);
+    }
+
+    private static void ValidateEmbeddedSubgraphPayloads(NodeViewModel nodeVm, ICollection<string> warnings)
+    {
+        ValidateEmbeddedPayload(
+            nodeVm,
+            CteSubgraphParameterKey,
+            payload => JsonSerializer.Deserialize<SavedCteSubgraph>(payload, _opts) is not null,
+            warnings);
+
+        ValidateEmbeddedPayload(
+            nodeVm,
+            SubquerySubgraphParameterKey,
+            payload => JsonSerializer.Deserialize<SavedSubquerySubgraph>(payload, _opts) is not null,
+            warnings);
+
+        ValidateEmbeddedPayload(
+            nodeVm,
+            ViewSubgraphParameterKey,
+            payload =>
+            {
+                using JsonDocument _ = JsonDocument.Parse(payload);
+                return true;
+            },
+            warnings);
+
+        ValidateEmbeddedPayload(
+            nodeVm,
+            ViewEditorCanvasParameterKey,
+            payload =>
+            {
+                using JsonDocument _ = JsonDocument.Parse(payload);
+                return true;
+            },
+            warnings);
+    }
+
+    private static void ValidateEmbeddedPayload(
+        NodeViewModel nodeVm,
+        string parameterKey,
+        Func<string, bool> validator,
+        ICollection<string> warnings)
+    {
+        if (!nodeVm.Parameters.TryGetValue(parameterKey, out string? payload)
+            || string.IsNullOrWhiteSpace(payload))
+        {
+            return;
+        }
+
+        try
+        {
+            if (validator(payload))
+                return;
+        }
+        catch
+        {
+            // Fall through to remove malformed payload.
+        }
+
+        nodeVm.Parameters.Remove(parameterKey);
+        warnings.Add(
+            $"Node '{nodeVm.Id}' has malformed embedded payload '{parameterKey}'. The payload was ignored during load."
+        );
     }
 
     private static IReadOnlyList<string> ExtractLegacyReportSqlScripts(SavedCanvas saved)

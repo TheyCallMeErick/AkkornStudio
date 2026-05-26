@@ -130,6 +130,9 @@ public class FileOperationsService(
         try
         {
             CanvasViewModel? ddlVm = ResolveDdlCanvas();
+            if (!TryAbortActiveSubEditors(_vm, ddlVm))
+                return;
+
             CanvasLoadResult result = await CanvasSerializer.LoadFromFileAsync(path, _vm, ddlVm, BuildColumnLookup());
             if (!result.Success)
             {
@@ -246,5 +249,16 @@ public class FileOperationsService(
     private CanvasViewModel? ResolveDdlCanvas()
     {
         return _ddlVmResolver?.Invoke() ?? _ddlVm;
+    }
+
+    private static bool TryAbortActiveSubEditors(CanvasViewModel queryVm, CanvasViewModel? ddlVm)
+    {
+        if (!queryVm.TryAbortActiveSubEditorSession())
+            return false;
+
+        if (ddlVm is not null && !ReferenceEquals(ddlVm, queryVm) && !ddlVm.TryAbortActiveSubEditorSession())
+            return false;
+
+        return true;
     }
 }

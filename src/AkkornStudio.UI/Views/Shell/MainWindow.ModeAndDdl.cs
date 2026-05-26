@@ -608,6 +608,7 @@ public partial class MainWindow
         if (!TryBuildDdlSql(out string sql))
             return;
 
+        DdlExecutionResult? executionResult = null;
         var dialogVm = new DdlExecuteDialogViewModel(sql);
         var dialog = new DdlExecuteDialogWindow(
             dialogVm,
@@ -616,7 +617,8 @@ public partial class MainWindow
                 IDbOrchestratorFactory orchestratorFactory =
                     _services.GetRequiredService<IDbOrchestratorFactory>();
                 await using IDbOrchestrator orchestrator = orchestratorFactory.Create(config);
-                return await orchestrator.ExecuteDdlAsync(sql, stopOnError, ct);
+                executionResult = await orchestrator.ExecuteDdlAsync(sql, stopOnError, ct);
+                return executionResult;
             }
         );
 
@@ -629,6 +631,32 @@ public partial class MainWindow
             CurrentShell.Toasts.ShowSuccess(L("toast.ddlExecutedSuccess", "DDL executado com sucesso."), dialogVm.ResultSummary);
         else
             CurrentShell.Toasts.ShowWarning(L("toast.ddlExecutedWithIssues", "DDL executado com falhas."), dialogVm.ResultDetails);
+
+        if (dialogVm.IsSuccess || HasSuccessfulDdlStatements(executionResult))
+            TryReloadActiveMetadataAfterDdl();
+    }
+
+    private void TryReloadActiveMetadataAfterDdl()
+    {
+        ConnectionManagerViewModel? manager = CurrentShell.ActiveConnectionManager;
+        manager ??= ResolveConnectionManagerForActiveSubscreen();
+
+        if (manager.ReloadMetadataCommand.CanExecute(null))
+            manager.ReloadMetadataCommand.Execute(null);
+    }
+
+    private static bool HasSuccessfulDdlStatements(DdlExecutionResult? executionResult)
+    {
+        if (executionResult?.Statements is null)
+            return false;
+
+        foreach (DdlStatementExecutionResult statement in executionResult.Statements)
+        {
+            if (statement.Success)
+                return true;
+        }
+
+        return false;
     }
 
     private async Task ViewDdlSqlAsync()
@@ -823,4 +851,3 @@ public partial class MainWindow
         }
     }
 }
-

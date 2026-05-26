@@ -1,4 +1,5 @@
 using System.Data;
+using System.IO;
 
 namespace AkkornStudio.Core;
 
@@ -87,8 +88,43 @@ public record ConnectionConfig(
         return $"Host={Host};Port={Port};Database={Database};Username={Username};Password={Password};Timeout={TimeoutSeconds};SSL Mode={sslMode};";
     }
 
-    private string BuildSqliteCs() =>
-        $"Data Source={Database};Default Timeout={TimeoutSeconds};";
+    private string BuildSqliteCs()
+    {
+        string databasePath = (Database ?? string.Empty).Trim();
+
+        if (string.IsNullOrWhiteSpace(databasePath))
+            throw new InvalidOperationException("SQLite database path cannot be null or empty.");
+
+        if (databasePath.Equals(":memory:", StringComparison.OrdinalIgnoreCase))
+            return $"Data Source={databasePath};Default Timeout={TimeoutSeconds};";
+
+        if (ContainsParentTraversalSegment(databasePath))
+        {
+            throw new InvalidOperationException(
+                $"SQLite database path '{databasePath}' contains parent traversal ('..'), which is not allowed."
+            );
+        }
+
+        string resolvedPath = Path.GetFullPath(databasePath);
+        string? parentDirectory = Path.GetDirectoryName(resolvedPath);
+        if (string.IsNullOrWhiteSpace(parentDirectory) || !Directory.Exists(parentDirectory))
+        {
+            throw new InvalidOperationException(
+                $"SQLite database parent directory does not exist for path '{databasePath}'."
+            );
+        }
+
+        return $"Data Source={resolvedPath};Default Timeout={TimeoutSeconds};";
+    }
+
+    private static bool ContainsParentTraversalSegment(string path)
+    {
+        string[] segments = path.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+        );
+        return segments.Any(segment => segment.Equals("..", StringComparison.Ordinal));
+    }
 }
 
 public record ConnectionTestResult(

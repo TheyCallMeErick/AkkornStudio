@@ -14,6 +14,7 @@ public sealed class MySqlMetadataQueries : IMetadataQueryProvider
         FROM   INFORMATION_SCHEMA.TABLES
         WHERE  TABLE_TYPE = 'BASE TABLE'
           AND  TABLE_SCHEMA NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+          AND  (CREATE_OPTIONS IS NULL OR UPPER(CREATE_OPTIONS) NOT LIKE '%TEMPORARY%')
         ORDER  BY TABLE_SCHEMA, TABLE_NAME
     ";
 

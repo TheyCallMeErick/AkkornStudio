@@ -96,6 +96,19 @@ public interface IDdlDialect
         throw new NotSupportedException("DDL emission is not implemented for this dialect.");
 
     /// <summary>
+    /// Emits a FOREIGN KEY table constraint fragment.
+    /// </summary>
+    string EmitForeignKeyConstraint(
+        string? constraintName,
+        IReadOnlyList<string> childColumns,
+        string parentSchema,
+        string parentTable,
+        IReadOnlyList<string> parentColumns,
+        AkkornStudio.Metadata.ReferentialAction onDelete,
+        AkkornStudio.Metadata.ReferentialAction onUpdate
+    ) => throw new NotSupportedException("DDL emission is not implemented for this dialect.");
+
+    /// <summary>
     /// Emits a CREATE TABLE statement.
     /// </summary>
     string EmitCreateTable(

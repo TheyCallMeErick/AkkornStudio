@@ -115,6 +115,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private int _pendingQueryParameterMaxRows = 1000;
     private bool _pendingQueryParameterEnforceMutationGuard = true;
     private List<SqlQueryParameterPromptItemViewModel> _pendingQueryParameters = [];
+    private SqlEditorExecutionConnectionContext _lastObservedConnectionExecutionContext;
 
     public SqlEditorViewModel(
         DatabaseProvider initialProvider = DatabaseProvider.Postgres,
@@ -241,6 +242,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
             () => _backNavigationAction is not null);
         _sidebarSelectedConnectionProfileId = ActiveTab.ConnectionProfileId;
         SyncTabCommands();
+        _lastObservedConnectionExecutionContext = CaptureConnectionExecutionContext();
     }
 
     public SqlEditorTabManagerViewModel Tabs { get; }
@@ -2325,6 +2327,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     public void NotifyConnectionContextChanged()
     {
+        SqlEditorExecutionConnectionContext previousContext = _lastObservedConnectionExecutionContext;
         ConnectionManagerViewModel? manager = SharedConnectionManager;
         if (manager is not null)
         {
@@ -2357,9 +2360,49 @@ public sealed class SqlEditorViewModel : ViewModelBase
             ConnectionSwitcherSelectedDatabase = SharedConnectionManager?.SelectedDatabase
                 ?? ResolveConnectionConfigForActiveTab()?.Database;
         }
+        SqlEditorExecutionConnectionContext currentContext = CaptureConnectionExecutionContext();
+        if (!previousContext.Equals(currentContext))
+            CancelInFlightOperationsForConnectionContextChange();
+        _lastObservedConnectionExecutionContext = currentContext;
+
         RaiseSqlPanelPropertiesChanged();
         RaiseSchemaPropertiesChanged();
     }
+
+    private void CancelInFlightOperationsForConnectionContextChange()
+    {
+        if (IsExecuting)
+            CancelExecution();
+
+        _explainCts?.Cancel();
+        _benchmarkCts?.Cancel();
+    }
+
+    private SqlEditorExecutionConnectionContext CaptureConnectionExecutionContext()
+    {
+        ConnectionConfig? config = ResolveConnectionConfigForActiveTab();
+        return new SqlEditorExecutionConnectionContext(
+            NormalizeConnectionContextPart(ActiveTabConnectionProfileId),
+            config?.Provider,
+            NormalizeConnectionContextPart(config?.Host),
+            config?.Port,
+            NormalizeConnectionContextPart(config?.Database));
+    }
+
+    private static string? NormalizeConnectionContextPart(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return value.Trim();
+    }
+
+    private readonly record struct SqlEditorExecutionConnectionContext(
+        string? ProfileId,
+        DatabaseProvider? Provider,
+        string? Host,
+        int? Port,
+        string? Database);
 
     private void RaiseSchemaPropertiesChanged()
     {
@@ -2691,6 +2734,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private void RaiseTabStateChanged()
     {
         _isHistoryClearConfirmationPending = false;
+        ClearPendingMutation();
         ClearPendingQueryParameterPrompt();
         SyncSidebarConnectionSelectionToActiveTab();
         TryHydrateResultFilterForTab(ActiveTab);

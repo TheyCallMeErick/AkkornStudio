@@ -11,6 +11,8 @@ internal sealed class QueryCompilationValidationService(CanvasViewModel canvas, 
     private readonly QueryCompilationNotAndJsonValidator _notAndJsonValidator = new(canvas);
     private readonly QueryCompilationOutputSourceReachabilityValidator _outputSourceReachabilityValidator = new(canvas);
     private readonly QueryCompilationSourceConflictValidator _sourceConflictValidator = new(canvas);
+    private readonly QueryCompilationImplicitCrossJoinValidator _implicitCrossJoinValidator = new();
+    private readonly QueryCompilationSelectStarProjectionValidator _selectStarProjectionValidator = new(canvas);
     private readonly QueryCompilationPaginationValidator _paginationValidator = new(canvas, provider);
     private readonly QueryCompilationQueryHintsValidator _queryHintsValidator = new(provider);
     private readonly QueryCompilationPivotValidator _pivotValidator = new(provider);
@@ -39,6 +41,12 @@ internal sealed class QueryCompilationValidationService(CanvasViewModel canvas, 
         List<string> errors) =>
         _sourceConflictValidator.Validate(resultOutputNode, joins, errors);
 
+    public void ValidateImplicitCrossJoins(IReadOnlyList<JoinDefinition> joins, List<string> errors) =>
+        _implicitCrossJoinValidator.Validate(joins, errors);
+
+    public void ValidateSelectStarProjection(NodeViewModel resultOutputNode, List<string> errors) =>
+        _selectStarProjectionValidator.Validate(resultOutputNode, errors);
+
     public void ValidateQueryHints(NodeViewModel resultOutputNode, List<string> errors) =>
         _queryHintsValidator.Validate(resultOutputNode, errors);
 
@@ -55,4 +63,3 @@ internal sealed class QueryCompilationValidationService(CanvasViewModel canvas, 
     public void ValidatePivotSettings(NodeViewModel resultOutputNode, List<string> errors) =>
         _pivotValidator.Validate(resultOutputNode, errors);
 }
-

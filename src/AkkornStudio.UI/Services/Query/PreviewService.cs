@@ -106,6 +106,9 @@ public class PreviewService(Window window, CanvasViewModel vm, ILogger<PreviewSe
                 {
                     if (e.PropertyName == nameof(CanvasViewModel.HasErrors))
                         UpdateRunEnabled(run);
+
+                    if (e.PropertyName == nameof(CanvasViewModel.ActiveConnectionConfig))
+                        CancelRun();
                 };
                 _liveSqlPropertyChangedHandler = (_, e) =>
                 {
@@ -260,6 +263,12 @@ public class PreviewService(Window window, CanvasViewModel vm, ILogger<PreviewSe
                 ? _vm.LiveSql.ExecutionParameterContexts
                 : null;
         IReadOnlyList<QueryParameterPlaceholder> placeholders = QueryParameterPlaceholderParser.Parse(executionSql);
+        _vm.PrunePreviewParameterInputs(
+            _vm.ActiveConnectionConfig,
+            placeholders
+                .Select(QueryParameterPlaceholderParser.GetStorageKey)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray());
         IReadOnlyList<QueryParameter>? parameters = placeholders.Count > 0
             ? await CollectParametersIfNeededAsync(executionSql, _vm.ActiveConnectionConfig, suggestedParameters, structuralContexts)
             : suggestedParameters;
@@ -321,6 +330,11 @@ public class PreviewService(Window window, CanvasViewModel vm, ILogger<PreviewSe
             await tickTask; // let ticker finish cleanly
             _logger.LogDebug("RunPreviewAsync finished");
         }
+    }
+
+    public void NotifyConnectionContextChanged()
+    {
+        CancelRun();
     }
 
     // ── Elapsed ticker ────────────────────────────────────────────────────────
@@ -410,7 +424,9 @@ public class PreviewService(Window window, CanvasViewModel vm, ILogger<PreviewSe
 
         foreach (QueryParameterPlaceholder placeholder in placeholders)
         {
-            string scopedKey = BuildRememberedParameterKey(config, QueryParameterPlaceholderParser.GetStorageKey(placeholder));
+            string scopedKey = PreviewParameterInputScopeKey.BuildScopedKey(
+                config,
+                QueryParameterPlaceholderParser.GetStorageKey(placeholder));
             if (_vm.PreviewParameterInputs.TryGetValue(scopedKey, out string? value))
                 values[QueryParameterPlaceholderParser.GetStorageKey(placeholder)] = value;
         }
@@ -424,22 +440,8 @@ public class PreviewService(Window window, CanvasViewModel vm, ILogger<PreviewSe
     {
         Dictionary<string, string> scopedValues = new(StringComparer.OrdinalIgnoreCase);
         foreach ((string key, string value) in enteredValues)
-            scopedValues[BuildRememberedParameterKey(config, key)] = value;
+            scopedValues[PreviewParameterInputScopeKey.BuildScopedKey(config, key)] = value;
         _vm.RememberPreviewParameterInputs(scopedValues);
-    }
-
-    private static string BuildRememberedParameterKey(ConnectionConfig? config, string parameterKey)
-    {
-        if (config is null)
-            return parameterKey;
-
-        return string.Join(
-            "|",
-            config.Provider,
-            config.Host ?? string.Empty,
-            config.Port,
-            config.Database ?? string.Empty,
-            parameterKey);
     }
 
     // ── Disposal ──────────────────────────────────────────────────────────────

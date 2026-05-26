@@ -1,6 +1,7 @@
 namespace AkkornStudio.Providers.Dialects;
 
 using AkkornStudio.Core;
+using AkkornStudio.Metadata;
 using AkkornStudio.QueryEngine;
 
 /// <summary>
@@ -128,7 +129,7 @@ public sealed class SqlServerDialect : ISqlDialect
     {
         _ = columnComment;
         string quotedName = QuoteIdentifier(columnName);
-        string sqlType = string.IsNullOrWhiteSpace(dataType) ? "INT" : dataType.Trim();
+        string sqlType = NormalizeName(dataType, "data type");
         string nullability = isNullable ? "NULL" : "NOT NULL";
 
         if (string.IsNullOrWhiteSpace(defaultExpression))
@@ -175,6 +176,34 @@ public sealed class SqlServerDialect : ISqlDialect
         return $"{prefix} ({expression.Trim()})";
     }
 
+    public string EmitForeignKeyConstraint(
+        string? constraintName,
+        IReadOnlyList<string> childColumns,
+        string parentSchema,
+        string parentTable,
+        IReadOnlyList<string> parentColumns,
+        ReferentialAction onDelete,
+        ReferentialAction onUpdate
+    )
+    {
+        if (childColumns.Count == 0 || parentColumns.Count == 0 || childColumns.Count != parentColumns.Count)
+            throw new InvalidOperationException("Foreign key requires child/parent columns with matching non-zero cardinality.");
+
+        string[] normalizedChildColumns = NormalizeConstraintColumns(childColumns, "Foreign key child");
+        string[] normalizedParentColumns = NormalizeConstraintColumns(parentColumns, "Foreign key parent");
+        string normalizedParentTable = NormalizeName(parentTable, "foreign key parent table");
+        string normalizedParentSchema = string.IsNullOrWhiteSpace(parentSchema) ? "dbo" : parentSchema.Trim();
+
+        string constraintClause = string.IsNullOrWhiteSpace(constraintName)
+            ? string.Empty
+            : $"CONSTRAINT {QuoteIdentifier(constraintName.Trim())} ";
+        string parentRef = $"{QuoteIdentifier(normalizedParentSchema)}.{QuoteIdentifier(normalizedParentTable)}";
+        string childColumnsSql = string.Join(", ", normalizedChildColumns.Select(QuoteIdentifier));
+        string parentColumnsSql = string.Join(", ", normalizedParentColumns.Select(QuoteIdentifier));
+
+        return $"{constraintClause}FOREIGN KEY ({childColumnsSql}) REFERENCES {parentRef} ({parentColumnsSql}) ON DELETE {EmitReferentialAction(onDelete)} ON UPDATE {EmitReferentialAction(onUpdate)}";
+    }
+
     public string EmitCreateTable(
         string schemaName,
         string tableName,
@@ -200,7 +229,8 @@ public sealed class SqlServerDialect : ISqlDialect
         if (!ifNotExists)
             return createSql;
 
-        return $"IF OBJECT_ID(N'{schema}.{name}', N'U') IS NULL\nBEGIN\n    {createSql.Replace("\n", "\n    ")}\nEND;";
+        string tableObjectIdLiteral = BuildQualifiedNameLiteral(schema, name);
+        return $"IF OBJECT_ID({tableObjectIdLiteral}, N'U') IS NULL\nBEGIN\n    {createSql.Replace("\n", "\n    ")}\nEND;";
     }
 
     public string? EmitTableComment(string schemaName, string tableName, string? comment)
@@ -211,14 +241,16 @@ public sealed class SqlServerDialect : ISqlDialect
         string schema = NormalizeSchema(schemaName);
         string table = NormalizeName(tableName, "table");
         string escaped = EscapeSqlLiteral(comment);
+        string escapedSchema = EscapeSqlLiteral(schema);
+        string escapedTable = EscapeSqlLiteral(table);
 
         return
             "EXEC sys.sp_addextendedproperty @name=N'MS_Description', "
             + $"@value=N'{escaped}', "
             + "@level0type=N'Schema', "
-            + $"@level0name=N'{schema}', "
+            + $"@level0name=N'{escapedSchema}', "
             + "@level1type=N'Table', "
-            + $"@level1name=N'{table}';";
+            + $"@level1name=N'{escapedTable}';";
     }
 
     public string? EmitColumnComment(string schemaName, string tableName, string columnName, string? comment)
@@ -230,16 +262,19 @@ public sealed class SqlServerDialect : ISqlDialect
         string table = NormalizeName(tableName, "table");
         string column = NormalizeName(columnName, "column");
         string escaped = EscapeSqlLiteral(comment);
+        string escapedSchema = EscapeSqlLiteral(schema);
+        string escapedTable = EscapeSqlLiteral(table);
+        string escapedColumn = EscapeSqlLiteral(column);
 
         return
             "EXEC sys.sp_addextendedproperty @name=N'MS_Description', "
             + $"@value=N'{escaped}', "
             + "@level0type=N'Schema', "
-            + $"@level0name=N'{schema}', "
+            + $"@level0name=N'{escapedSchema}', "
             + "@level1type=N'Table', "
-            + $"@level1name=N'{table}', "
+            + $"@level1name=N'{escapedTable}', "
             + "@level2type=N'Column', "
-            + $"@level2name=N'{column}';";
+            + $"@level2name=N'{escapedColumn}';";
     }
 
     public string EmitCreateIndex(
@@ -281,8 +316,10 @@ public sealed class SqlServerDialect : ISqlDialect
         if (!ifNotExists)
             return statement;
 
+        string escapedIndexName = EscapeSqlLiteral(idx);
+        string tableObjectIdLiteral = BuildQualifiedNameLiteral(schema, table);
         return
-            $"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'{idx}' AND object_id = OBJECT_ID(N'{schema}.{table}'))\nBEGIN\n    {statement}\nEND;";
+            $"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'{escapedIndexName}' AND object_id = OBJECT_ID({tableObjectIdLiteral}))\nBEGIN\n    {statement}\nEND;";
     }
 
     public string EmitCreateView(
@@ -302,7 +339,8 @@ public sealed class SqlServerDialect : ISqlDialect
         if (!orReplace)
             return $"CREATE VIEW {qualified} AS\n{body};";
 
-        return $"IF OBJECT_ID(N'{schema}.{view}', N'V') IS NOT NULL DROP VIEW {qualified};\nCREATE VIEW {qualified} AS\n{body};";
+        string viewObjectIdLiteral = BuildQualifiedNameLiteral(schema, view);
+        return $"IF OBJECT_ID({viewObjectIdLiteral}, N'V') IS NOT NULL DROP VIEW {qualified};\nCREATE VIEW {qualified} AS\n{body};";
     }
 
     public string EmitAlterView(
@@ -335,8 +373,10 @@ public sealed class SqlServerDialect : ISqlDialect
         if (!ifExists)
             return drop;
 
+        string escapedColumn = EscapeSqlLiteral(column);
+        string tableObjectIdLiteral = BuildQualifiedNameLiteral(schema, table);
         return
-            $"IF EXISTS (SELECT 1 FROM sys.columns WHERE Name = N'{column}' AND Object_ID = Object_ID(N'{schema}.{table}'))\nBEGIN\n    {drop}\nEND;";
+            $"IF EXISTS (SELECT 1 FROM sys.columns WHERE Name = N'{escapedColumn}' AND Object_ID = Object_ID({tableObjectIdLiteral}))\nBEGIN\n    {drop}\nEND;";
     }
 
     public string EmitAlterTableRenameColumn(string schemaName, string tableName, string oldName, string newName)
@@ -345,7 +385,9 @@ public sealed class SqlServerDialect : ISqlDialect
         string table = NormalizeName(tableName, "table");
         string oldColumn = NormalizeName(oldName, "old column");
         string newColumn = NormalizeName(newName, "new column");
-        return $"EXEC sp_rename N'{schema}.{table}.{oldColumn}', N'{newColumn}', 'COLUMN';";
+        string oldColumnLiteral = BuildQualifiedNameLiteral(schema, table, oldColumn);
+        string newColumnLiteral = EscapeSqlLiteral(newColumn);
+        return $"EXEC sp_rename {oldColumnLiteral}, N'{newColumnLiteral}', 'COLUMN';";
     }
 
     public string EmitAlterTableRenameTable(string schemaName, string tableName, string newName, string? newSchema)
@@ -353,7 +395,9 @@ public sealed class SqlServerDialect : ISqlDialect
         string schema = NormalizeSchema(schemaName);
         string table = NormalizeName(tableName, "table");
         string targetTable = NormalizeName(newName, "new table");
-        string renameSql = $"EXEC sp_rename N'{schema}.{table}', N'{targetTable}', 'OBJECT';";
+        string tableLiteral = BuildQualifiedNameLiteral(schema, table);
+        string escapedTargetTable = EscapeSqlLiteral(targetTable);
+        string renameSql = $"EXEC sp_rename {tableLiteral}, N'{escapedTargetTable}', 'OBJECT';";
 
         if (string.IsNullOrWhiteSpace(newSchema))
             return renameSql;
@@ -373,7 +417,8 @@ public sealed class SqlServerDialect : ISqlDialect
         if (!ifExists)
             return $"DROP TABLE {qualified};";
 
-        return $"IF OBJECT_ID(N'{schema}.{table}', N'U') IS NOT NULL DROP TABLE {qualified};";
+        string tableObjectIdLiteral = BuildQualifiedNameLiteral(schema, table);
+        return $"IF OBJECT_ID({tableObjectIdLiteral}, N'U') IS NOT NULL DROP TABLE {qualified};";
     }
 
     public string EmitAlterTableAlterColumnType(
@@ -412,6 +457,30 @@ public sealed class SqlServerDialect : ISqlDialect
             ? throw new InvalidOperationException($"{label} is required.")
             : value.Trim();
 
+    private static string[] NormalizeConstraintColumns(IReadOnlyList<string> columns, string label)
+    {
+        var normalized = new string[columns.Count];
+        for (int i = 0; i < columns.Count; i++)
+        {
+            string value = columns[i];
+            if (string.IsNullOrWhiteSpace(value))
+                throw new InvalidOperationException($"{label} columns must not contain blank names.");
+            normalized[i] = value.Trim();
+        }
+
+        return normalized;
+    }
+
+    private static string EmitReferentialAction(ReferentialAction action) =>
+        action switch
+        {
+            ReferentialAction.Cascade => "CASCADE",
+            ReferentialAction.SetNull => "SET NULL",
+            ReferentialAction.SetDefault => "SET DEFAULT",
+            ReferentialAction.Restrict => "RESTRICT",
+            _ => "NO ACTION",
+        };
+
     private static string TrimTrailingSemicolon(string sql)
     {
         if (string.IsNullOrWhiteSpace(sql))
@@ -421,4 +490,7 @@ public sealed class SqlServerDialect : ISqlDialect
     }
 
     private static string EscapeSqlLiteral(string value) => value.Replace("'", "''");
+
+    private static string BuildQualifiedNameLiteral(params string[] parts) =>
+        $"N'{EscapeSqlLiteral(string.Join('.', parts))}'";
 }

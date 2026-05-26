@@ -29,14 +29,7 @@ public sealed class CanvasTableTracker : ICanvasTableTracker
             if (_tables.Remove(normalized))
                 return true;
 
-            if (normalized.Contains('.', StringComparison.Ordinal))
-                return false;
-
-            string suffix = "." + normalized;
-            string[] matches = _tables
-                .Where(table => table.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-
+            string[] matches = ResolveEquivalentMatches(normalized);
             if (matches.Length != 1)
                 return false;
 
@@ -52,11 +45,7 @@ public sealed class CanvasTableTracker : ICanvasTableTracker
             if (_tables.Contains(normalized))
                 return true;
 
-            if (normalized.Contains('.', StringComparison.Ordinal))
-                return false;
-
-            string suffix = "." + normalized;
-            return _tables.Any(table => table.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+            return ResolveEquivalentMatches(normalized).Length > 0;
         }
     }
 
@@ -79,5 +68,39 @@ public sealed class CanvasTableTracker : ICanvasTableTracker
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fullTableName);
         return fullTableName.Trim();
+    }
+
+    private string[] ResolveEquivalentMatches(string normalized)
+    {
+        if (_tables.Count == 0)
+            return [];
+
+        bool isQualified = normalized.Contains('.', StringComparison.Ordinal);
+        string tableOnly = ExtractTableName(normalized);
+
+        if (!isQualified)
+        {
+            string suffix = "." + normalized;
+            return _tables
+                .Where(table =>
+                    table.Equals(normalized, StringComparison.OrdinalIgnoreCase)
+                    || table.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        return _tables
+            .Where(table =>
+                table.Equals(normalized, StringComparison.OrdinalIgnoreCase)
+                || (!table.Contains('.', StringComparison.Ordinal)
+                    && table.Equals(tableOnly, StringComparison.OrdinalIgnoreCase)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static string ExtractTableName(string fullTableName)
+    {
+        int lastDot = fullTableName.LastIndexOf('.');
+        return lastDot < 0 ? fullTableName : fullTableName[(lastDot + 1)..];
     }
 }

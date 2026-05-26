@@ -55,10 +55,13 @@ public sealed class MetadataService(
     ILogger<MetadataService>? logger = null,
     ICanvasTableTracker? canvasTableTracker = null,
     IJoinSuggestionEngine? joinSuggestionEngine = null,
-    IMetadataSnapshotCache? snapshotCache = null
+    IMetadataSnapshotCache? snapshotCache = null,
+    IDatabaseInspectorFactory? inspectorFactory = null,
+    Func<ConnectionConfig?>? connectionConfigResolver = null,
+    ConnectionConfig? initialInspectorBindingConfig = null
 ) : IDisposable
 {
-    private readonly IDatabaseInspector _inspector =
+    private IDatabaseInspector _inspector =
         inspector ?? throw new ArgumentNullException(nameof(inspector));
     private readonly ILogger<MetadataService> _logger =
         logger ?? NullLogger<MetadataService>.Instance;
@@ -67,6 +70,12 @@ public sealed class MetadataService(
         joinSuggestionEngine ?? new AutoJoinSuggestionEngine();
     private readonly IMetadataSnapshotCache _snapshotCache =
         snapshotCache ?? new MetadataSnapshotCache(MetadataServiceOptions.ResolveEffectiveCacheTtl(options));
+    private readonly IDatabaseInspectorFactory? _inspectorFactory = inspectorFactory;
+    private readonly Func<ConnectionConfig?>? _connectionConfigResolver = connectionConfigResolver;
+    private readonly object _inspectorSync = new();
+    private string? _inspectorBindingKey = initialInspectorBindingConfig is null
+        ? null
+        : BuildInspectorBindingKey(initialInspectorBindingConfig);
 
     private bool _disposed;
 
@@ -103,17 +112,20 @@ public sealed class MetadataService(
         CancellationToken ct = default
     )
     {
+        EnsureInspectorForActiveConnection();
+
         return await _snapshotCache.GetOrLoadAsync(
             async loadCt =>
             {
+                IDatabaseInspector activeInspector = _inspector;
                 _logger.LogInformation(
                     "[MetadataService] Introspecting {Provider} — {Db}",
-                    _inspector.Provider,
+                    activeInspector.Provider,
                     "(live)"
                 );
 
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                DbMetadata metadata = await _inspector.InspectAsync(loadCt);
+                DbMetadata metadata = await activeInspector.InspectAsync(loadCt);
                 sw.Stop();
 
                 _logger.LogInformation(
@@ -143,7 +155,9 @@ public sealed class MetadataService(
         CancellationToken ct = default
     )
     {
-        TableMetadata fresh = await _inspector.InspectTableAsync(schema, table, ct);
+        EnsureInspectorForActiveConnection();
+        IDatabaseInspector activeInspector = _inspector;
+        TableMetadata fresh = await activeInspector.InspectTableAsync(schema, table, ct);
 
         _snapshotCache.ReplaceTable(fresh);
 
@@ -236,6 +250,44 @@ public sealed class MetadataService(
         _snapshotCache.Invalidate();
         _logger.LogDebug("[MetadataService] Cache invalidated.");
     }
+
+    private void EnsureInspectorForActiveConnection()
+    {
+        if (_inspectorFactory is null || _connectionConfigResolver is null)
+            return;
+
+        ConnectionConfig? activeConfig = _connectionConfigResolver();
+        if (activeConfig is null)
+            return;
+
+        string targetBindingKey = BuildInspectorBindingKey(activeConfig);
+        if (string.Equals(_inspectorBindingKey, targetBindingKey, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        lock (_inspectorSync)
+        {
+            if (string.Equals(_inspectorBindingKey, targetBindingKey, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            _inspector = _inspectorFactory.Create(activeConfig);
+            _inspectorBindingKey = targetBindingKey;
+            _snapshotCache.Invalidate();
+            _logger.LogDebug(
+                "[MetadataService] Active connection changed; inspector rebound to {Provider} {Host}:{Port}/{Database} and cache invalidated.",
+                activeConfig.Provider,
+                activeConfig.Host,
+                activeConfig.Port,
+                activeConfig.Database);
+        }
+    }
+
+    private static string BuildInspectorBindingKey(ConnectionConfig config) =>
+        string.Join(
+            "|",
+            config.Provider,
+            config.Host ?? string.Empty,
+            config.Port,
+            config.Database ?? string.Empty);
 
     public void Dispose()
     {

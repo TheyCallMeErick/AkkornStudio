@@ -325,6 +325,57 @@ public class ConnectionManagerUxStateTests
     }
 
     [Fact]
+    public async Task LoadDatabaseTablesAsync_WhenConnectActivationIsStale_DoesNotApplyResult()
+    {
+        var profile = new ConnectionProfile
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = "Local",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db",
+            Username = "u",
+            Password = "p",
+        };
+        ConnectionConfig config = profile.ToConnectionConfig();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var activationWorkflow = new DelayedActivationWorkflow(
+            gate.Task,
+            new ConnectionActivationResult(
+                Outcome: ConnectionActivationOutcome.Connected,
+                Config: config,
+                Metadata: BuildMetadata(),
+                ShouldOpenClearCanvasPrompt: false));
+
+        var vm = new ConnectionManagerViewModel(activationWorkflow: activationWorkflow)
+        {
+            IsVisible = true,
+            SearchMenu = new SearchMenuViewModel(),
+            Canvas = null,
+        };
+        SetPrivateField(vm, "_connectActivationVersion", 1L);
+
+        MethodInfo method = typeof(ConnectionManagerViewModel)
+            .GetMethod(
+                "LoadDatabaseTablesAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                types: [typeof(ConnectionProfile), typeof(CancellationToken), typeof(bool), typeof(long?)],
+                modifiers: null
+            )!;
+
+        Task run = (Task)method.Invoke(vm, [profile, CancellationToken.None, false, 1L])!;
+        SetPrivateField(vm, "_connectActivationVersion", 2L);
+        gate.SetResult();
+        await run;
+
+        Assert.Equal(1, activationWorkflow.CallCount);
+        Assert.Null(vm.ActiveProfileId);
+        Assert.True(vm.IsVisible);
+    }
+
+    [Fact]
     public void ConnectionPickerSearchQuery_FiltersCardsByDatabaseAndConnectionName()
     {
         var vm = new ConnectionManagerViewModel();
@@ -510,6 +561,32 @@ public class ConnectionManagerUxStateTests
             _ = ct;
             CallCount++;
             return Task.FromResult(_result);
+        }
+    }
+
+    private sealed class DelayedActivationWorkflow(
+        Task gate,
+        ConnectionActivationResult result) : IConnectionActivationWorkflow
+    {
+        private readonly Task _gate = gate;
+        private readonly ConnectionActivationResult _result = result;
+        public int CallCount { get; private set; }
+
+        public async Task<ConnectionActivationResult> ExecuteAsync(
+            ConnectionProfile profile,
+            SearchMenuViewModel? searchMenu,
+            CanvasViewModel? canvas,
+            Func<ConnectionConfig, SearchMenuViewModel, CancellationToken, Task<DbMetadata?>> loadMetadataAsync,
+            CancellationToken ct)
+        {
+            _ = profile;
+            _ = searchMenu;
+            _ = canvas;
+            _ = loadMetadataAsync;
+            _ = ct;
+            CallCount++;
+            await _gate;
+            return _result;
         }
     }
 

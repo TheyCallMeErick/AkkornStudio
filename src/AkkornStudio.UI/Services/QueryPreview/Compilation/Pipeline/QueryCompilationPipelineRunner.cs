@@ -87,6 +87,8 @@ internal sealed class QueryCompilationPipelineRunner(
             _validationService.ValidateNotAndJsonNodes,
             _validationService.ValidateOutputSourceReachability,
             _validationService.ValidateSourceConflicts,
+            _validationService.ValidateImplicitCrossJoins,
+            _validationService.ValidateSelectStarProjection,
             _validationService.ValidatePaginationSettings,
             _validationService.ValidateQueryHints,
             _validationService.ValidatePivotSettings).Create();

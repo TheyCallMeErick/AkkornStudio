@@ -19,15 +19,23 @@ public sealed class PostgresMetadataQueriesTests
     }
 
     [Fact]
-    public void GetColumnsQuery_RestrictsFkJoinBySchemaAndTable()
+    public void GetColumnsQuery_UsesValidPkAliases_AndRestrictsFkJoinBySchemaAndTable()
     {
         string sql = _sut.GetColumnsQuery();
 
+        Assert.Contains("JOIN   pg_class pk_table", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("JOIN   pg_namespace pk_schema", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pk_schema.nspname = @schema", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pk_table.relname = @table", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("pg_class_schema.relname", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("pg_class_table.relname", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("fk_ref.table_schema = c.table_schema", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("fk_ref.table_name = c.table_name", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("fk_ref.column_name = c.column_name", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("fk_ref.fk_table AS fk_table", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("WHERE  fk.contype = 'f'", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("child_n.nspname = @schema", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("child_c.relname = @table", sql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

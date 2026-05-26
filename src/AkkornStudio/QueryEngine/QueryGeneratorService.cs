@@ -522,13 +522,15 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
         return [];
     }
 
-    private static IReadOnlyList<CteBinding> OrderCtesByDependencies(IReadOnlyList<CteBinding> ctes)
+    private IReadOnlyList<CteBinding> OrderCtesByDependencies(IReadOnlyList<CteBinding> ctes)
     {
         if (ctes.Count == 0)
             return ctes;
 
-        var byName = new Dictionary<string, CteBinding>(StringComparer.OrdinalIgnoreCase);
-        var originalOrder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        StringComparer identifierComparer = GetCteIdentifierComparer();
+
+        var byName = new Dictionary<string, CteBinding>(identifierComparer);
+        var originalOrder = new Dictionary<string, int>(identifierComparer);
 
         for (int i = 0; i < ctes.Count; i++)
         {
@@ -540,20 +542,20 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
 
         var adjacency = byName.Values.ToDictionary(
             c => c.Name,
-            _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            StringComparer.OrdinalIgnoreCase
+            _ => new HashSet<string>(identifierComparer),
+            identifierComparer
         );
         var inDegree = byName.Values.ToDictionary(
             c => c.Name,
             _ => 0,
-            StringComparer.OrdinalIgnoreCase
+            identifierComparer
         );
 
         foreach (CteBinding cte in byName.Values)
         {
-            foreach (string dep in GetCteDependencies(cte, byName.Keys))
+            foreach (string dep in GetCteDependencies(cte, byName.Keys, identifierComparer))
             {
-                if (dep.Equals(cte.Name, StringComparison.OrdinalIgnoreCase))
+                if (identifierComparer.Equals(dep, cte.Name))
                 {
                     if (!cte.Recursive)
                     {
@@ -562,6 +564,7 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
                         );
                     }
 
+                    ValidateRecursiveCteTermination(cte);
                     continue;
                 }
 
@@ -608,11 +611,12 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
 
     private static IReadOnlyList<string> GetCteDependencies(
         CteBinding cte,
-        IEnumerable<string> knownCteNames
+        IEnumerable<string> knownCteNames,
+        StringComparer identifierComparer
     )
     {
-        var known = new HashSet<string>(knownCteNames, StringComparer.OrdinalIgnoreCase);
-        var deps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var known = new HashSet<string>(knownCteNames, identifierComparer);
+        var deps = new HashSet<string>(identifierComparer);
 
         if (!string.IsNullOrWhiteSpace(cte.FromTable))
         {
@@ -640,6 +644,41 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
         return deps.ToList();
     }
 
+    private static void ValidateRecursiveCteTermination(CteBinding cte)
+    {
+        if (HasRecursiveTerminationGuard(cte.Graph))
+            return;
+
+        throw new InvalidOperationException(
+            $"Recursive CTE '{cte.Name}' references itself but has no explicit termination guard (WHERE/HAVING/QUALIFY or LIMIT).");
+    }
+
+    private static bool HasRecursiveTerminationGuard(NodeGraph graph)
+    {
+        if (graph.Limit is > 0)
+            return true;
+
+        if (graph.WhereConditions.Count > 0 || graph.Havings.Count > 0 || graph.Qualifies.Count > 0)
+            return true;
+
+        if (graph.Connections.Count == 0 || graph.Nodes.Count == 0)
+            return false;
+
+        HashSet<string> outputIds = graph.Nodes
+            .Where(node => node.Type == NodeType.ResultOutput)
+            .Select(node => node.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (outputIds.Count == 0)
+            return false;
+
+        return graph.Connections.Any(connection =>
+            outputIds.Contains(connection.ToNodeId)
+            && (connection.ToPinName.Equals("where", StringComparison.OrdinalIgnoreCase)
+                || connection.ToPinName.Equals("having", StringComparison.OrdinalIgnoreCase)
+                || connection.ToPinName.Equals("qualify", StringComparison.OrdinalIgnoreCase)));
+    }
+
     private static string NormalizeFromReferenceName(string fromReference)
     {
         if (string.IsNullOrWhiteSpace(fromReference))
@@ -664,6 +703,13 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
         }
 
         return firstToken;
+    }
+
+    private StringComparer GetCteIdentifierComparer()
+    {
+        return _provider == DatabaseProvider.Postgres
+            ? StringComparer.Ordinal
+            : StringComparer.OrdinalIgnoreCase;
     }
 
     private string ApplyRecursiveCtePrefix(string sql, IReadOnlyList<CteBinding> ctes)

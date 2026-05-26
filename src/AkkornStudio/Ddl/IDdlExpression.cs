@@ -50,6 +50,27 @@ public sealed record DdlCompileResult(
     public bool HasErrors => Diagnostics.Any(d => d.Severity == DdlDiagnosticSeverity.Error);
 }
 
+internal static class DdlDropCascadePolicy
+{
+    public static string ApplyForDropAndCreate(DdlEmitContext context, string dropSql)
+    {
+        if (context.Provider != DatabaseProvider.Postgres)
+            return dropSql;
+
+        if (string.IsNullOrWhiteSpace(dropSql))
+            return dropSql;
+
+        string trimmed = dropSql.TrimEnd();
+        if (trimmed.Contains(" CASCADE", StringComparison.OrdinalIgnoreCase))
+            return dropSql;
+
+        if (trimmed.EndsWith(';'))
+            return $"{trimmed[..^1]} CASCADE;";
+
+        return $"{trimmed} CASCADE";
+    }
+}
+
 public sealed record DdlColumnExpr(
     string ColumnName,
     string DataType,
@@ -83,33 +104,38 @@ public sealed record DdlForeignKeyExpr(
         if (ChildColumns.Count == 0 || ParentColumns.Count == 0 || ChildColumns.Count != ParentColumns.Count)
             throw new InvalidOperationException("Foreign key requires child/parent columns with matching non-zero cardinality.");
 
-        var constraintClause = string.IsNullOrWhiteSpace(ConstraintName)
-            ? string.Empty
-            : $"CONSTRAINT {ConstraintName} ";
+        string parentTable = string.IsNullOrWhiteSpace(ParentTable)
+            ? throw new InvalidOperationException("Foreign key parent table is required.")
+            : ParentTable.Trim();
+        string? parentSchema = string.IsNullOrWhiteSpace(ParentSchema) ? null : ParentSchema.Trim();
 
-        var parentRef = string.IsNullOrWhiteSpace(ParentSchema)
-            ? ParentTable
-            : $"{ParentSchema}.{ParentTable}";
+        string[] childColumns = NormalizeConstraintColumns(ChildColumns, "Foreign key child");
+        string[] parentColumns = NormalizeConstraintColumns(ParentColumns, "Foreign key parent");
 
-        var onDeleteClause = $" ON DELETE {EmitAction(OnDelete)}";
-        var onUpdateClause = context.Provider == DatabaseProvider.SQLite
-            ? string.Empty
-            : $" ON UPDATE {EmitAction(OnUpdate)}";
-
-        string childColumnsSql = string.Join(", ", ChildColumns.Select(column => context.Dialect.QuoteIdentifier(column.Trim())));
-        string parentColumnsSql = string.Join(", ", ParentColumns.Select(column => context.Dialect.QuoteIdentifier(column.Trim())));
-        return $"{constraintClause}FOREIGN KEY ({childColumnsSql}) REFERENCES {parentRef} ({parentColumnsSql}){onDeleteClause}{onUpdateClause}";
+        return context.Dialect.EmitForeignKeyConstraint(
+            ConstraintName,
+            childColumns,
+            parentSchema ?? string.Empty,
+            parentTable,
+            parentColumns,
+            OnDelete,
+            OnUpdate);
     }
 
-    private static string EmitAction(ReferentialAction action) =>
-        action switch
+    private static string[] NormalizeConstraintColumns(IReadOnlyList<string> columns, string label)
+    {
+        var normalized = new string[columns.Count];
+        for (int i = 0; i < columns.Count; i++)
         {
-            ReferentialAction.Cascade => "CASCADE",
-            ReferentialAction.SetNull => "SET NULL",
-            ReferentialAction.SetDefault => "SET DEFAULT",
-            ReferentialAction.Restrict => "RESTRICT",
-            _ => "NO ACTION",
-        };
+            string value = columns[i];
+            if (string.IsNullOrWhiteSpace(value))
+                throw new InvalidOperationException($"{label} columns must not contain blank names.");
+            normalized[i] = value.Trim();
+        }
+
+        return normalized;
+    }
+
 }
 
 public sealed class CreateEnumTypeExpr(
@@ -147,7 +173,12 @@ public sealed class CreateEnumTypeExpr(
         };
 
         if (Mode == DdlIdempotentMode.DropAndCreate)
-            return $"DROP TYPE IF EXISTS {qualifiedType};\n{createSql}";
+        {
+            string dropSql = DdlDropCascadePolicy.ApplyForDropAndCreate(
+                context,
+                $"DROP TYPE IF EXISTS {qualifiedType};");
+            return dropSql + "\n" + createSql;
+        }
 
         return createSql;
     }
@@ -249,6 +280,7 @@ public sealed class CreateSequenceExpr(
             ? $"IF OBJECT_ID(N'{schema}.{seq}', N'SO') IS NOT NULL DROP SEQUENCE {qualified};"
             : $"DROP SEQUENCE IF EXISTS {qualified};";
 
+        dropSql = DdlDropCascadePolicy.ApplyForDropAndCreate(context, dropSql);
         return dropSql + "\n" + createSql;
     }
 }
@@ -305,6 +337,7 @@ public sealed class CreateTableAsExpr(
             return baseSql;
 
         string dropSql = context.Dialect.EmitAlterTableDropTable(schema, TableName.Trim(), ifExists: true);
+        dropSql = DdlDropCascadePolicy.ApplyForDropAndCreate(context, dropSql);
         return dropSql + "\n" + baseSql;
     }
 }
@@ -567,6 +600,8 @@ public sealed class CreateTableExpr(
 
     public string Emit(DdlEmitContext context)
     {
+        ValidateConstraintColumns();
+
         List<string> columnFragments =
         [
             .. Columns
@@ -612,7 +647,65 @@ public sealed class CreateTableExpr(
             return createWithExtras;
 
         string dropSql = context.Dialect.EmitAlterTableDropTable(SchemaName, TableName, ifExists: true);
+        dropSql = DdlDropCascadePolicy.ApplyForDropAndCreate(context, dropSql);
         return dropSql + "\n" + createWithExtras;
+    }
+
+    private void ValidateConstraintColumns()
+    {
+        HashSet<string> declaredColumns = Columns
+            .Select(c => c.ColumnName?.Trim())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Cast<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        ValidateDeclaredColumnUniqueness();
+
+        foreach (DdlPrimaryKeyExpr pk in PrimaryKeys)
+            ValidateConstraintColumnSet(pk.Columns, declaredColumns, "PRIMARY KEY");
+
+        foreach (DdlUniqueExpr unique in Uniques)
+            ValidateConstraintColumnSet(unique.Columns, declaredColumns, "UNIQUE");
+
+        foreach (DdlForeignKeyExpr fk in ForeignKeys)
+            ValidateConstraintColumnSet(fk.ChildColumns, declaredColumns, "FOREIGN KEY");
+    }
+
+    private void ValidateDeclaredColumnUniqueness()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (DdlColumnExpr column in Columns)
+        {
+            string normalized = string.IsNullOrWhiteSpace(column.ColumnName)
+                ? throw new InvalidOperationException("CREATE TABLE contains a column with blank name.")
+                : column.ColumnName.Trim();
+
+            if (!seen.Add(normalized))
+                throw new InvalidOperationException($"CREATE TABLE contains duplicate column '{normalized}'.");
+        }
+    }
+
+    private static void ValidateConstraintColumnSet(
+        IReadOnlyList<string> columns,
+        HashSet<string> declaredColumns,
+        string constraintKind)
+    {
+        if (columns.Count == 0)
+            throw new InvalidOperationException($"{constraintKind} requires at least one column.");
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string rawColumn in columns)
+        {
+            string column = string.IsNullOrWhiteSpace(rawColumn)
+                ? throw new InvalidOperationException($"{constraintKind} contains a blank column name.")
+                : rawColumn.Trim();
+
+            if (!seen.Add(column))
+                throw new InvalidOperationException($"{constraintKind} contains duplicate column '{column}'.");
+
+            if (!declaredColumns.Contains(column))
+                throw new InvalidOperationException($"{constraintKind} references unknown column '{column}'.");
+        }
     }
 }
 
@@ -654,6 +747,7 @@ public sealed class CreateViewExpr(
                 _ => $"DROP VIEW IF EXISTS {qualified};",
             };
 
+            dropSql = DdlDropCascadePolicy.ApplyForDropAndCreate(context, dropSql);
             string createSql = context.Dialect.EmitCreateView(SchemaName, ViewName, false, IsMaterialized, SelectSql);
             return dropSql + "\n" + createSql;
         }

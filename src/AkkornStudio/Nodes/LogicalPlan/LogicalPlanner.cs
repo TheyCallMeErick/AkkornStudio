@@ -170,8 +170,25 @@ public sealed class LogicalPlanner(NodeGraph graph, EmitContext emitContext)
                 $"Join node '{joinNode.Id}' requires an explicit condition for join type '{kind}'.");
 
         string opRaw = joinNode.Parameters.GetValueOrDefault("operator") ?? "=";
-        ComparisonOperator op = opRaw.Trim() switch
+        if (!TryParseJoinOperator(opRaw, out ComparisonOperator op))
         {
+            throw new PlanningException(
+                joinNode.Id,
+                PlannerErrorKind.InvalidJoinOperator,
+                $"Join node '{joinNode.Id}' contains unsupported operator '{opRaw}'.");
+        }
+
+        ISqlExpression left = ParseColumnExpression(leftExprRaw!, fallbackAlias: ResolveDatasetAlias(_graph.NodeMap[leftSourceId]));
+        ISqlExpression right = ParseColumnExpression(rightExprRaw!, fallbackAlias: rightAlias);
+        return new ComparisonExpr(left, op, right);
+    }
+
+    private static bool TryParseJoinOperator(string rawOperator, out ComparisonOperator op)
+    {
+        string normalized = (rawOperator ?? string.Empty).Trim().ToUpperInvariant();
+        op = normalized switch
+        {
+            "=" => ComparisonOperator.Eq,
             "<>" or "!=" => ComparisonOperator.Neq,
             ">" => ComparisonOperator.Gt,
             ">=" => ComparisonOperator.Gte,
@@ -179,12 +196,10 @@ public sealed class LogicalPlanner(NodeGraph graph, EmitContext emitContext)
             "<=" => ComparisonOperator.Lte,
             "LIKE" => ComparisonOperator.Like,
             "NOT LIKE" => ComparisonOperator.NotLike,
-            _ => ComparisonOperator.Eq,
+            _ => default,
         };
 
-        ISqlExpression left = ParseColumnExpression(leftExprRaw!, fallbackAlias: ResolveDatasetAlias(_graph.NodeMap[leftSourceId]));
-        ISqlExpression right = ParseColumnExpression(rightExprRaw!, fallbackAlias: rightAlias);
-        return new ComparisonExpr(left, op, right);
+        return normalized is "=" or "<>" or "!=" or ">" or ">=" or "<" or "<=" or "LIKE" or "NOT LIKE";
     }
 
     private static ISqlExpression ParseColumnExpression(string raw, string fallbackAlias)

@@ -93,6 +93,68 @@ public class ConnectionValidationServiceTests
         Assert.Empty(result.Errors);
     }
 
+    [Fact]
+    public void Validate_WhenSqlServerTrustServerCertificateEnabled_ReturnsSecurityWarning()
+    {
+        var service = new ConnectionValidationService();
+        ProviderCapabilityDto capability = BuildSqlServerCapability();
+        var details = new ConnectionDetailsDto(
+            Id: Guid.NewGuid().ToString(),
+            Name: "SqlServer Local",
+            Provider: "SqlServer",
+            Mode: ConnectionProviderModeDto.Fields,
+            FieldValues: new Dictionary<string, string?>
+            {
+                [ConnectionContractMapper.HostKey] = "localhost",
+                [ConnectionContractMapper.PortKey] = "1433",
+                [ConnectionContractMapper.DatabaseKey] = "db",
+                [ConnectionContractMapper.UsernameKey] = "user",
+                [ConnectionContractMapper.TimeoutSecondsKey] = "30",
+                [ConnectionContractMapper.UseIntegratedSecurityKey] = "false",
+                [ConnectionContractMapper.TrustServerCertificateKey] = "true",
+            },
+            UrlValue: null,
+            Tag: null,
+            IsFavorite: false,
+            AdvancedOptions: new Dictionary<string, string?>());
+
+        ConnectionValidationResultDto result = service.Validate(details, capability);
+
+        Assert.True(result.IsValid);
+        Assert.Contains(result.Warnings, w => w.FieldKey == ConnectionContractMapper.TrustServerCertificateKey);
+    }
+
+    [Fact]
+    public void Validate_WhenSqlServerTrustServerCertificateDisabled_DoesNotEmitTrustWarning()
+    {
+        var service = new ConnectionValidationService();
+        ProviderCapabilityDto capability = BuildSqlServerCapability();
+        var details = new ConnectionDetailsDto(
+            Id: Guid.NewGuid().ToString(),
+            Name: "SqlServer Local",
+            Provider: "SqlServer",
+            Mode: ConnectionProviderModeDto.Fields,
+            FieldValues: new Dictionary<string, string?>
+            {
+                [ConnectionContractMapper.HostKey] = "localhost",
+                [ConnectionContractMapper.PortKey] = "1433",
+                [ConnectionContractMapper.DatabaseKey] = "db",
+                [ConnectionContractMapper.UsernameKey] = "user",
+                [ConnectionContractMapper.TimeoutSecondsKey] = "30",
+                [ConnectionContractMapper.UseIntegratedSecurityKey] = "false",
+                [ConnectionContractMapper.TrustServerCertificateKey] = "false",
+            },
+            UrlValue: null,
+            Tag: null,
+            IsFavorite: false,
+            AdvancedOptions: new Dictionary<string, string?>());
+
+        ConnectionValidationResultDto result = service.Validate(details, capability);
+
+        Assert.True(result.IsValid);
+        Assert.DoesNotContain(result.Warnings, w => w.FieldKey == ConnectionContractMapper.TrustServerCertificateKey);
+    }
+
     private static ProviderCapabilityDto BuildPostgresCapability() =>
         new(
             Provider: "Postgres",
@@ -107,5 +169,20 @@ public class ConnectionValidationServiceTests
                 ConnectionContractMapper.PortKey,
                 ConnectionContractMapper.DatabaseKey,
                 ConnectionContractMapper.UsernameKey,
+            ]);
+
+    private static ProviderCapabilityDto BuildSqlServerCapability() =>
+        new(
+            Provider: "SqlServer",
+            SupportsUrlMode: true,
+            SupportsSsl: true,
+            SupportsIntegratedSecurity: true,
+            RequiresDatabase: true,
+            SupportedUrlSchemes: ["sqlserver", "mssql"],
+            RequiredFieldKeys:
+            [
+                ConnectionContractMapper.HostKey,
+                ConnectionContractMapper.PortKey,
+                ConnectionContractMapper.DatabaseKey,
             ]);
 }

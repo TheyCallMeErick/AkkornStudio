@@ -40,6 +40,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     private const int DatabaseReadProbeLimit = 30;
     // Latency above this threshold is considered "Degraded" rather than "Online"
     private const double DegradedLatencyThresholdMs = 500.0;
+    private const int AutoReconnectCooldownSeconds = 15;
     // How often the background health monitor pings the active connection (seconds)
     // Value is defined in AppConstants.HealthCheckIntervalSeconds
 
@@ -659,6 +660,9 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     private CancellationTokenSource? _healthMonitorCts;
     private CancellationTokenSource? _connectCts;
     private CancellationTokenSource? _wizardStepAdvanceCts;
+    private long _connectActivationVersion;
+    private bool _isAutoReconnectInProgress;
+    private DateTimeOffset _lastAutoReconnectAttemptUtc = DateTimeOffset.MinValue;
 
     // ── Provider list for ComboBox ────────────────────────────────────────────
 
@@ -1117,8 +1121,9 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         _connectCts = state.ConnectCts;
         IsConnecting = state.IsConnecting;
         ApplyTestStatus(_statusPresenter.Connecting());
+        long activationVersion = Interlocked.Increment(ref _connectActivationVersion);
         // Load database tables into the search menu in the background
-        StartLoadDatabaseTablesSafe(state.Profile, _connectCts!.Token);
+        StartLoadDatabaseTablesSafe(state.Profile, _connectCts!.Token, activationVersion);
     }
 
     private void ConnectOrOpenManager()
@@ -1208,12 +1213,30 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     /// 4. Resets the canvas to show the new database
     /// </summary>
     private Task LoadDatabaseTablesAsync(ConnectionProfile profile)
-        => LoadDatabaseTablesAsync(profile, CancellationToken.None);
+        => LoadDatabaseTablesAsync(
+            profile,
+            CancellationToken.None,
+            suppressClearCanvasPrompt: false,
+            expectedActivationVersion: null);
 
-    private async Task LoadDatabaseTablesAsync(ConnectionProfile profile, CancellationToken ct)
+    private Task LoadDatabaseTablesAsync(ConnectionProfile profile, CancellationToken ct)
+        => LoadDatabaseTablesAsync(
+            profile,
+            ct,
+            suppressClearCanvasPrompt: false,
+            expectedActivationVersion: null);
+
+    private async Task LoadDatabaseTablesAsync(
+        ConnectionProfile profile,
+        CancellationToken ct,
+        bool suppressClearCanvasPrompt,
+        long? expectedActivationVersion)
     {
         try
         {
+            if (IsStaleConnectActivation(expectedActivationVersion))
+                return;
+
             SearchMenuViewModel? searchMenu = SearchMenu;
             if (searchMenu is null)
             {
@@ -1234,10 +1257,14 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
                 },
                 ct);
 
+            if (IsStaleConnectActivation(expectedActivationVersion))
+                return;
+
             switch (result.Outcome)
             {
                 case ConnectionActivationOutcome.Connected:
-                    if (Canvas is not null
+                    if (!suppressClearCanvasPrompt
+                        && Canvas is not null
                         && result.ShouldOpenClearCanvasPrompt
                         && result.Metadata is not null
                         && result.Config is not null)
@@ -1290,7 +1317,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         }
         finally
         {
-            IsConnecting = false;
+            if (!IsStaleConnectActivation(expectedActivationVersion))
+                IsConnecting = false;
         }
     }
 
@@ -1373,8 +1401,14 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     private void StartReloadMetadataSafe() =>
         _ = _fireAndForgetSafetyExecutor.ExecuteSafeAsync(ReloadMetadataAsync, "reload metadata");
 
-    private void StartLoadDatabaseTablesSafe(ConnectionProfile profile, CancellationToken ct) =>
-        _ = _fireAndForgetSafetyExecutor.ExecuteSafeAsync(() => LoadDatabaseTablesAsync(profile, ct), "load database tables");
+    private void StartLoadDatabaseTablesSafe(ConnectionProfile profile, CancellationToken ct, long activationVersion) =>
+        _ = _fireAndForgetSafetyExecutor.ExecuteSafeAsync(
+            () => LoadDatabaseTablesAsync(
+                profile,
+                ct,
+                suppressClearCanvasPrompt: false,
+                expectedActivationVersion: activationVersion),
+            "load database tables");
 
     private void StartHealthMonitorLoopSafe(CancellationToken token) =>
         _ = _fireAndForgetSafetyExecutor.ExecuteSafeAsync(() => HealthMonitorLoopAsync(token), "health monitor loop");
@@ -1390,12 +1424,58 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         if (profile is not null)
             await RefreshActiveLatencyAsync(profile, ct);
 
-        ActiveHealthStatus = await _healthLifecycleCoordinator.EvaluateActiveStatusAsync(
+        ConnectionHealthStatus evaluatedStatus = await _healthLifecycleCoordinator.EvaluateActiveStatusAsync(
             Profiles,
             _activeProfileId,
             _connectionTestExecutor.ExecuteAsync,
             DegradedLatencyThresholdMs,
             ct);
+
+        ActiveHealthStatus = evaluatedStatus;
+
+        if (evaluatedStatus == ConnectionHealthStatus.Offline && profile is not null)
+            await TryAutoReconnectAfterOfflineAsync(profile, ct);
+    }
+
+    private async Task TryAutoReconnectAfterOfflineAsync(ConnectionProfile profile, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested
+            || _isAutoReconnectInProgress
+            || IsConnecting
+            || IsReloadingSchema)
+        {
+            return;
+        }
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (now - _lastAutoReconnectAttemptUtc < TimeSpan.FromSeconds(AutoReconnectCooldownSeconds))
+            return;
+
+        _isAutoReconnectInProgress = true;
+        _lastAutoReconnectAttemptUtc = now;
+        _logger.LogInformation(
+            "Health check reported offline for profile {ProfileId}; attempting automatic reconnect.",
+            profile.Id);
+
+        try
+        {
+            IsConnecting = true;
+            await LoadDatabaseTablesAsync(
+                profile,
+                ct,
+                suppressClearCanvasPrompt: true,
+                expectedActivationVersion: null);
+        }
+        finally
+        {
+            _isAutoReconnectInProgress = false;
+        }
+    }
+
+    private bool IsStaleConnectActivation(long? expectedActivationVersion)
+    {
+        return expectedActivationVersion is long expected
+            && expected != Interlocked.Read(ref _connectActivationVersion);
     }
 
     private async Task RefreshActiveLatencyAsync(ConnectionProfile profile, CancellationToken ct = default)

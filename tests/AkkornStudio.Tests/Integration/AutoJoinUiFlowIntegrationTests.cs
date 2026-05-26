@@ -65,6 +65,27 @@ public class AutoJoinUiFlowIntegrationTests
         Assert.Equal(2, ctx.Connections.Count(c => c.ToPin?.Owner?.Type == NodeType.Join));
     }
 
+    [Fact]
+    public void RunSelectedAutoJoin_AfterSuggestionsToastDismissed_ReopensCachedSuggestionsWithoutReaddingTable()
+    {
+        var ctx = CreateControllerContext(
+            CreateTable("public.orders", ("id", PinDataType.Number), ("customer_id", PinDataType.Number)),
+            CreateTable("public.customers", ("id", PinDataType.Number))
+        );
+
+        ctx.Controller.TriggerAutoJoinAnalysis("public.orders");
+        Assert.True(ctx.Toasts.IsVisible);
+
+        ctx.Toasts.DismissCommand.Execute(null);
+        Assert.False(ctx.Toasts.IsVisible);
+
+        ctx.Controller.RunSelectedAutoJoin();
+
+        Assert.True(ctx.ManualJoinDialog.IsVisible);
+        Assert.Contains(ctx.ManualJoinDialog.LeftTableLabel, new[] { "public.orders", "public.customers" });
+        Assert.Contains(ctx.ManualJoinDialog.RightTableLabel, new[] { "public.orders", "public.customers" });
+    }
+
     private static (CanvasAutoJoinController Controller, NodeViewModel First, NodeViewModel Second, ObservableCollection<NodeViewModel> Nodes, ObservableCollection<ConnectionViewModel> Connections, ManualJoinDialogViewModel ManualJoinDialog, ToastCenterViewModel Toasts) CreateControllerContext(
         NodeViewModel first,
         NodeViewModel second)

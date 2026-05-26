@@ -72,6 +72,45 @@ public class CanvasViewModelLoadTemplateTests
         Assert.NotEmpty(canvas.Connections);
     }
 
+    [Fact]
+    public async Task LoadTemplate_WhenSubEditorHasUnsavedChanges_KeepsEditorSessionAndBlocksTemplateLoad()
+    {
+        var canvas = new CanvasViewModel();
+        canvas.Nodes.Clear();
+        canvas.Connections.Clear();
+        canvas.UndoRedo.Clear();
+
+        NodeViewModel table = new("public.orders", [("id", PinDataType.Number)], new Point(0, 0));
+        NodeViewModel columns = new(NodeDefinitionRegistry.Get(NodeType.ColumnList), new Point(130, 0));
+        NodeViewModel result = new(NodeDefinitionRegistry.Get(NodeType.ResultOutput), new Point(260, 0));
+        NodeViewModel cte = new(NodeDefinitionRegistry.Get(NodeType.CteDefinition), new Point(400, 0));
+        cte.Parameters["name"] = "orders_cte";
+
+        canvas.Nodes.Add(table);
+        canvas.Nodes.Add(columns);
+        canvas.Nodes.Add(result);
+        canvas.Nodes.Add(cte);
+
+        Connect(canvas, table, "id", columns, "columns");
+        Connect(canvas, columns, "result", result, "columns");
+        Connect(canvas, result, "result", cte, "query");
+
+        Assert.True(await canvas.EnterCteEditorAsync(cte));
+        Assert.True(canvas.IsInCteEditor);
+
+        NodeViewModel editedNode = canvas.SpawnNode(NodeDefinitionRegistry.Get(NodeType.Equals), new Point(420, 220));
+        Assert.True(canvas.IsDirty);
+
+        int diagnosticsBefore = canvas.Diagnostics.SnapshotEntries().Count;
+
+        QueryTemplate template = QueryTemplateLibrary.All.First(t => t.Name == "Simple SELECT");
+        canvas.LoadTemplate(template);
+
+        Assert.True(canvas.IsInCteEditor);
+        Assert.Contains(canvas.Nodes, node => node.Id == editedNode.Id);
+        Assert.True(canvas.Diagnostics.SnapshotEntries().Count > diagnosticsBefore);
+    }
+
     private static void Connect(
         CanvasViewModel canvas,
         NodeViewModel fromNode,
@@ -87,4 +126,3 @@ public class CanvasViewModelLoadTemplateTests
         });
     }
 }
-

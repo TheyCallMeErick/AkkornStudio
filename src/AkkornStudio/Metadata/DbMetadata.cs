@@ -139,13 +139,16 @@ public record ForeignKeyRelation(
     /// in either direction.
     /// </summary>
     public bool Involves(string tableA, string tableB) =>
+        Involves(tableA, tableB, StringComparison.OrdinalIgnoreCase);
+
+    public bool Involves(string tableA, string tableB, StringComparison comparison) =>
         (
-            ChildFullTable.Equals(tableA, StringComparison.OrdinalIgnoreCase)
-            && ParentFullTable.Equals(tableB, StringComparison.OrdinalIgnoreCase)
+            ChildFullTable.Equals(tableA, comparison)
+            && ParentFullTable.Equals(tableB, comparison)
         )
         || (
-            ChildFullTable.Equals(tableB, StringComparison.OrdinalIgnoreCase)
-            && ParentFullTable.Equals(tableA, StringComparison.OrdinalIgnoreCase)
+            ChildFullTable.Equals(tableB, comparison)
+            && ParentFullTable.Equals(tableA, comparison)
         );
 
     /// <summary>
@@ -273,19 +276,27 @@ public record DbMetadata(
 {
     // ── Flat accessors (useful for the canvas and auto-join engine) ────────────
 
+    private StringComparison IdentifierComparison =>
+        Provider == DatabaseProvider.Postgres
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+
+    private StringComparer IdentifierComparer =>
+        Provider == DatabaseProvider.Postgres
+            ? StringComparer.Ordinal
+            : StringComparer.OrdinalIgnoreCase;
+
     public IEnumerable<TableMetadata> AllTables => Schemas.SelectMany(s => s.Tables);
 
     public TableMetadata? FindTable(string fullName) =>
-        AllTables.FirstOrDefault(t =>
-            t.FullName.Equals(fullName, StringComparison.OrdinalIgnoreCase)
-        );
+        AllTables.FirstOrDefault(t => t.FullName.Equals(fullName, IdentifierComparison));
 
     public IEnumerable<SequenceMetadata> AllSequences => Sequences ?? [];
 
     public TableMetadata? FindTable(string schema, string name) =>
         AllTables.FirstOrDefault(t =>
-            t.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase)
-            && t.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+            t.Schema.Equals(schema, IdentifierComparison)
+            && t.Name.Equals(name, IdentifierComparison)
         );
 
     /// <summary>
@@ -293,7 +304,7 @@ public record DbMetadata(
     /// and <paramref name="tableB"/> in either direction.
     /// </summary>
     public IReadOnlyList<ForeignKeyRelation> GetRelationsBetween(string tableA, string tableB) =>
-        AllForeignKeys.Where(r => r.Involves(tableA, tableB)).ToList();
+        AllForeignKeys.Where(r => r.Involves(tableA, tableB, IdentifierComparison)).ToList();
 
     /// <summary>
     /// Returns all FK relations that connect <paramref name="table"/> to any of
@@ -304,16 +315,16 @@ public record DbMetadata(
         IEnumerable<string> canvasTables
     )
     {
-        var set = new HashSet<string>(canvasTables, StringComparer.OrdinalIgnoreCase);
+        var set = new HashSet<string>(canvasTables, IdentifierComparer);
 
         return AllForeignKeys
             .Where(r =>
                 (
-                    r.ChildFullTable.Equals(table, StringComparison.OrdinalIgnoreCase)
+                    r.ChildFullTable.Equals(table, IdentifierComparison)
                     && set.Contains(r.ParentFullTable)
                 )
                 || (
-                    r.ParentFullTable.Equals(table, StringComparison.OrdinalIgnoreCase)
+                    r.ParentFullTable.Equals(table, IdentifierComparison)
                     && set.Contains(r.ChildFullTable)
                 )
             )
