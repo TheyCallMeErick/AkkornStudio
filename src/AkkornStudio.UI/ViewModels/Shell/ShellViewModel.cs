@@ -32,7 +32,7 @@ namespace AkkornStudio.UI.ViewModels;
 /// <summary>
 /// Coordinates the application shell flow between Start Menu and Canvas work area.
 /// </summary>
-public sealed class ShellViewModel : ViewModelBase
+public sealed class ShellViewModel : ViewModelBase, IDisposable
 {
     private const string ShellConnectionModalLogFile = "shell-connection-modal-debug.log";
     private const string AutoProjectionMarkerParameter = "__akkorn_auto_projection";
@@ -40,6 +40,16 @@ public sealed class ShellViewModel : ViewModelBase
     private const string AutoProjectionParentEntityParameter = "__akkorn_auto_projection_parent";
     private const string AutoProjectionChildColumnsParameter = "__akkorn_auto_projection_child_columns";
     private const string AutoProjectionParentColumnsParameter = "__akkorn_auto_projection_parent_columns";
+    private static readonly WorkspaceDocumentPageContract FallbackPageContract = new(
+        ShowsQueryCanvasPage: true,
+        ShowsDdlCanvasPage: false,
+        ShowsSqlEditorPage: false,
+        ShowsSchemaComparePage: false,
+        ShowsSchemaAnalysisPage: false,
+        ShowsDiagramSidebar: true,
+        ShowsSqlEditorSidebar: false,
+        ShowsQueryTabs: false,
+        CanCollapseSidebars: true);
 
     public enum AppMode
     {
@@ -110,6 +120,10 @@ public sealed class ShellViewModel : ViewModelBase
     private readonly SqlResultSessionService _sqlResultSessionService = new();
     private readonly QuickDataPreviewService _quickDataPreviewService = new();
     private SqlResultPageViewModel? _sqlResultPage;
+    private bool _disposed;
+    private readonly object _activationGate = new();
+    private bool _activationInProgress;
+    private WorkspaceDocumentType? _queuedActivationType;
 
     public ShellViewModel(
         CanvasViewModel? canvas = null,
@@ -212,14 +226,26 @@ public sealed class ShellViewModel : ViewModelBase
 
     public WorkspaceDocumentType? ActiveWorkspaceDocumentType => ActiveWorkspaceDocument?.Descriptor.DocumentType;
 
-    public WorkspaceDocumentPageContract ActivePageContract =>
-        _pageContractRegistry.Resolve(ActiveWorkspaceDocumentType ?? WorkspaceDocumentType.QueryCanvas);
+    public WorkspaceDocumentPageContract ActivePageContract => ResolveActivePageContract();
 
     public WorkspaceDocumentPreviewContract ActivePreviewContract =>
         _previewContractRegistry.Resolve(ActiveWorkspaceDocumentType ?? WorkspaceDocumentType.QueryCanvas);
 
     public WorkspaceDocumentDiagnosticsContract ActiveDiagnosticsContract =>
         _diagnosticsContractRegistry.Resolve(ActiveWorkspaceDocumentType ?? WorkspaceDocumentType.QueryCanvas);
+
+    private WorkspaceDocumentPageContract ResolveActivePageContract()
+    {
+        try
+        {
+            return _pageContractRegistry.Resolve(ActiveWorkspaceDocumentType ?? WorkspaceDocumentType.QueryCanvas);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ShellViewModel] Failed to resolve page contract: {ex}");
+            return FallbackPageContract;
+        }
+    }
 
     public bool IsQueryDocumentPageActive => ActiveWorkspaceDocumentType == WorkspaceDocumentType.QueryCanvas;
 
@@ -505,14 +531,18 @@ public sealed class ShellViewModel : ViewModelBase
 
         if (Canvas is null)
         {
-            Canvas = new CanvasViewModel(
-                nodeManager: null,
-                pinManager: null,
-                selectionManager: null,
-                localizationService: null,
-                domainStrategy: new QueryDomainStrategy(isDdlModeActiveResolver, importDdlTableAction),
-                toastCenter: Toasts,
-                connectionManagerFactory: _connectionManagerViewModelFactory);
+            Canvas = ResolveKnownQueryCanvas();
+            if (Canvas is null)
+            {
+                Canvas = new CanvasViewModel(
+                    nodeManager: null,
+                    pinManager: null,
+                    selectionManager: null,
+                    localizationService: null,
+                    domainStrategy: new QueryDomainStrategy(isDdlModeActiveResolver, importDdlTableAction),
+                    toastCenter: Toasts,
+                    connectionManagerFactory: _connectionManagerViewModelFactory);
+            }
             Canvas.ApplyProjectConventionSettings(_projectConventionSettings);
             BindPropertyPanelActions(Canvas);
         }
@@ -530,14 +560,18 @@ public sealed class ShellViewModel : ViewModelBase
 
         if (DdlCanvas is null)
         {
-            DdlCanvas = new CanvasViewModel(
-                nodeManager: null,
-                pinManager: null,
-                selectionManager: null,
-                localizationService: null,
-                domainStrategy: new DdlDomainStrategy(),
-                toastCenter: Toasts,
-                connectionManagerFactory: _connectionManagerViewModelFactory);
+            DdlCanvas = ResolveKnownDdlCanvas();
+            if (DdlCanvas is null)
+            {
+                DdlCanvas = new CanvasViewModel(
+                    nodeManager: null,
+                    pinManager: null,
+                    selectionManager: null,
+                    localizationService: null,
+                    domainStrategy: new DdlDomainStrategy(),
+                    toastCenter: Toasts,
+                    connectionManagerFactory: _connectionManagerViewModelFactory);
+            }
             DdlCanvas.ApplyProjectConventionSettings(_projectConventionSettings);
             BindPropertyPanelActions(DdlCanvas);
         }
@@ -556,6 +590,50 @@ public sealed class ShellViewModel : ViewModelBase
     }
 
     public void ActivateDocument(WorkspaceDocumentType documentType)
+    {
+        lock (_activationGate)
+        {
+            _queuedActivationType = documentType;
+            if (_activationInProgress)
+                return;
+
+            _activationInProgress = true;
+        }
+
+        try
+        {
+            while (true)
+            {
+                WorkspaceDocumentType nextActivation;
+                lock (_activationGate)
+                {
+                    nextActivation = _queuedActivationType ?? documentType;
+                    _queuedActivationType = null;
+                }
+
+                ActivateDocumentInternal(nextActivation);
+
+                lock (_activationGate)
+                {
+                    if (_queuedActivationType is not null)
+                        continue;
+
+                    _activationInProgress = false;
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            lock (_activationGate)
+            {
+                _queuedActivationType = null;
+                _activationInProgress = false;
+            }
+        }
+    }
+
+    private void ActivateDocumentInternal(WorkspaceDocumentType documentType)
     {
         if (documentType == WorkspaceDocumentType.ErDiagram && !CanActivateErDiagram())
             return;
@@ -697,6 +775,9 @@ public sealed class ShellViewModel : ViewModelBase
         if (!closed)
             return false;
 
+        if (_connectionModalOwnerDocumentId == documentId)
+            ClearConnectionModalRoute();
+
         if (_workspaceRouter.ActiveDocument is null)
             _ = OpenNewDocument(WorkspaceDocumentType.QueryCanvas);
 
@@ -714,44 +795,65 @@ public sealed class ShellViewModel : ViewModelBase
 
         var restoredDocuments = new List<OpenWorkspaceDocument>(workspace.Documents.Count);
         var restoredTypes = new HashSet<WorkspaceDocumentType>();
+        var warnings = new List<string>();
         foreach (SavedWorkspaceDocument savedDocument in workspace.Documents)
         {
             if (!Enum.TryParse(savedDocument.DocumentType, true, out WorkspaceDocumentType documentType))
-                continue;
-            if (!restoredTypes.Add(documentType))
-                continue;
-
-            object documentViewModel = documentType switch
             {
-                WorkspaceDocumentType.QueryCanvas => BuildCanvasDocument(savedDocument, isDdl: false),
-                WorkspaceDocumentType.DdlCanvas => BuildCanvasDocument(savedDocument, isDdl: true),
-                WorkspaceDocumentType.SqlEditor => BuildSqlEditorDocument(),
-                WorkspaceDocumentType.SqlResult => BuildSqlResultDocument(),
-                WorkspaceDocumentType.ErDiagram => BuildErDiagramDocument(),
-                WorkspaceDocumentType.DdlSchemaCompare => BuildDdlSchemaCompareDocument(),
-                WorkspaceDocumentType.DdlSchemaAnalysis => BuildDdlSchemaAnalysisDocument(),
-                _ => BuildCanvasDocument(savedDocument, isDdl: false),
-            };
+                warnings.Add($"Documento ignorado: tipo invalido '{savedDocument.DocumentType}'.");
+                continue;
+            }
+            if (!restoredTypes.Add(documentType))
+            {
+                warnings.Add($"Documento ignorado: tipo duplicado '{documentType}'.");
+                continue;
+            }
 
-            WorkspaceDocumentDescriptor descriptor = new(
-                DocumentId: savedDocument.DocumentId == Guid.Empty ? Guid.NewGuid() : savedDocument.DocumentId,
-                DocumentType: documentType,
-                Title: string.IsNullOrWhiteSpace(savedDocument.Title) ? documentType.ToString() : savedDocument.Title,
-                IsDirty: savedDocument.IsDirty,
-                PersistenceSchemaVersion: string.IsNullOrWhiteSpace(savedDocument.PersistenceSchemaVersion)
-                    ? "1.0"
-                    : savedDocument.PersistenceSchemaVersion,
-                Payload: JsonSerializer.SerializeToElement(new { }));
+            try
+            {
+                object documentViewModel = documentType switch
+                {
+                    WorkspaceDocumentType.QueryCanvas => BuildCanvasDocument(savedDocument, isDdl: false),
+                    WorkspaceDocumentType.DdlCanvas => BuildCanvasDocument(savedDocument, isDdl: true),
+                    WorkspaceDocumentType.SqlEditor => BuildSqlEditorDocument(),
+                    WorkspaceDocumentType.SqlResult => BuildSqlResultDocument(),
+                    WorkspaceDocumentType.ErDiagram => BuildErDiagramDocument(),
+                    WorkspaceDocumentType.DdlSchemaCompare => BuildDdlSchemaCompareDocument(),
+                    WorkspaceDocumentType.DdlSchemaAnalysis => BuildDdlSchemaAnalysisDocument(),
+                    _ => BuildCanvasDocument(savedDocument, isDdl: false),
+                };
 
-            restoredDocuments.Add(new OpenWorkspaceDocument(
-                Descriptor: descriptor,
-                DocumentViewModel: documentViewModel,
-                PageViewModel: documentViewModel,
-                PageState: null));
+                WorkspaceDocumentDescriptor descriptor = new(
+                    DocumentId: savedDocument.DocumentId == Guid.Empty ? Guid.NewGuid() : savedDocument.DocumentId,
+                    DocumentType: documentType,
+                    Title: string.IsNullOrWhiteSpace(savedDocument.Title) ? documentType.ToString() : savedDocument.Title,
+                    IsDirty: savedDocument.IsDirty,
+                    PersistenceSchemaVersion: string.IsNullOrWhiteSpace(savedDocument.PersistenceSchemaVersion)
+                        ? "1.0"
+                        : savedDocument.PersistenceSchemaVersion,
+                    Payload: savedDocument.DocumentPayload is JsonElement payload
+                        && payload.ValueKind is not JsonValueKind.Undefined
+                        && payload.ValueKind is not JsonValueKind.Null
+                            ? payload.Clone()
+                            : JsonSerializer.SerializeToElement(new { }));
+
+                restoredDocuments.Add(new OpenWorkspaceDocument(
+                    Descriptor: descriptor,
+                    DocumentViewModel: documentViewModel,
+                    PageViewModel: documentViewModel,
+                    PageState: null));
+            }
+            catch (Exception ex)
+            {
+                warnings.Add($"Documento ignorado: falha ao restaurar '{documentType}' ({ex.GetType().Name}).");
+            }
         }
 
         if (restoredDocuments.Count == 0)
+        {
+            NotifyWorkspaceRestoreWarnings(warnings);
             return;
+        }
 
         _workspaceRouter.ReplaceDocuments(restoredDocuments, workspace.ActiveDocumentId);
 
@@ -790,6 +892,21 @@ public sealed class ShellViewModel : ViewModelBase
         SyncStateFromActiveDocument();
         RaiseActiveDocumentPropertiesChanged();
         SyncExtractedPanels();
+        NotifyWorkspaceRestoreWarnings(warnings);
+    }
+
+    private void NotifyWorkspaceRestoreWarnings(IReadOnlyList<string> warnings)
+    {
+        if (warnings.Count == 0)
+            return;
+
+        string details = string.Join(Environment.NewLine, warnings.Take(6));
+        if (warnings.Count > 6)
+            details += $"{Environment.NewLine}... {warnings.Count - 6} aviso(s) adicional(is).";
+
+        Toasts.ShowWarning(
+            "Workspace restaurado com avisos.",
+            details);
     }
 
     public void ImportMigratedSqlScriptsToSqlEditor(IReadOnlyList<string> scripts)
@@ -955,7 +1072,12 @@ public sealed class ShellViewModel : ViewModelBase
         IsStartVisible = false;
     }
 
-    public void ReturnToStart() => IsStartVisible = true;
+    public void ReturnToStart()
+    {
+        HideDiagramOnlyOverlays();
+        ClearConnectionModalRoute();
+        IsStartVisible = true;
+    }
 
     public void OpenSettings() => IsSettingsVisible = true;
 
@@ -1441,7 +1563,10 @@ public sealed class ShellViewModel : ViewModelBase
 
     private void RegisterOrUpdateQueryDocument(CanvasViewModel queryCanvas)
     {
-        _queryDocumentId ??= Guid.NewGuid();
+        _queryDocumentId = ResolveDocumentRegistrationId(
+            _queryDocumentId,
+            WorkspaceDocumentType.QueryCanvas,
+            queryCanvas);
         bool shouldActivate = _workspaceRouter.ActiveDocument is null;
         RegisterOrUpdateDocument(
             _queryDocumentId.Value,
@@ -1459,12 +1584,40 @@ public sealed class ShellViewModel : ViewModelBase
 
     private void RegisterOrUpdateDdlDocument(CanvasViewModel ddlCanvas)
     {
-        _ddlDocumentId ??= Guid.NewGuid();
+        _ddlDocumentId = ResolveDocumentRegistrationId(
+            _ddlDocumentId,
+            WorkspaceDocumentType.DdlCanvas,
+            ddlCanvas);
         RegisterOrUpdateDocument(
             _ddlDocumentId.Value,
             WorkspaceDocumentType.DdlCanvas,
             title: "DDL Canvas",
             documentViewModel: ddlCanvas);
+    }
+
+    private Guid ResolveDocumentRegistrationId(
+        Guid? trackedDocumentId,
+        WorkspaceDocumentType documentType,
+        object documentViewModel)
+    {
+        if (trackedDocumentId is Guid existingTrackedId
+            && _workspaceRouter.OpenDocuments.Any(document => document.Descriptor.DocumentId == existingTrackedId))
+        {
+            return existingTrackedId;
+        }
+
+        OpenWorkspaceDocument? byReference = _workspaceRouter.OpenDocuments.LastOrDefault(document =>
+            document.Descriptor.DocumentType == documentType
+            && ReferenceEquals(document.DocumentViewModel, documentViewModel));
+        if (byReference is not null)
+            return byReference.Descriptor.DocumentId;
+
+        OpenWorkspaceDocument? byType = _workspaceRouter.OpenDocuments.LastOrDefault(document =>
+            document.Descriptor.DocumentType == documentType);
+        if (byType is not null)
+            return byType.Descriptor.DocumentId;
+
+        return Guid.NewGuid();
     }
 
     private Guid OpenNewQueryDocument()
@@ -3414,5 +3567,61 @@ public sealed class ShellViewModel : ViewModelBase
             return (DdlCanvas, DdlCanvas.ConnectionManager);
 
         return (null, null);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        if (_localizationPropertyChanged is not null)
+            _localization.PropertyChanged -= _localizationPropertyChanged;
+        if (_outputPreviewPropertyChanged is not null)
+            OutputPreview.PropertyChanged -= _outputPreviewPropertyChanged;
+        if (_quickDataPreviewPropertyChanged is not null)
+            QuickDataPreview.PropertyChanged -= _quickDataPreviewPropertyChanged;
+
+        if (_activeConnectionManagerPropertyChanged is not null)
+        {
+            if (_observedQueryConnectionManager is not null)
+                _observedQueryConnectionManager.PropertyChanged -= _activeConnectionManagerPropertyChanged;
+            if (_observedDdlConnectionManager is not null)
+                _observedDdlConnectionManager.PropertyChanged -= _activeConnectionManagerPropertyChanged;
+            if (_observedSqlEditorConnectionManager is not null)
+                _observedSqlEditorConnectionManager.PropertyChanged -= _activeConnectionManagerPropertyChanged;
+        }
+
+        if (_canvasMetadataPropertyChanged is not null)
+        {
+            if (_observedQueryCanvas is not null)
+                _observedQueryCanvas.PropertyChanged -= _canvasMetadataPropertyChanged;
+            if (_observedDdlCanvas is not null)
+                _observedDdlCanvas.PropertyChanged -= _canvasMetadataPropertyChanged;
+        }
+
+        var sqlEditors = new HashSet<SqlEditorViewModel>(ReferenceEqualityComparer.Instance);
+        sqlEditors.Add(SqlEditor);
+        foreach (OpenWorkspaceDocument document in _workspaceRouter.OpenDocuments)
+        {
+            if (document.DocumentViewModel is SqlEditorViewModel sqlEditor)
+                sqlEditors.Add(sqlEditor);
+        }
+
+        foreach (SqlEditorViewModel sqlEditor in sqlEditors)
+            sqlEditor.SqlResultPageRequested -= OnSqlEditorResultPageRequested;
+
+        _localizationPropertyChanged = null;
+        _outputPreviewPropertyChanged = null;
+        _quickDataPreviewPropertyChanged = null;
+        _activeConnectionManagerPropertyChanged = null;
+        _canvasMetadataPropertyChanged = null;
+        _observedQueryConnectionManager = null;
+        _observedDdlConnectionManager = null;
+        _observedSqlEditorConnectionManager = null;
+        _observedQueryCanvas = null;
+        _observedDdlCanvas = null;
+        _disposed = true;
+
+        GC.SuppressFinalize(this);
     }
 }

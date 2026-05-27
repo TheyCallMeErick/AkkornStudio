@@ -71,7 +71,7 @@ public sealed class PinCompatibilityEvaluatorBranchTests
     }
 
     [Fact]
-    public void CanConnect_WhenOnlyExistingConnectionIsFromSameSource_DoesNotEmitReplacementMutation()
+    public void CanConnect_WhenSameSourceIsAlreadyConnectedToDestination_RejectsDuplicateConnection()
     {
         PinModel source = CreatePin("source-1", "value", PinDirection.Output, PinDataType.Number, NodeType.ValueNumber);
         PinModel destination = CreatePin("node-2", "value", PinDirection.Input, PinDataType.Number, NodeType.Sum);
@@ -103,8 +103,8 @@ public sealed class PinCompatibilityEvaluatorBranchTests
 
         PinConnectionDecision decision = destination.CanConnect(source, context);
 
-        Assert.True(decision.IsAllowed);
-        Assert.DoesNotContain(decision.Mutations, m => m is ReplaceExistingConnectionMutation);
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(PinConnectionReasonCode.MultiplicityExceeded, decision.ReasonCode);
     }
 
     [Fact]
@@ -122,14 +122,127 @@ public sealed class PinCompatibilityEvaluatorBranchTests
         Assert.Equal(PinDataType.Number, mutation.ScalarType);
     }
 
+    [Fact]
+    public void CanConnect_WithPartialWildcardContext_DoesNotThrowNullReference()
+    {
+        PinModel source = CreatePin("table-1", "*", PinDirection.Output, PinDataType.ColumnSet, NodeType.TableSource);
+        PinModel destination = CreatePin("node-2", "custom_projection_pin", PinDirection.Input, PinDataType.ColumnRef, NodeType.Sum);
+
+        var context = new PinConnectionContext(
+            new PinConnectionContextData(
+                ExistingConnections: [],
+                ConnectionsByPin: new Dictionary<PinId, PinConnectionSnapshot[]>(),
+                IsValidationOnly: true,
+                AllowImplicitReplacement: false,
+                ComparisonState: null,
+                WildcardContext: new WildcardProjectionContext(
+                    IsEnabled: true,
+                    AllowedDestinationNodeTypes: null!,
+                    AllowedDestinationPinNames: null!)),
+            new Dictionary<string, object?>());
+
+        PinConnectionDecision decision = destination.CanConnect(source, context);
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(PinConnectionReasonCode.ScalarTypeMismatch, decision.ReasonCode);
+    }
+
+    [Fact]
+    public void CanConnect_DestinationAllowMultiple_DoesNotAllowDuplicateSourceConnection()
+    {
+        PinModel source = CreatePin("source-1", "value", PinDirection.Output, PinDataType.Number, NodeType.ValueNumber);
+        PinModel destination = CreatePin("node-2", "value", PinDirection.Input, PinDataType.Number, NodeType.Sum, allowMultiple: true);
+
+        var existing = new PinConnectionSnapshot(
+            ConnectionId: "wire-1",
+            SourcePinId: source.PinId,
+            DestinationPinId: destination.PinId,
+            SourceNodeId: source.Owner.NodeId,
+            DestinationNodeId: destination.Owner.NodeId,
+            SourcePinName: source.Name,
+            DestinationPinName: destination.Name,
+            SourceEffectiveDataType: source.EffectiveDataType,
+            DestinationEffectiveDataType: destination.EffectiveDataType,
+            SourceResolvedScalarType: PinDataType.Number);
+
+        var context = new PinConnectionContext(
+            new PinConnectionContextData(
+                ExistingConnections: [existing],
+                ConnectionsByPin: new Dictionary<PinId, PinConnectionSnapshot[]>
+                {
+                    [destination.PinId] = [existing],
+                },
+                IsValidationOnly: true,
+                AllowImplicitReplacement: true,
+                ComparisonState: null,
+                WildcardContext: null),
+            new Dictionary<string, object?>());
+
+        PinConnectionDecision decision = destination.CanConnect(source, context);
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(PinConnectionReasonCode.MultiplicityExceeded, decision.ReasonCode);
+    }
+
+    [Fact]
+    public void CanConnect_WildcardPruneMutation_IsScopedToTargetDestinationPin()
+    {
+        PinModel source = CreatePin("table-1", "*", PinDirection.Output, PinDataType.ColumnSet, NodeType.TableSource);
+        PinModel otherSourceColumn = CreatePin("table-1", "order_id", PinDirection.Output, PinDataType.ColumnRef, NodeType.TableSource);
+        PinModel destinationColumns = CreatePin("node-2", "columns", PinDirection.Input, PinDataType.ColumnRef, NodeType.ColumnList);
+        PinModel destinationMetadata = CreatePin("node-2", "metadata", PinDirection.Input, PinDataType.ColumnRef, NodeType.ColumnList);
+
+        var redundantSameDestinationPin = new PinConnectionSnapshot(
+            ConnectionId: "wire-columns",
+            SourcePinId: otherSourceColumn.PinId,
+            DestinationPinId: destinationColumns.PinId,
+            SourceNodeId: otherSourceColumn.Owner.NodeId,
+            DestinationNodeId: destinationColumns.Owner.NodeId,
+            SourcePinName: otherSourceColumn.Name,
+            DestinationPinName: destinationColumns.Name,
+            SourceEffectiveDataType: otherSourceColumn.EffectiveDataType,
+            DestinationEffectiveDataType: destinationColumns.EffectiveDataType,
+            SourceResolvedScalarType: PinDataType.Integer);
+
+        var differentDestinationPin = new PinConnectionSnapshot(
+            ConnectionId: "wire-metadata",
+            SourcePinId: otherSourceColumn.PinId,
+            DestinationPinId: destinationMetadata.PinId,
+            SourceNodeId: otherSourceColumn.Owner.NodeId,
+            DestinationNodeId: destinationMetadata.Owner.NodeId,
+            SourcePinName: otherSourceColumn.Name,
+            DestinationPinName: destinationMetadata.Name,
+            SourceEffectiveDataType: otherSourceColumn.EffectiveDataType,
+            DestinationEffectiveDataType: destinationMetadata.EffectiveDataType,
+            SourceResolvedScalarType: PinDataType.Integer);
+
+        var context = new PinConnectionContext(
+            new PinConnectionContextData(
+                ExistingConnections: [redundantSameDestinationPin, differentDestinationPin],
+                ConnectionsByPin: new Dictionary<PinId, PinConnectionSnapshot[]>(),
+                IsValidationOnly: true,
+                AllowImplicitReplacement: false,
+                ComparisonState: null,
+                WildcardContext: null),
+            new Dictionary<string, object?>());
+
+        PinConnectionDecision decision = destinationColumns.CanConnect(source, context);
+
+        Assert.True(decision.IsAllowed);
+        PruneConnectionsMutation mutation = Assert.IsType<PruneConnectionsMutation>(
+            Assert.Single(decision.Mutations.OfType<PruneConnectionsMutation>()));
+        Assert.Equal(["wire-columns"], mutation.PrunedConnectionIds);
+    }
+
     private static PinModel CreatePin(
         string nodeId,
         string pinName,
         PinDirection direction,
         PinDataType dataType,
-        NodeType nodeType)
+        NodeType nodeType,
+        bool allowMultiple = false)
     {
-        var descriptor = new PinDescriptor(pinName, direction, dataType);
+        var descriptor = new PinDescriptor(pinName, direction, dataType, AllowMultiple: allowMultiple);
         var owner = new PinModelOwner(nodeId, nodeType);
         var pinId = new PinId($"{nodeId}:{pinName}:{direction}");
         return PinModelFactory.Create(pinId, descriptor, owner, dataType, null);

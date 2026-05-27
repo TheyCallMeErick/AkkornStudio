@@ -54,7 +54,7 @@ public static partial class CanvasSerializer
 
         await CreateAutomaticBackupAsync(path);
 
-        await File.WriteAllBytesAsync(path, payload);
+        await WriteAllBytesAtomicallyAsync(path, payload);
         await AddLocalFileVersionAsync(path, payload);
     }
 
@@ -247,7 +247,7 @@ public static partial class CanvasSerializer
         if (!string.IsNullOrWhiteSpace(parentDir))
             Directory.CreateDirectory(parentDir);
 
-        await File.WriteAllBytesAsync(targetFilePath, bytes);
+        await WriteAllBytesAtomicallyAsync(targetFilePath, bytes);
     }
 
     private static bool IsValidCanvasPayload(byte[] bytes)
@@ -338,8 +338,34 @@ public static partial class CanvasSerializer
         string ext = compressed ? ".vsaq.gz" : ".vsaq";
         string versionPath = Path.Combine(historyDir, $"{stamp}_{Path.GetFileNameWithoutExtension(targetFilePath)}{ext}");
 
-        await File.WriteAllBytesAsync(versionPath, payload);
+        await WriteAllBytesAtomicallyAsync(versionPath, payload);
         PruneOldFiles(historyDir, MaxLocalFileVersions);
+    }
+
+    private static async Task WriteAllBytesAtomicallyAsync(string targetPath, byte[] bytes)
+    {
+        ArgumentNullException.ThrowIfNull(targetPath);
+        ArgumentNullException.ThrowIfNull(bytes);
+
+        string fullTargetPath = Path.GetFullPath(targetPath);
+        string tempPath = $"{fullTargetPath}.tmp-{Guid.NewGuid():N}";
+        try
+        {
+            await File.WriteAllBytesAsync(tempPath, bytes);
+            File.Move(tempPath, fullTargetPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempPath))
+                    File.Delete(tempPath);
+            }
+            catch (Exception ex)
+            {
+                RaiseWarning($"Could not cleanup temporary file '{tempPath}': {ex.Message}");
+            }
+        }
     }
 
     private static void PruneOldFiles(string dir, int keep)

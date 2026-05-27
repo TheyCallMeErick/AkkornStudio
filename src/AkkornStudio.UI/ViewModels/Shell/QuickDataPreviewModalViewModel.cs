@@ -12,6 +12,7 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
     private readonly QuickDataPreviewService _previewService;
     private readonly Action<string, WorkspaceDocumentType?> _openSqlInEditor;
     private CancellationTokenSource? _runCts;
+    private int _runGeneration;
 
     private bool _isVisible;
     private bool _isLoading;
@@ -208,16 +209,14 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
         int maxRows = 120,
         CancellationToken cancellationToken = default)
     {
-        _runCts?.Cancel();
-        _runCts?.Dispose();
-        _runCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        CancellationToken runToken = BeginRun(cancellationToken);
+        int runGeneration = _runGeneration;
 
         _sourceDocumentType = sourceDocumentType;
         _contextConnection = connection;
         _contextProvider = provider;
         _contextMetadata = metadata;
-        _isTableMode = false;
-        _tableModeFullName = null;
+        SetTableModeContext(isTableMode: false, tableModeFullName: null);
         _pageNumber = 1;
 
         Title = string.IsNullOrWhiteSpace(title) ? "Preview rapido" : title.Trim();
@@ -251,21 +250,31 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
                     Metadata: metadata,
                     FocusTableFullName: focusTableFullName,
                     MaxRows: maxRows),
-                _runCts.Token);
+                runToken);
         }
         catch (OperationCanceledException)
         {
+            if (!IsCurrentRun(runGeneration))
+                return;
+
             IsLoading = false;
             StatusText = "Consulta cancelada.";
             return;
         }
 
+        if (!IsCurrentRun(runGeneration))
+            return;
+
         SqlText = result.Sql;
         ResultData = result.Execution.Data;
         ErrorMessage = result.Execution.Success ? null : result.Execution.ErrorMessage;
 
-        foreach (QuickDataPreviewRelationship relationship in result.Relationships)
-            Relationships.Add(new QuickDataPreviewRelationshipItemViewModel(relationship));
+        Relationships.Clear();
+        if (result.Execution.Success)
+        {
+            foreach (QuickDataPreviewRelationship relationship in result.Relationships)
+                Relationships.Add(new QuickDataPreviewRelationshipItemViewModel(relationship));
+        }
 
         RaisePropertyChanged(nameof(HasRelationships));
         RaisePropertyChanged(nameof(ShowNoRelationshipsMessage));
@@ -285,8 +294,7 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
         int maxRows = 50,
         CancellationToken cancellationToken = default)
     {
-        _tableModeFullName = tableFullName;
-        _isTableMode = true;
+        SetTableModeContext(isTableMode: true, tableModeFullName: tableFullName);
         _pageSize = maxRows;
         _pageNumber = 1;
 
@@ -303,15 +311,9 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
             maxRows,
             cancellationToken);
 
-        // Restore table mode (OpenSqlPreviewAsync resets it)
-        _tableModeFullName = tableFullName;
-        _isTableMode = true;
-        RaisePropertyChanged(nameof(IsTableMode));
-        RaisePropertyChanged(nameof(PageDisplay));
-        RaisePropertyChanged(nameof(CanGoPreviousPage));
-        RaisePropertyChanged(nameof(CanGoNextPage));
-        (NextPageCommand as RelayCommand)?.NotifyCanExecuteChanged();
-        (PreviousPageCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        // Restore table mode only after successful load.
+        if (!HasError)
+            SetTableModeContext(isTableMode: true, tableModeFullName: tableFullName);
     }
 
     private async Task GoToPageAsync(int newPage)
@@ -342,9 +344,8 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
 
     private async Task ExecuteCurrentSqlAsync()
     {
-        _runCts?.Cancel();
-        _runCts?.Dispose();
-        _runCts = new CancellationTokenSource();
+        CancellationToken runToken = BeginRun();
+        int runGeneration = _runGeneration;
 
         ResultData = null;
         ErrorMessage = null;
@@ -363,18 +364,26 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
                     Metadata: _contextMetadata,
                     FocusTableFullName: _tableModeFullName,
                     MaxRows: _pageSize),
-                _runCts.Token);
+                runToken);
         }
         catch (OperationCanceledException)
         {
+            if (!IsCurrentRun(runGeneration))
+                return;
+
             IsLoading = false;
             StatusText = "Consulta cancelada.";
             return;
         }
 
+        if (!IsCurrentRun(runGeneration))
+            return;
+
         SqlText = result.Sql;
         ResultData = result.Execution.Data;
         ErrorMessage = result.Execution.Success ? null : result.Execution.ErrorMessage;
+        if (!result.Execution.Success)
+            SetTableModeContext(isTableMode: false, tableModeFullName: null);
         StatusText = result.Execution.Success
             ? BuildSuccessStatus(result.Execution)
             : "Falha ao executar preview.";
@@ -400,6 +409,7 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
         _runCts?.Cancel();
         _runCts?.Dispose();
         _runCts = null;
+        Interlocked.Increment(ref _runGeneration);
         IsVisible = false;
     }
 
@@ -416,6 +426,36 @@ public sealed class QuickDataPreviewModalViewModel : ViewModelBase
         int rows = result.Data?.Rows.Count ?? 0;
         long elapsed = (long)Math.Round(result.ExecutionTime.TotalMilliseconds);
         return $"{rows} linha(s) em {elapsed}ms";
+    }
+
+    private CancellationToken BeginRun(CancellationToken linkedToken = default)
+    {
+        _runCts?.Cancel();
+        _runCts?.Dispose();
+        _runCts = linkedToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(linkedToken)
+            : new CancellationTokenSource();
+        Interlocked.Increment(ref _runGeneration);
+        return _runCts.Token;
+    }
+
+    private bool IsCurrentRun(int runGeneration) => runGeneration == Volatile.Read(ref _runGeneration);
+
+    private void SetTableModeContext(bool isTableMode, string? tableModeFullName)
+    {
+        bool changed = _isTableMode != isTableMode
+            || !string.Equals(_tableModeFullName, tableModeFullName, StringComparison.Ordinal);
+        _isTableMode = isTableMode;
+        _tableModeFullName = tableModeFullName;
+        if (!changed)
+            return;
+
+        RaisePropertyChanged(nameof(IsTableMode));
+        RaisePropertyChanged(nameof(PageDisplay));
+        RaisePropertyChanged(nameof(CanGoPreviousPage));
+        RaisePropertyChanged(nameof(CanGoNextPage));
+        (NextPageCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (PreviousPageCommand as RelayCommand)?.NotifyCanExecuteChanged();
     }
 
     public sealed class QuickDataPreviewRelationshipItemViewModel

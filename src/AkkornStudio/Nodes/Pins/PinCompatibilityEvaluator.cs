@@ -4,6 +4,9 @@ namespace AkkornStudio.Nodes.Pins;
 
 public static class PinCompatibilityEvaluator
 {
+    private static readonly IReadOnlySet<NodeType> EmptyAllowedDestinationNodeTypes = new HashSet<NodeType>();
+    private static readonly IReadOnlySet<string> EmptyAllowedDestinationPinNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     public static PinConnectionDecision Evaluate(
         PinModel self,
         PinModel other,
@@ -106,14 +109,20 @@ public static class PinCompatibilityEvaluator
         PinConnectionContext context,
         PinConnectionReasonCode successReasonCode)
     {
-        if (destination.AllowMultiple)
-            return PinConnectionDecision.Allowed(successReasonCode);
-
         if (!context.Data.ConnectionsByPin.TryGetValue(destination.PinId, out PinConnectionSnapshot[]? existing)
             || existing.Length == 0)
         {
             return PinConnectionDecision.Allowed(successReasonCode);
         }
+
+        bool duplicateConnectionExists = existing.Any(snapshot =>
+            snapshot.SourcePinId == source.PinId
+            && snapshot.DestinationPinId == destination.PinId);
+        if (duplicateConnectionExists)
+            return PinConnectionDecision.Rejected(PinConnectionReasonCode.MultiplicityExceeded);
+
+        if (destination.AllowMultiple)
+            return PinConnectionDecision.Allowed(successReasonCode);
 
         string[] conflictingConnectionIds = existing
             .Where(snapshot => snapshot.SourcePinId != source.PinId)
@@ -159,10 +168,22 @@ public static class PinCompatibilityEvaluator
         if (!IsWildcardProjectionToColumnInput(source, destination, context.Data.WildcardContext))
             return null;
 
+        bool hasAmbiguousSourceIdentity = context.Data.ExistingConnections
+            .Where(snapshot =>
+                snapshot.SourceNodeId == source.Owner.NodeId
+                && snapshot.SourcePinId == source.PinId)
+            .Select(snapshot => snapshot.SourcePinName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Skip(1)
+            .Any();
+        if (hasAmbiguousSourceIdentity)
+            return null;
+
         string[] redundantConnectionIds = context.Data.ExistingConnections
             .Where(snapshot =>
                 snapshot.SourceNodeId == source.Owner.NodeId
                 && snapshot.DestinationNodeId == destination.Owner.NodeId
+                && snapshot.DestinationPinId == destination.PinId
                 && IsProjectionDestinationPinName(snapshot.DestinationPinName)
                 && snapshot.SourcePinId != source.PinId)
             .Select(snapshot => snapshot.ConnectionId)
@@ -249,13 +270,18 @@ public static class PinCompatibilityEvaluator
             return false;
         }
 
+        IReadOnlySet<NodeType> allowedDestinationNodeTypes =
+            wildcardContext?.AllowedDestinationNodeTypes ?? EmptyAllowedDestinationNodeTypes;
+        IReadOnlySet<string> allowedDestinationPinNames =
+            wildcardContext?.AllowedDestinationPinNames ?? EmptyAllowedDestinationPinNames;
+
         bool defaultDestinationAllowed =
             destination.Owner.NodeType is NodeType.ColumnList or NodeType.ColumnSetBuilder;
 
         bool contextDestinationAllowed = wildcardContext is not null
             && wildcardContext.IsEnabled
-            && wildcardContext.AllowedDestinationNodeTypes.Contains(destination.Owner.NodeType)
-            && wildcardContext.AllowedDestinationPinNames.Contains(destination.Name);
+            && allowedDestinationNodeTypes.Contains(destination.Owner.NodeType)
+            && allowedDestinationPinNames.Contains(destination.Name);
 
         bool destinationAllowedByPolicy = defaultDestinationAllowed || contextDestinationAllowed;
         if (!destinationAllowedByPolicy)
@@ -265,7 +291,7 @@ public static class PinCompatibilityEvaluator
             || destination.Name.Equals("metadata", StringComparison.OrdinalIgnoreCase)
             || (wildcardContext is not null
                 && wildcardContext.IsEnabled
-                && wildcardContext.AllowedDestinationPinNames.Contains(destination.Name));
+                && allowedDestinationPinNames.Contains(destination.Name));
     }
 
     private static bool IsComparisonNode(NodeType nodeType) =>

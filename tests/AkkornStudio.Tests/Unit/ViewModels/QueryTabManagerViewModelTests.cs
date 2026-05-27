@@ -41,6 +41,18 @@ public class QueryTabManagerViewModelTests
         Assert.Single(tab.ExplainHistory);
         Assert.Equal("Hash Join", tab.ExplainHistory[0].TopOperation);
     }
-}
 
+    [Fact]
+    public void ActiveMutations_WhenNoTabsConfigured_AreNoOp()
+    {
+        var sut = new QueryTabManagerViewModel();
+
+        sut.CaptureActive("{x}", "file.vsa", isDirty: true, explainHistory: null);
+        sut.SyncActiveMetadata("file2.vsa", isDirty: false);
+        sut.ResetActive("{y}");
+
+        Assert.Empty(sut.Tabs);
+        Assert.Equal(0, sut.ActiveTabIndex);
+    }
+}
 

@@ -22,18 +22,43 @@ public sealed class ConnectionHealthMonitorService : IConnectionHealthMonitorSer
 
     public async Task HealthMonitorLoopAsync(CancellationToken ct, Func<CancellationToken, Task> runHealthCheckAsync)
     {
-        try
+        await HealthMonitorLoopAsync(
+            ct,
+            runHealthCheckAsync,
+            static (delay, token) => Task.Delay(delay, token));
+    }
+
+    internal async Task HealthMonitorLoopAsync(
+        CancellationToken ct,
+        Func<CancellationToken, Task> runHealthCheckAsync,
+        Func<TimeSpan, CancellationToken, Task> delayAsync)
+    {
+        while (!ct.IsCancellationRequested)
         {
-            while (!ct.IsCancellationRequested)
+            try
             {
-                await Task.Delay(TimeSpan.FromSeconds(AppConstants.HealthCheckIntervalSeconds), ct);
-                if (!ct.IsCancellationRequested)
-                    await runHealthCheckAsync(ct);
+                await delayAsync(TimeSpan.FromSeconds(AppConstants.HealthCheckIntervalSeconds), ct);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // normal shutdown path
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+
+            if (ct.IsCancellationRequested)
+                break;
+
+            try
+            {
+                await runHealthCheckAsync(ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch
+            {
+                // Keep monitoring loop alive on transient health-check failures.
+            }
         }
     }
 
@@ -57,7 +82,10 @@ public sealed class ConnectionHealthMonitorService : IConnectionHealthMonitorSer
             if (!result.Success)
                 return ConnectionHealthStatus.Offline;
 
-            double ms = result.Latency?.TotalMilliseconds ?? 0;
+            if (result.Latency is null)
+                return ConnectionHealthStatus.Offline;
+
+            double ms = result.Latency.Value.TotalMilliseconds;
             return ms >= degradedLatencyThresholdMs
                 ? ConnectionHealthStatus.Degraded
                 : ConnectionHealthStatus.Online;
@@ -74,4 +102,3 @@ public sealed class ConnectionHealthMonitorService : IConnectionHealthMonitorSer
         }
     }
 }
-

@@ -144,4 +144,24 @@ public class OutputPreviewModalViewModelTests
         Assert.Null(vm.ExplainPlanTool);
         Assert.False(vm.IsVisible);
     }
+
+    [Fact]
+    public void OpenForSqlBenchmark_AfterExplain_DetachesExplainHandler()
+    {
+        var canvas = new CanvasViewModel();
+        var vm = new OutputPreviewModalViewModel();
+
+        vm.OpenForSqlExplain(canvas, "SELECT 1", AkkornStudio.Core.DatabaseProvider.Postgres, null);
+        ExplainPlanViewModel explainTool = Assert.IsType<ExplainPlanViewModel>(vm.ExplainPlanTool);
+        Assert.True(vm.IsVisible);
+
+        vm.OpenForSqlBenchmark(canvas, "SELECT 1", null);
+        Assert.True(vm.IsSqlBenchmarkMode);
+        Assert.True(vm.IsVisible);
+
+        explainTool.Close();
+
+        Assert.True(vm.IsVisible);
+        Assert.True(vm.IsSqlBenchmarkMode);
+    }
 }

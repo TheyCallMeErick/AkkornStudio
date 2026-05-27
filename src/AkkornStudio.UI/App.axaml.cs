@@ -14,7 +14,7 @@ using AkkornStudio.UI.ViewModels.Validation.Conventions;
 using AkkornStudio.UI.ViewModels.Validation.Conventions.Implementations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -22,7 +22,8 @@ namespace AkkornStudio.UI;
 
 public partial class App : Application
 {
-    private static readonly ILogger<App> _logger = NullLogger<App>.Instance;
+    private static readonly ILoggerFactory _startupLoggerFactory = new StartupLoggerFactory();
+    private static readonly ILogger<App> _logger = _startupLoggerFactory.CreateLogger<App>();
     private IServiceProvider? _services;
     private static int _exceptionHandlersWired;
 
@@ -34,20 +35,39 @@ public partial class App : Application
         ApplySavedThemeVariant();
         ApplyUserThemeIfPresent();
 
-        _services = BuildServices();
-        ICriticalFlowTelemetryService telemetry = _services.GetRequiredService<ICriticalFlowTelemetryService>();
-        telemetry.Track(
-            flowId: "CF-01-open-app-load-project",
-            step: "app_bootstrap",
-            outcome: "ok",
-            properties: new Dictionary<string, object?>
-            {
-                ["app"] = AppConstants.AppDisplayName,
-                ["version"] = AppConstants.AppVersion,
-            });
+        IServiceProvider services;
+        try
+        {
+            services = BuildServices();
+        }
+        catch (Exception ex)
+        {
+            HandleFatalException(ex, "startup_build_services", isTerminating: true);
+            throw new InvalidOperationException("Application startup failed while building service provider.", ex);
+        }
+
+        if (!TryValidateCriticalStartupServices(services, out string validationError))
+        {
+            var ex = new InvalidOperationException(validationError);
+            HandleFatalException(ex, "startup_validate_services", isTerminating: true);
+            throw ex;
+        }
+
+        _services = services;
+        TryTrackStartupTelemetry(_services);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            desktop.MainWindow = _services.GetRequiredService<MainWindow>();
+        {
+            try
+            {
+                desktop.MainWindow = _services.GetRequiredService<MainWindow>();
+            }
+            catch (Exception ex)
+            {
+                HandleFatalException(ex, "startup_main_window", isTerminating: true);
+                throw new InvalidOperationException("Application startup failed while creating main window.", ex);
+            }
+        }
 
         base.OnFrameworkInitializationCompleted();
     }
@@ -114,9 +134,9 @@ public partial class App : Application
     {
         var services = new ServiceCollection();
 
-        services.AddSingleton<ILoggerFactory>(_ => NullLoggerFactory.Instance);
-        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddAkkornStudio();
+        services.AddSingleton<ILoggerFactory>(_ => _startupLoggerFactory);
+        services.AddSingleton(typeof(ILogger<>), typeof(StartupGenericLogger<>));
         services.AddSingleton<ILocalizationService>(_ => LocalizationService.Instance);
         services.AddSingleton<IConnectionErrorMessageMapper, ConnectionErrorMessageMapper>();
         services.AddSingleton<IConnectionStatusPresenter, ConnectionStatusPresenter>();
@@ -154,6 +174,60 @@ public partial class App : Application
         services.AddTransient<MainWindow>();
 
         return services.BuildServiceProvider();
+    }
+
+    private static bool TryValidateCriticalStartupServices(IServiceProvider services, out string error)
+    {
+        error = string.Empty;
+        if (services.GetService<IServiceProviderIsService>() is not IServiceProviderIsService validator)
+        {
+            error = "Startup service provider does not expose IServiceProviderIsService for validation.";
+            return false;
+        }
+
+        Type[] requiredTypes =
+        [
+            typeof(ICriticalFlowTelemetryService),
+            typeof(MainWindow),
+        ];
+
+        List<string> missing = requiredTypes
+            .Where(type => !validator.IsService(type))
+            .Select(type => type.Name)
+            .ToList();
+
+        if (missing.Count == 0)
+            return true;
+
+        error = $"Startup service provider is missing required service(s): {string.Join(", ", missing)}.";
+        return false;
+    }
+
+    private static void TryTrackStartupTelemetry(IServiceProvider services)
+    {
+        try
+        {
+            ICriticalFlowTelemetryService? telemetry = services.GetService<ICriticalFlowTelemetryService>();
+            if (telemetry is null)
+            {
+                _logger.LogWarning("Startup telemetry service is not available; skipping app bootstrap telemetry event.");
+                return;
+            }
+
+            telemetry.Track(
+                flowId: "CF-01-open-app-load-project",
+                step: "app_bootstrap",
+                outcome: "ok",
+                properties: new Dictionary<string, object?>
+                {
+                    ["app"] = AppConstants.AppDisplayName,
+                    ["version"] = AppConstants.AppVersion,
+                });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Startup telemetry dispatch failed.");
+        }
     }
 
     private static void ApplySavedThemeVariant()
@@ -199,6 +273,118 @@ public partial class App : Application
 
         int applied = ThemeRuntimeApplier.ApplyToCurrentApplication(mapped.TokenOverrides);
         _logger.LogInformation("Theme loaded: applied {AppliedCount} token override(s) from {Path}", applied, path);
+    }
+}
+
+internal sealed class StartupTraceLoggerProvider : ILoggerProvider
+{
+    public ILogger CreateLogger(string categoryName) => new StartupTraceLogger(categoryName);
+
+    public void Dispose()
+    {
+    }
+}
+
+internal sealed class StartupLoggerFactory : ILoggerFactory
+{
+    private readonly StartupTraceLoggerProvider _provider = new();
+
+    public void AddProvider(ILoggerProvider provider)
+    {
+        // Startup logger factory keeps a fixed provider set by design.
+    }
+
+    public ILogger CreateLogger(string categoryName) => _provider.CreateLogger(categoryName);
+
+    public void Dispose()
+    {
+        _provider.Dispose();
+    }
+}
+
+internal sealed class StartupGenericLogger<T> : ILogger<T>
+{
+    private readonly ILogger _inner;
+
+    public StartupGenericLogger(ILoggerFactory factory)
+    {
+        _inner = factory.CreateLogger(typeof(T).FullName ?? typeof(T).Name);
+    }
+
+    public IDisposable BeginScope<TState>(TState state) where TState : notnull =>
+        _inner.BeginScope(state) ?? StartupNoopScope.Instance;
+
+    public bool IsEnabled(LogLevel logLevel) => _inner.IsEnabled(logLevel);
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        _inner.Log(logLevel, eventId, state, exception, formatter);
+    }
+}
+
+internal sealed class StartupTraceLogger : ILogger
+{
+    private readonly string _categoryName;
+
+    public StartupTraceLogger(string categoryName)
+    {
+        _categoryName = categoryName;
+    }
+
+    public IDisposable BeginScope<TState>(TState state) where TState : notnull => StartupNoopScope.Instance;
+
+    public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        if (!IsEnabled(logLevel))
+            return;
+
+        string message = formatter(state, exception);
+        string line = $"{DateTimeOffset.UtcNow:O} [{logLevel}] {_categoryName}: {message}";
+        if (exception is not null)
+            line += $"{Environment.NewLine}{exception}";
+
+        try
+        {
+            Trace.WriteLine(line);
+        }
+        catch
+        {
+            // Best-effort logging only.
+        }
+
+        try
+        {
+            Console.Error.WriteLine(line);
+        }
+        catch
+        {
+            // Best-effort logging only.
+        }
+    }
+}
+
+internal sealed class StartupNoopScope : IDisposable
+{
+    public static StartupNoopScope Instance { get; } = new();
+
+    private StartupNoopScope()
+    {
+    }
+
+    public void Dispose()
+    {
     }
 }
 

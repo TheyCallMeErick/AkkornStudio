@@ -33,6 +33,7 @@ public static partial class CanvasSerializer
     public const int CompressionThresholdBytes = 64 * 1024;
     public const int MaxLocalFileVersions = 30;
     public const int MaxAutomaticBackups = 20;
+    public const int MaxCteSubgraphDepth = 16;
 
     private static readonly JsonSerializerOptions _opts = new()
     {

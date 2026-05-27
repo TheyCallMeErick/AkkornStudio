@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace AkkornStudio.UI.Serialization;
 
 /// <summary>
@@ -54,7 +56,8 @@ public record SavedWorkspaceDocument(
     string Title,
     bool IsDirty,
     string PersistenceSchemaVersion,
-    SavedCanvas? CanvasPayload = null
+    SavedCanvas? CanvasPayload = null,
+    JsonElement? DocumentPayload = null
 );
 
 public record SavedColumn(

@@ -1,4 +1,5 @@
 using Avalonia;
+using System.Text.Json;
 using AkkornStudio.Nodes;
 using AkkornStudio.UI.Services.Workspace.Models;
 using AkkornStudio.UI.ViewModels;
@@ -56,20 +57,24 @@ public static partial class CanvasSerializer
                 Title: "Query Canvas",
                 IsDirty: queryVm.IsDirty,
                 PersistenceSchemaVersion: "1.0",
-                CanvasPayload: query),
+                CanvasPayload: query,
+                DocumentPayload: null),
             new(
                 DocumentId: ddlDocumentId,
                 DocumentType: WorkspaceDocumentType.DdlCanvas.ToString(),
                 Title: "DDL Canvas",
                 IsDirty: ddlVm?.IsDirty ?? false,
                 PersistenceSchemaVersion: "1.0",
-                CanvasPayload: ddl),
+                CanvasPayload: ddl,
+                DocumentPayload: null),
             new(
                 DocumentId: sqlEditorDocumentId,
                 DocumentType: WorkspaceDocumentType.SqlEditor.ToString(),
                 Title: "SQL Editor",
                 IsDirty: false,
-                PersistenceSchemaVersion: "1.0")
+                PersistenceSchemaVersion: "1.0",
+                CanvasPayload: null,
+                DocumentPayload: null)
         };
 
         var workspace = new SavedWorkspaceDocumentsCanvas(
@@ -112,6 +117,9 @@ public static partial class CanvasSerializer
                     ? BuildSavedDdlCanvas(canvasDocument, provider, connectionName)
                     : BuildSavedCanvas(canvasDocument, provider, connectionName, description, persistProviderMetadata: false);
             }
+            JsonElement? documentPayload = openDocument.Descriptor.Payload.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+                ? null
+                : openDocument.Descriptor.Payload.Clone();
 
             documents.Add(new SavedWorkspaceDocument(
                 DocumentId: documentId,
@@ -119,7 +127,8 @@ public static partial class CanvasSerializer
                 Title: openDocument.Descriptor.Title,
                 IsDirty: isDirty,
                 PersistenceSchemaVersion: openDocument.Descriptor.PersistenceSchemaVersion,
-                CanvasPayload: canvasPayload));
+                CanvasPayload: canvasPayload,
+                DocumentPayload: documentPayload));
         }
 
         Guid resolvedActiveDocumentId = activeDocumentId is Guid requestedActiveId

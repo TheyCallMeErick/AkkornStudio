@@ -1512,6 +1512,84 @@ public class QueryGeneratorServiceTests
     }
 
     [Fact]
+    public void Generate_HavingWithNonAggregatedColumnWithoutGroupBy_ThrowsExplicitError()
+    {
+        var tbl = new NodeInstance(
+            "tbl",
+            NodeType.TableSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            TableFullName: "orders"
+        );
+
+        var gt = new NodeInstance(
+            "gt",
+            NodeType.GreaterThan,
+            new Dictionary<string, string> { ["right"] = "100" },
+            new Dictionary<string, string>()
+        );
+
+        var graph = new NodeGraph
+        {
+            Nodes = [tbl, gt],
+            Connections = [new Connection("tbl", "total", "gt", "left")],
+            SelectOutputs = [new SelectBinding("tbl", "id")],
+            Havings = [new HavingBinding("gt", "result")],
+        };
+
+        var svc = QueryGeneratorService.Create(DatabaseProvider.Postgres);
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            GenerateGraphFirst(svc, "orders", graph)
+        );
+
+        Assert.Contains("no GROUP BY", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_HavingWithAggregateWithoutGroupBy_IsAllowed()
+    {
+        var tbl = new NodeInstance(
+            "tbl",
+            NodeType.TableSource,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            TableFullName: "orders"
+        );
+
+        var sum = new NodeInstance(
+            "sum",
+            NodeType.Sum,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            Alias: "total_sum"
+        );
+
+        var gt = new NodeInstance(
+            "gt",
+            NodeType.GreaterThan,
+            new Dictionary<string, string> { ["right"] = "100" },
+            new Dictionary<string, string>()
+        );
+
+        var graph = new NodeGraph
+        {
+            Nodes = [tbl, sum, gt],
+            Connections =
+            [
+                new Connection("tbl", "total", "sum", "value"),
+                new Connection("sum", "total", "gt", "left"),
+            ],
+            SelectOutputs = [new SelectBinding("sum", "total", "total_sum")],
+            Havings = [new HavingBinding("gt", "result")],
+        };
+
+        var svc = QueryGeneratorService.Create(DatabaseProvider.Postgres);
+        GeneratedQuery result = GenerateGraphFirst(svc, "orders", graph);
+
+        Assert.Contains("HAVING", result.Sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Generate_OrderByAscending_Postgres_EmitsExplicitNullsLast()
     {
         var tbl = new NodeInstance(

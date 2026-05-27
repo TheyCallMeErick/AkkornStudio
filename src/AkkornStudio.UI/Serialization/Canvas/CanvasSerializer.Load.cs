@@ -118,7 +118,7 @@ public static partial class CanvasSerializer
             warnings.Add("File contains a DDL document snapshot, but no DDL target canvas was provided during load.");
         }
 
-        WorkspaceDocumentType activeDocumentType = ResolveActiveDocumentType(workspace, documents);
+        WorkspaceDocumentType activeDocumentType = ResolveActiveDocumentType(workspace, documents, warnings);
         return CanvasLoadResult.Ok(
             warnings.Count > 0 ? warnings : null,
             activeDocumentType,
@@ -314,11 +314,7 @@ public static partial class CanvasSerializer
 
     private static void ValidateEmbeddedSubgraphPayloads(NodeViewModel nodeVm, ICollection<string> warnings)
     {
-        ValidateEmbeddedPayload(
-            nodeVm,
-            CteSubgraphParameterKey,
-            payload => JsonSerializer.Deserialize<SavedCteSubgraph>(payload, _opts) is not null,
-            warnings);
+        ValidateEmbeddedCtePayload(nodeVm, warnings);
 
         ValidateEmbeddedPayload(
             nodeVm,
@@ -345,6 +341,41 @@ public static partial class CanvasSerializer
                 return true;
             },
             warnings);
+    }
+
+    private static void ValidateEmbeddedCtePayload(NodeViewModel nodeVm, ICollection<string> warnings)
+    {
+        if (!nodeVm.Parameters.TryGetValue(CteSubgraphParameterKey, out string? payload)
+            || string.IsNullOrWhiteSpace(payload))
+        {
+            return;
+        }
+
+        try
+        {
+            SavedCteSubgraph? subgraph = JsonSerializer.Deserialize<SavedCteSubgraph>(payload, _opts);
+            if (subgraph is null)
+                throw new JsonException("CTE subgraph payload is empty.");
+
+            if (TryGetCteSubgraphDepth(subgraph, out int depth) && depth > MaxCteSubgraphDepth)
+            {
+                nodeVm.Parameters.Remove(CteSubgraphParameterKey);
+                warnings.Add(
+                    $"Node '{nodeVm.Id}' has CTE subgraph depth {depth} exceeding supported limit {MaxCteSubgraphDepth}. The payload was ignored during load.");
+                return;
+            }
+
+            return;
+        }
+        catch
+        {
+            // Fall through to remove malformed payload.
+        }
+
+        nodeVm.Parameters.Remove(CteSubgraphParameterKey);
+        warnings.Add(
+            $"Node '{nodeVm.Id}' has malformed embedded payload '{CteSubgraphParameterKey}'. The payload was ignored during load."
+        );
     }
 
     private static void ValidateEmbeddedPayload(
@@ -457,18 +488,28 @@ public static partial class CanvasSerializer
 
     private static WorkspaceDocumentType ResolveActiveDocumentType(
         SavedWorkspaceDocumentsCanvas workspace,
-        IReadOnlyList<SavedWorkspaceDocument> documents)
+        IReadOnlyList<SavedWorkspaceDocument> documents,
+        ICollection<string> warnings)
     {
-        if (workspace.ActiveDocumentId is Guid activeId)
+        if (workspace.ActiveDocumentId is not Guid activeId)
+            return WorkspaceDocumentType.QueryCanvas;
+
+        SavedWorkspaceDocument? active = documents.FirstOrDefault(document => document.DocumentId == activeId);
+        if (active is null)
         {
-            SavedWorkspaceDocument? active = documents.FirstOrDefault(document => document.DocumentId == activeId);
-            if (active is not null && Enum.TryParse(active.DocumentType, true, out WorkspaceDocumentType activeType))
-                return activeType;
+            warnings.Add(
+                $"Workspace active document id '{activeId}' was not found; defaulted active document to Query canvas.");
+            return WorkspaceDocumentType.QueryCanvas;
         }
 
-        return documents
-            .Select(document => Enum.TryParse(document.DocumentType, true, out WorkspaceDocumentType type) ? type : (WorkspaceDocumentType?)null)
-            .FirstOrDefault(type => type.HasValue) ?? WorkspaceDocumentType.QueryCanvas;
+        if (!Enum.TryParse(active.DocumentType, true, out WorkspaceDocumentType activeType))
+        {
+            warnings.Add(
+                $"Workspace active document '{active.DocumentId}' has unknown type '{active.DocumentType}'; defaulted active document to Query canvas.");
+            return WorkspaceDocumentType.QueryCanvas;
+        }
+
+        return activeType;
     }
 
     private static WorkspaceDocumentType ResolveLegacyActiveDocumentType(SavedWorkspaceCanvas workspace)

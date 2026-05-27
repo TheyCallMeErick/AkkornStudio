@@ -989,8 +989,30 @@ public sealed class QueryGeneratorService(DatabaseProvider provider, ISqlFunctio
         IReadOnlyList<ISqlExpression> groupBys
     )
     {
-        if (havings.Count == 0 || groupBys.Count == 0)
+        if (havings.Count == 0)
             return;
+
+        if (groupBys.Count == 0)
+        {
+            foreach (ISqlExpression havingExpr in havings)
+            {
+                var requiredColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                CollectReferencedColumnsOutsideAggregates(
+                    havingExpr,
+                    insideAggregate: false,
+                    requiredColumns
+                );
+
+                if (requiredColumns.Count == 0)
+                    continue;
+
+                throw new InvalidOperationException(
+                    "HAVING contains non-aggregated columns but query has no GROUP BY."
+                );
+            }
+
+            return;
+        }
 
         var groupedColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (ISqlExpression groupExpr in groupBys)

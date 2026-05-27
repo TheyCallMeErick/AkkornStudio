@@ -243,7 +243,7 @@ public sealed class MySqlDialect : ISqlDialect
             : $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
         string keyList = string.Join(", ", keyColumns.Select(k =>
             k.IsExpression
-                ? $"(({k.ExpressionSql!.Trim()}))"
+                ? $"({k.ExpressionSql!.Trim()})"
                 : QuoteIdentifier(k.ColumnName!)));
 
         // MySQL does not support INCLUDE columns in CREATE INDEX.

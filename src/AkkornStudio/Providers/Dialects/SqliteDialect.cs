@@ -254,7 +254,12 @@ public sealed class SqliteDialect : ISqlDialect
     public string EmitAlterTableDropColumn(string schemaName, string tableName, string columnName, bool ifExists)
     {
         _ = schemaName;
-        _ = ifExists;
+        if (ifExists)
+        {
+            throw new InvalidOperationException(
+                "SQLite does not support IF EXISTS in ALTER TABLE DROP COLUMN. Retry without ifExists or pre-check column existence.");
+        }
+
         string table = NormalizeName(tableName, "table");
         string col = QuoteIdentifier(NormalizeName(columnName, "column"));
         return $"ALTER TABLE {QuoteIdentifier(table)} DROP COLUMN {col};";

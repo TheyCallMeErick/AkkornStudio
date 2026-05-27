@@ -1,5 +1,6 @@
 using AkkornStudio.UI.Services.ConnectionManager;
 using AkkornStudio.UI.Services.ConnectionManager.Contracts;
+using System.Reflection;
 using Xunit;
 
 namespace AkkornStudio.Tests.Unit.ViewModels;
@@ -65,6 +66,55 @@ public class ConnectionSessionServiceTests
         Assert.Equal(ConnectionSessionStateDto.Inactive, active.SessionState);
         Assert.Null(active.ConnectionId);
         Assert.Contains(telemetry.Events, e => e == "connection.session.disconnect");
+    }
+
+    [Fact]
+    public async Task DisconnectAsync_WhenConnectionIdDiffers_ReturnsConflictAndKeepsSessionActive()
+    {
+        var testService = new StubConnectionTestService(success: true);
+        var telemetry = new SpyConnectionTelemetryService();
+        var sessionService = new ConnectionSessionService(testService, telemetry);
+
+        await sessionService.ConnectAsync(BuildDetails("conn-active", "Local", "MySql"));
+
+        OperationResultDto<ActiveConnectionSessionDto> result = await sessionService.DisconnectAsync("conn-other");
+        ActiveConnectionSessionDto active = await sessionService.GetActiveSessionAsync();
+
+        Assert.False(result.Success);
+        Assert.Equal(ConnectionOperationSemanticErrorCode.Conflict, result.SemanticErrorCode);
+        Assert.NotNull(result.Payload);
+        Assert.Equal(ConnectionSessionStateDto.Active, result.Payload!.SessionState);
+        Assert.Equal("conn-active", result.Payload.ConnectionId);
+        Assert.Equal(ConnectionSessionStateDto.Active, active.SessionState);
+        Assert.Equal("conn-active", active.ConnectionId);
+        Assert.DoesNotContain(telemetry.Events, e => e == "connection.session.disconnect");
+    }
+
+    [Fact]
+    public async Task ConnectAsync_WhenGateLockTimesOut_ReturnsTimeoutResult()
+    {
+        var testService = new StubConnectionTestService(success: true);
+        var telemetry = new SpyConnectionTelemetryService();
+        var sessionService = new ConnectionSessionService(
+            testService,
+            telemetry,
+            gateWaitTimeout: TimeSpan.FromMilliseconds(25));
+
+        SemaphoreSlim gate = ResolveGate(sessionService);
+        await gate.WaitAsync();
+        try
+        {
+            OperationResultDto<ActiveConnectionSessionDto> result = await sessionService.ConnectAsync(
+                BuildDetails("conn-timeout", "Timeout", "Postgres"));
+
+            Assert.False(result.Success);
+            Assert.Equal(ConnectionOperationSemanticErrorCode.Timeout, result.SemanticErrorCode);
+            Assert.NotNull(result.TechnicalError);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     private static ConnectionDetailsDto BuildDetails(string id, string name, string provider) =>
@@ -134,5 +184,13 @@ public class ConnectionSessionServiceTests
             Events.Add(eventName);
             return Task.CompletedTask;
         }
+    }
+
+    private static SemaphoreSlim ResolveGate(ConnectionSessionService sessionService)
+    {
+        FieldInfo field = typeof(ConnectionSessionService).GetField(
+            "_gate",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        return (SemaphoreSlim)field.GetValue(sessionService)!;
     }
 }

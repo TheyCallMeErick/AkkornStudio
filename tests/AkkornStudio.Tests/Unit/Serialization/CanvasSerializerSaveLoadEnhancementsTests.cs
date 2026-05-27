@@ -68,6 +68,34 @@ public class CanvasSerializerSaveLoadEnhancementsTests
     }
 
     [Fact]
+    public async Task SaveToFileAsync_WhenTargetPathIsDirectory_DoesNotLeaveTemporaryPayloadFile()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"vsaq_atomic_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        string targetAsDirectory = Path.Combine(dir, "canvas.vsaq");
+        Directory.CreateDirectory(targetAsDirectory);
+
+        try
+        {
+            var vm = new CanvasViewModel();
+
+            await Assert.ThrowsAnyAsync<Exception>(() =>
+                CanvasSerializer.SaveToFileAsync(targetAsDirectory, vm, description: "atomic-write-failure"));
+
+            string[] leakedTempFiles = Directory.GetFiles(
+                dir,
+                "canvas.vsaq.tmp-*",
+                SearchOption.TopDirectoryOnly);
+            Assert.Empty(leakedTempFiles);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task LocalVersionHistory_CanRestoreOlderVersion()
     {
         string dir = Path.Combine(Path.GetTempPath(), $"vsaq_ver_{Guid.NewGuid():N}");

@@ -39,7 +39,7 @@ public class ExportService(Window window, CanvasViewModel vm)
             return;
 
         string? written = await FlowDocumentExporter.WriteAsync(_vm, path);
-        if (written is not null)
+        if (HasSuccessfulWrite(written))
             _vm.NotifySuccess(L("export.documentation.success", "Documentation exported successfully."), written);
         else
             _vm.NotifyError(
@@ -88,13 +88,29 @@ public class ExportService(Window window, CanvasViewModel vm)
             return;
 
         string? written = await _vm.TriggerExportAsync(exportType, path);
-        if (written is not null)
+        if (HasSuccessfulWrite(written))
             _vm.NotifySuccess(L("export.success", "Export completed successfully."), written);
         else
             _vm.NotifyError(
                 L("export.failed", "Export failed."),
                 L("export.failed.pathPermissionsHint", "Check file path and permissions.")
             );
+    }
+
+    private static bool HasSuccessfulWrite(string? writtenPath)
+    {
+        if (string.IsNullOrWhiteSpace(writtenPath))
+            return false;
+
+        try
+        {
+            var fileInfo = new FileInfo(writtenPath);
+            return fileInfo.Exists && fileInfo.Length > 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string L(string key, string fallback)

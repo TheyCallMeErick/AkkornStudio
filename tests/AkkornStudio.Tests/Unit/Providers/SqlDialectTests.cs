@@ -123,6 +123,24 @@ public class SqlDialectTests
     }
 
     [Fact]
+    public void MySqlDialect_EmitCreateIndex_ExpressionKey_UsesSingleParenthesis()
+    {
+        var dialect = new MySqlDialect();
+
+        string sql = dialect.EmitCreateIndex(
+            schemaName: "public",
+            tableName: "orders",
+            indexName: "ix_orders_lower_number",
+            isUnique: false,
+            keyColumns: [new AkkornStudio.Ddl.DdlIndexKeyExpr(ExpressionSql: "LOWER(order_number)")],
+            includeColumns: [],
+            ifNotExists: false);
+
+        Assert.Contains("((LOWER(order_number)))", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("(((LOWER(order_number))))", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SqlServerDialect_SpecificBehaviors()
     {
         // Arrange
@@ -207,6 +225,27 @@ public class SqlDialectTests
 
         Assert.Contains("does not support ALTER COLUMN TYPE", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Rebuild the table", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SqliteDialect_DropColumn_WithIfExists_ThrowsExplicitNotSupportedError()
+    {
+        var dialect = new SqliteDialect();
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            dialect.EmitAlterTableDropColumn("main", "orders", "total", ifExists: true));
+
+        Assert.Contains("does not support IF EXISTS", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SqliteDialect_DropColumn_WithoutIfExists_EmitsDropColumnStatement()
+    {
+        var dialect = new SqliteDialect();
+
+        string sql = dialect.EmitAlterTableDropColumn("main", "orders", "total", ifExists: false);
+
+        Assert.Equal("ALTER TABLE \"orders\" DROP COLUMN \"total\";", sql);
     }
 
     [Fact]

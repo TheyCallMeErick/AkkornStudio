@@ -4,8 +4,10 @@ namespace AkkornStudio.UI.Services.ConnectionManager;
 
 public sealed class ConnectionSessionService : IConnectionSessionService
 {
+    private static readonly TimeSpan DefaultGateWaitTimeout = TimeSpan.FromSeconds(5);
     private readonly IConnectionTestService _connectionTestService;
     private readonly IConnectionTelemetryService _connectionTelemetryService;
+    private readonly TimeSpan _gateWaitTimeout;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private ActiveConnectionSessionDto _activeSession = new(
         ConnectionId: null,
@@ -15,10 +17,12 @@ public sealed class ConnectionSessionService : IConnectionSessionService
 
     public ConnectionSessionService(
         IConnectionTestService connectionTestService,
-        IConnectionTelemetryService connectionTelemetryService)
+        IConnectionTelemetryService connectionTelemetryService,
+        TimeSpan? gateWaitTimeout = null)
     {
         _connectionTestService = connectionTestService;
         _connectionTelemetryService = connectionTelemetryService;
+        _gateWaitTimeout = gateWaitTimeout.GetValueOrDefault(DefaultGateWaitTimeout);
     }
 
     public async Task<OperationResultDto<ActiveConnectionSessionDto>> ConnectAsync(
@@ -29,7 +33,8 @@ public sealed class ConnectionSessionService : IConnectionSessionService
             ? Guid.NewGuid().ToString()
             : details.Id;
 
-        await _gate.WaitAsync(cancellationToken);
+        if (!await TryEnterGateAsync(cancellationToken))
+            return BuildTimeoutResult("Connect operation timed out while waiting for session state lock.");
         try
         {
             _activeSession = new ActiveConnectionSessionDto(
@@ -46,7 +51,8 @@ public sealed class ConnectionSessionService : IConnectionSessionService
         OperationResultDto<ConnectionTestResultDto> testResult = await _connectionTestService.TestAsync(details, cancellationToken);
         if (!testResult.Success)
         {
-            await _gate.WaitAsync(cancellationToken);
+            if (!await TryEnterGateAsync(cancellationToken))
+                return BuildTimeoutResult("Connect operation timed out while finalizing failed session state.");
             try
             {
                 _activeSession = new ActiveConnectionSessionDto(
@@ -81,7 +87,8 @@ public sealed class ConnectionSessionService : IConnectionSessionService
 
         DateTimeOffset startedAt = DateTimeOffset.UtcNow;
 
-        await _gate.WaitAsync(cancellationToken);
+        if (!await TryEnterGateAsync(cancellationToken))
+            return BuildTimeoutResult("Connect operation timed out while finalizing active session state.");
         try
         {
             _activeSession = new ActiveConnectionSessionDto(
@@ -128,37 +135,47 @@ public sealed class ConnectionSessionService : IConnectionSessionService
                 CorrelationId: null);
         }
 
-        await _gate.WaitAsync(cancellationToken);
+        if (!await TryEnterGateAsync(cancellationToken))
+            return BuildTimeoutResult("Disconnect operation timed out while waiting for session state lock.");
         try
         {
-            if (_activeSession.ConnectionId is null)
+            ActiveConnectionSessionDto currentSession = _activeSession;
+            if (currentSession.ConnectionId is null)
             {
                 return new OperationResultDto<ActiveConnectionSessionDto>(
                     Success: false,
                     SemanticErrorCode: ConnectionOperationSemanticErrorCode.NotFound,
                     UserMessage: "There is no active connection to disconnect.",
-                    Payload: _activeSession,
+                    Payload: currentSession,
                     TechnicalError: null,
                     CorrelationId: null);
             }
 
-            if (!string.Equals(_activeSession.ConnectionId, connectionId, StringComparison.Ordinal))
+            if (!string.Equals(currentSession.ConnectionId, connectionId, StringComparison.Ordinal))
             {
                 return new OperationResultDto<ActiveConnectionSessionDto>(
                     Success: false,
                     SemanticErrorCode: ConnectionOperationSemanticErrorCode.Conflict,
                     UserMessage: "A different connection is active.",
-                    Payload: _activeSession,
+                    Payload: currentSession,
                     TechnicalError: null,
                     CorrelationId: null);
             }
 
-            _activeSession = _activeSession with { SessionState = ConnectionSessionStateDto.Disconnecting };
-            _activeSession = new ActiveConnectionSessionDto(
-                ConnectionId: null,
-                SessionState: ConnectionSessionStateDto.Inactive,
-                StartedAt: null,
-                SessionLabel: null);
+            _activeSession = currentSession with { SessionState = ConnectionSessionStateDto.Disconnecting };
+            try
+            {
+                _activeSession = new ActiveConnectionSessionDto(
+                    ConnectionId: null,
+                    SessionState: ConnectionSessionStateDto.Inactive,
+                    StartedAt: null,
+                    SessionLabel: null);
+            }
+            catch
+            {
+                _activeSession = currentSession;
+                throw;
+            }
         }
         finally
         {
@@ -185,5 +202,21 @@ public sealed class ConnectionSessionService : IConnectionSessionService
     public Task<ActiveConnectionSessionDto> GetActiveSessionAsync(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(_activeSession);
+    }
+
+    private async Task<bool> TryEnterGateAsync(CancellationToken cancellationToken)
+    {
+        return await _gate.WaitAsync(_gateWaitTimeout, cancellationToken);
+    }
+
+    private OperationResultDto<ActiveConnectionSessionDto> BuildTimeoutResult(string technicalError)
+    {
+        return new OperationResultDto<ActiveConnectionSessionDto>(
+            Success: false,
+            SemanticErrorCode: ConnectionOperationSemanticErrorCode.Timeout,
+            UserMessage: "Connection operation timed out. Please retry.",
+            Payload: _activeSession,
+            TechnicalError: technicalError,
+            CorrelationId: null);
     }
 }

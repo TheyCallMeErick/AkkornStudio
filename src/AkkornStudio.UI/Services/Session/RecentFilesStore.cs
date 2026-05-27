@@ -11,6 +11,7 @@ public static class RecentFilesStore
 {
     private const int MaxEntries = 20;
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
+    public static event Action<string>? WarningRaised;
 
     private static string AppDataDir =>
         global::AkkornStudio.UI.AppConstants.AppDataDirectory;
@@ -33,8 +34,19 @@ public static class RecentFilesStore
                 .Take(Math.Max(1, max))
                 .ToList();
         }
+        catch (JsonException ex)
+        {
+            RaiseWarning($"Could not parse recent files store '{RecentFilePath}': {ex.Message}");
+            return [];
+        }
+        catch (IOException ex)
+        {
+            RaiseWarning($"Could not read recent files store '{RecentFilePath}': {ex.Message}");
+            return [];
+        }
         catch
         {
+            RaiseWarning($"Could not load recent files store '{RecentFilePath}'.");
             return [];
         }
     }
@@ -57,11 +69,49 @@ public static class RecentFilesStore
                 .Take(MaxEntries)
                 .ToList();
 
-            File.WriteAllText(RecentFilePath, JsonSerializer.Serialize(items, JsonOpts));
+            WriteRecentFileAtomically(JsonSerializer.Serialize(items, JsonOpts));
+        }
+        catch (IOException ex)
+        {
+            RaiseWarning($"Could not persist recent files store '{RecentFilePath}': {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            RaiseWarning($"Access denied while writing recent files store '{RecentFilePath}': {ex.Message}");
         }
         catch
         {
-            // Best effort persistence.
+            RaiseWarning($"Could not persist recent files store '{RecentFilePath}'.");
         }
+    }
+
+    private static void WriteRecentFileAtomically(string json)
+    {
+        string tempPath = $"{RecentFilePath}.tmp-{Guid.NewGuid():N}";
+        try
+        {
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, RecentFilePath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempPath))
+                    File.Delete(tempPath);
+            }
+            catch
+            {
+                // Best effort cleanup; root operation already succeeded/failed.
+            }
+        }
+    }
+
+    private static void RaiseWarning(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+
+        WarningRaised?.Invoke(message);
     }
 }
