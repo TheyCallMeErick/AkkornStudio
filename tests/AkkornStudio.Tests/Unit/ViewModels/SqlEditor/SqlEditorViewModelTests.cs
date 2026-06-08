@@ -4,6 +4,7 @@ using System.IO;
 using AkkornStudio;
 using AkkornStudio.Core;
 using AkkornStudio.Metadata;
+using AkkornStudio.UI.Services.Explain;
 using AkkornStudio.UI.Services.SqlEditor;
 using AkkornStudio.UI.ViewModels;
 
@@ -96,6 +97,253 @@ public sealed class SqlEditorViewModelTests
 
         Assert.NotSame(first, second);
         Assert.Equal("archive.employees_archive", Assert.Single(second).FullName);
+    }
+
+    [Fact]
+    public void NotifyConnectionContextChanged_WhenTabHasNoProfile_UsesSharedManagerActiveProfile()
+    {
+        var manager = new ConnectionManagerViewModel();
+        var profile = new ConnectionProfile
+        {
+            Id = "profile-a",
+            Name = "Profile A",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_a",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        manager.Profiles.Add(profile);
+        manager.ActiveProfileId = profile.Id;
+
+        var sut = new SqlEditorViewModel(
+            sharedConnectionManagerResolver: () => manager,
+            connectionProfilesResolver: () =>
+            [
+                new SqlEditorConnectionProfileOption
+                {
+                    Id = profile.Id,
+                    DisplayName = profile.Name,
+                    Provider = profile.Provider,
+                },
+            ]);
+
+        sut.ActiveTabConnectionProfileId = null;
+        sut.NotifyConnectionContextChanged();
+
+        Assert.Equal(profile.Id, sut.ActiveTabConnectionProfileId);
+    }
+
+    [Fact]
+    public void NotifyConnectionContextChanged_WhenManagerActiveProfileChanges_SynchronizesActiveTabProfile()
+    {
+        var manager = new ConnectionManagerViewModel();
+        var profileA = new ConnectionProfile
+        {
+            Id = "profile-a",
+            Name = "Profile A",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_a",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        var profileB = new ConnectionProfile
+        {
+            Id = "profile-b",
+            Name = "Profile B",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_b",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        manager.Profiles.Add(profileA);
+        manager.Profiles.Add(profileB);
+        manager.ActiveProfileId = profileB.Id;
+
+        var sut = new SqlEditorViewModel(
+            sharedConnectionManagerResolver: () => manager,
+            connectionProfilesResolver: () =>
+            [
+                new SqlEditorConnectionProfileOption { Id = profileA.Id, DisplayName = profileA.Name, Provider = profileA.Provider },
+                new SqlEditorConnectionProfileOption { Id = profileB.Id, DisplayName = profileB.Name, Provider = profileB.Provider },
+            ]);
+
+        sut.ActiveTabConnectionProfileId = profileA.Id;
+        sut.NotifyConnectionContextChanged();
+
+        Assert.Equal(profileB.Id, sut.ActiveTabConnectionProfileId);
+    }
+
+    [Fact]
+    public void NotifyConnectionContextChanged_WhenManagerDisconnects_ClearsActiveTabProfile()
+    {
+        var manager = new ConnectionManagerViewModel();
+        var profile = new ConnectionProfile
+        {
+            Id = "profile-a",
+            Name = "Profile A",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_a",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        manager.Profiles.Add(profile);
+        manager.ActiveProfileId = null;
+
+        var sut = new SqlEditorViewModel(
+            sharedConnectionManagerResolver: () => manager,
+            connectionProfilesResolver: () =>
+            [
+                new SqlEditorConnectionProfileOption
+                {
+                    Id = profile.Id,
+                    DisplayName = profile.Name,
+                    Provider = profile.Provider,
+                },
+            ]);
+
+        sut.ActiveTabConnectionProfileId = profile.Id;
+        sut.NotifyConnectionContextChanged();
+
+        Assert.Null(sut.ActiveTabConnectionProfileId);
+    }
+
+    [Fact]
+    public async Task NotifyConnectionContextChanged_WhenExecutionIsInFlightAndConnectionChanges_CancelsExecution()
+    {
+        ConnectionConfig configA = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db_a",
+            "user",
+            "pass");
+        ConnectionConfig configB = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db_b",
+            "user",
+            "pass");
+        var manager = new ConnectionManagerViewModel();
+        var profileA = new ConnectionProfile
+        {
+            Id = "profile-a",
+            Name = "Profile A",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_a",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        var profileB = new ConnectionProfile
+        {
+            Id = "profile-b",
+            Name = "Profile B",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_b",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        manager.Profiles.Add(profileA);
+        manager.Profiles.Add(profileB);
+        manager.ActiveProfileId = profileA.Id;
+
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(new CancelAwareOrchestratorFactory()),
+            sharedConnectionManagerResolver: () => manager,
+            connectionConfigResolver: () => configA,
+            connectionConfigByProfileIdResolver: profileId =>
+                string.Equals(profileId, profileB.Id, StringComparison.Ordinal) ? configB : configA,
+            connectionProfilesResolver: () =>
+            [
+                new SqlEditorConnectionProfileOption { Id = profileA.Id, DisplayName = profileA.Name, Provider = profileA.Provider },
+                new SqlEditorConnectionProfileOption { Id = profileB.Id, DisplayName = profileB.Name, Provider = profileB.Provider },
+            ]);
+        sut.ActiveTabConnectionProfileId = profileA.Id;
+        sut.NotifyConnectionContextChanged();
+        sut.ActiveTab.SqlText = "SELECT 1;";
+
+        Task<SqlEditorResultSet> run = sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+        Assert.True(await WaitUntilAsync(() => sut.IsExecuting, 1000));
+
+        manager.ActiveProfileId = profileB.Id;
+        sut.NotifyConnectionContextChanged();
+        SqlEditorResultSet result = await run;
+
+        Assert.Equal(profileB.Id, sut.ActiveTabConnectionProfileId);
+        Assert.False(result.Success);
+        Assert.Equal(SqlExecutionErrorCategory.Cancelled, result.ErrorCategory);
+        Assert.False(sut.IsExecuting);
+    }
+
+    [Fact]
+    public async Task NotifyConnectionContextChanged_WhenExecutionIsInFlightAndContextIsUnchanged_DoesNotCancelExecution()
+    {
+        ConnectionConfig config = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db_a",
+            "user",
+            "pass");
+        var manager = new ConnectionManagerViewModel();
+        var profile = new ConnectionProfile
+        {
+            Id = "profile-a",
+            Name = "Profile A",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_a",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        manager.Profiles.Add(profile);
+        manager.ActiveProfileId = profile.Id;
+
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(new CancelAwareOrchestratorFactory()),
+            sharedConnectionManagerResolver: () => manager,
+            connectionConfigResolver: () => config,
+            connectionConfigByProfileIdResolver: _ => config,
+            connectionProfilesResolver: () =>
+            [
+                new SqlEditorConnectionProfileOption { Id = profile.Id, DisplayName = profile.Name, Provider = profile.Provider },
+            ]);
+        sut.ActiveTabConnectionProfileId = profile.Id;
+        sut.NotifyConnectionContextChanged();
+        sut.ActiveTab.SqlText = "SELECT 1;";
+
+        Task<SqlEditorResultSet> run = sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+        Assert.True(await WaitUntilAsync(() => sut.IsExecuting, 1000));
+
+        sut.NotifyConnectionContextChanged();
+        await Task.Delay(80);
+        Assert.True(sut.IsExecuting);
+        Assert.False(sut.IsCancellationPending);
+
+        sut.CancelExecution();
+        SqlEditorResultSet result = await run;
+
+        Assert.Equal(SqlExecutionErrorCategory.Cancelled, result.ErrorCategory);
     }
 
     [Fact]
@@ -736,7 +984,7 @@ public sealed class SqlEditorViewModelTests
 
 
     [Fact]
-    public async Task ExecuteSelectionOrCurrent_WhenResultHasNoRows_StillShowsResultsSheet()
+    public async Task ExecuteSelectionOrCurrent_WhenResultHasNoRows_StillKeepsResultAccessible()
     {
         ConnectionConfig config = new(
             DatabaseProvider.Postgres,
@@ -756,7 +1004,8 @@ public sealed class SqlEditorViewModelTests
         Assert.True(result.Success);
         Assert.NotNull(sut.ResultRowsView);
         Assert.True(sut.HasResultRows);
-        Assert.True(sut.ShouldShowResultsSheet);
+        Assert.False(sut.ShouldShowResultsSheet);
+        Assert.True(sut.CanReopenResultsSheet);
         Assert.True(sut.CanExportReport);
     }
     [Fact]
@@ -843,6 +1092,84 @@ public sealed class SqlEditorViewModelTests
     }
 
     [Fact]
+    public async Task ExecuteSelectionOrCurrent_WhenScriptHasOnlyComments_ReturnsNoOpSuccess()
+    {
+        var sut = new SqlEditorViewModel();
+        sut.ActiveTab.SqlText = """
+                                -- ========= SITUACAO =========
+                                -- 8 => SUSPENSO
+                                -- 9 => ENCERRADO
+                                """;
+
+        SqlEditorResultSet result = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.RowsAffected);
+        Assert.Same(result, sut.ActiveTab.LastResult);
+        Assert.False(sut.HasExecutionError);
+        AssertLocalized(sut.ExecutionStatusText, "Execucao concluida com sucesso.", "Execution succeeded.");
+    }
+
+    [Fact]
+    public async Task CancelExecution_DuringExecuteAll_StopsSafelyAndClassifiesAsCancelled()
+    {
+        ConnectionConfig config = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db",
+            "user",
+            "pass");
+
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(new CancelAwareOrchestratorFactory()),
+            connectionConfigResolver: () => config);
+        sut.ActiveTab.SqlText = "SELECT 1; SELECT 2; SELECT 3;";
+
+        Task<IReadOnlyList<SqlEditorResultSet>> run = sut.ExecuteAllAsync();
+        Assert.True(await WaitUntilAsync(() => sut.IsExecuting, 1000));
+
+        sut.CancelExecution();
+        IReadOnlyList<SqlEditorResultSet> results = await run;
+
+        Assert.Single(results);
+        Assert.False(results[0].Success);
+        Assert.Equal(SqlExecutionErrorCategory.Cancelled, results[0].ErrorCategory);
+        Assert.False(sut.IsExecuting);
+        Assert.False(sut.IsCancellationPending);
+        Assert.Equal(1, sut.ExecutionTelemetry.FailureCount);
+        Assert.Equal(1, sut.ExecutionTelemetry.FailureByCategory["Cancelled"]);
+    }
+
+    [Fact]
+    public async Task CancelExecution_WhenRunInProgress_StoresCancelledCategoryInResultTelemetry()
+    {
+        ConnectionConfig config = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db",
+            "user",
+            "pass");
+
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(new CancelAwareOrchestratorFactory()),
+            connectionConfigResolver: () => config);
+        sut.ActiveTab.SqlText = "SELECT 1;";
+
+        Task<SqlEditorResultSet> run = sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+        Assert.True(await WaitUntilAsync(() => sut.IsExecuting, 1000));
+        sut.CancelExecution();
+
+        SqlEditorResultSet result = await run;
+
+        Assert.Equal(SqlExecutionErrorCategory.Cancelled, result.ErrorCategory);
+        Assert.Equal(1, sut.ExecutionTelemetry.FailureCount);
+        Assert.Equal(1, sut.ExecutionTelemetry.FailureByCategory["Cancelled"]);
+        Assert.Contains("Cancelled:1", sut.ExecutionTelemetryErrorsText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ExecuteSelectionOrCurrent_WhenMutationNeedsConfirmation_DoesNotExecuteImmediately()
     {
         ConnectionConfig config = new(
@@ -866,7 +1193,7 @@ public sealed class SqlEditorViewModelTests
         Assert.True(sut.HasPendingMutationConfirmation);
         Assert.Contains(sut.PendingMutationIssues, i => i.Code == "NO_WHERE");
         Assert.Equal("SELECT COUNT(*) FROM orders", sut.PendingMutationCountQuery);
-        Assert.Equal(2, factory.ExecuteCount);
+        Assert.Equal(3, factory.ExecuteCount);
         Assert.Equal(1, sut.PendingMutationEstimatedRows);
         AssertLocalized(sut.PendingMutationEstimateText, "Linhas afetadas estimadas: 1", "Estimated affected rows: 1");
         Assert.True(sut.HasPendingMutationDiff);
@@ -898,7 +1225,7 @@ public sealed class SqlEditorViewModelTests
 
         Assert.NotNull(confirmed);
         Assert.True(confirmed!.Success);
-        Assert.Equal(3, factory.ExecuteCount);
+        Assert.Equal(4, factory.ExecuteCount);
         Assert.False(sut.HasPendingMutationConfirmation);
         Assert.Single(sut.ExecutionHistory);
         AssertLocalized(sut.ExecutionStatusText, "Execucao concluida com sucesso.", "Execution succeeded.");
@@ -932,6 +1259,32 @@ public sealed class SqlEditorViewModelTests
             sut.ExecutionStatusText,
             "Execucao da mutacao cancelada.",
             "Mutation execution canceled.");
+    }
+
+    [Fact]
+    public async Task ActiveEditorTabIndex_WhenSwitchingTabs_ClearsPendingMutationConfirmation()
+    {
+        ConnectionConfig config = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db",
+            "user",
+            "pass");
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(new CountingOrchestratorFactory()),
+            connectionConfigResolver: () => config);
+        sut.SetExecutionSafetyOptions(top1000WithoutWhereEnabled: true, protectMutationWithoutWhereEnabled: true);
+        sut.ActiveTab.SqlText = "DELETE FROM orders;";
+        _ = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+        Assert.True(sut.HasPendingMutationConfirmation);
+
+        sut.NewTabCommand.Execute(null);
+        sut.ActiveEditorTabIndex = 1;
+        Assert.False(sut.HasPendingMutationConfirmation);
+
+        sut.ActiveEditorTabIndex = 0;
+        Assert.False(sut.HasPendingMutationConfirmation);
     }
 
     [Fact]
@@ -1021,7 +1374,29 @@ public sealed class SqlEditorViewModelTests
 
         _ = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0, maxRows: 250);
 
-        Assert.Equal(int.MaxValue, factory.LastRequestedMaxRows);
+        Assert.Equal(PreviewExecutionOptions.NoLimit, factory.LastRequestedMaxRows);
+    }
+
+    [Fact]
+    public async Task ExecuteSelectionOrCurrent_WhenTop1000LimiterDisabledForSelectWithWhere_UsesUnlimitedMaxRows()
+    {
+        ConnectionConfig config = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db",
+            "user",
+            "pass");
+        var factory = new MaxRowsCapturingOrchestratorFactory();
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(factory),
+            connectionConfigResolver: () => config);
+        sut.SetExecutionSafetyOptions(top1000WithoutWhereEnabled: false, protectMutationWithoutWhereEnabled: true);
+        sut.ActiveTab.SqlText = "SELECT * FROM orders WHERE id > 10;";
+
+        _ = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0, maxRows: 250);
+
+        Assert.Equal(PreviewExecutionOptions.NoLimit, factory.LastRequestedMaxRows);
     }
 
     [Fact]
@@ -1115,8 +1490,7 @@ public sealed class SqlEditorViewModelTests
         Assert.True(sut.IsProductionConnectionContext);
         Assert.False(sut.IsStagingConnectionContext);
         Assert.False(sut.IsNeutralConnectionContext);
-        Assert.Contains("[PostgreSQL]", sut.ActiveConnectionContextBadgeText, StringComparison.Ordinal);
-        Assert.Contains("prod-main/default", sut.ActiveConnectionContextBadgeText, StringComparison.Ordinal);
+        Assert.Equal("prod-main", sut.ActiveConnectionContextBadgeText);
     }
 
     [Fact]
@@ -1171,7 +1545,7 @@ public sealed class SqlEditorViewModelTests
         IReadOnlyList<SqlEditorResultSet> results = await sut.ExecuteAllAsync();
 
         Assert.Equal(2, results.Count);
-        Assert.Equal(3, factory.ExecuteCount);
+        Assert.Equal(4, factory.ExecuteCount);
         Assert.True(sut.HasPendingMutationConfirmation);
         Assert.Contains(sut.PendingMutationIssues, i => i.Code == "NO_WHERE");
         Assert.Equal(1, sut.PendingMutationEstimatedRows);
@@ -1183,6 +1557,105 @@ public sealed class SqlEditorViewModelTests
         Assert.True(
             sut.ExecutionTelemetryErrorsText.Contains("Confirmacao de mutacao necessaria.", StringComparison.Ordinal)
             || sut.ExecutionTelemetryErrorsText.Contains("Mutation confirmation required.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteSelectionOrCurrentAsync_WhenParametersAreMissing_ShowsPromptAndSkipsExecution()
+    {
+        ConnectionConfig config = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db",
+            "user",
+            "pass");
+        var factory = new SqlCapturingOrchestratorFactory();
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(factory),
+            connectionConfigResolver: () => config);
+        sut.ActiveTab.SqlText = "SELECT * FROM clientes WHERE cidade = :cidade AND idade >= :idade;";
+
+        SqlEditorResultSet result = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, factory.ExecuteCount);
+        Assert.True(sut.HasPendingQueryParameterPrompt);
+        Assert.Equal(2, sut.PendingQueryParameters.Count);
+        Assert.Contains(sut.PendingQueryParameters, item => string.Equals(item.Name, "cidade", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(sut.PendingQueryParameters, item => string.Equals(item.Name, "idade", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(sut.ExecutionHistory);
+    }
+
+    [Fact]
+    public async Task ConfirmPendingQueryParametersAsync_ExecutesWithSafeLiteralsAndPreservesValues()
+    {
+        ConnectionConfig config = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db",
+            "user",
+            "pass");
+        var factory = new SqlCapturingOrchestratorFactory();
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(factory),
+            connectionConfigResolver: () => config);
+        sut.ActiveTab.SqlText = "SELECT * FROM clientes WHERE cidade = :cidade AND idade >= :idade;";
+
+        _ = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+        Assert.True(sut.HasPendingQueryParameterPrompt);
+
+        SqlQueryParameterPromptItemViewModel cidade = sut.PendingQueryParameters
+            .First(item => string.Equals(item.Name, "cidade", StringComparison.OrdinalIgnoreCase));
+        SqlQueryParameterPromptItemViewModel idade = sut.PendingQueryParameters
+            .First(item => string.Equals(item.Name, "idade", StringComparison.OrdinalIgnoreCase));
+        cidade.InputValue = "O'Hara";
+        idade.InputValue = "21";
+
+        SqlEditorResultSet? confirmed = await sut.ConfirmPendingQueryParametersAsync();
+
+        Assert.NotNull(confirmed);
+        Assert.True(confirmed!.Success);
+        Assert.Equal(1, factory.ExecuteCount);
+        Assert.NotNull(factory.LastSql);
+        Assert.Contains("cidade = 'O''Hara'", factory.LastSql, StringComparison.Ordinal);
+        Assert.Contains("idade >= 21", factory.LastSql, StringComparison.Ordinal);
+        Assert.False(sut.HasPendingQueryParameterPrompt);
+        Assert.Single(sut.ExecutionHistory);
+
+        SqlEditorResultSet secondRun = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+        Assert.True(secondRun.Success);
+        Assert.False(sut.HasPendingQueryParameterPrompt);
+        Assert.Equal(2, factory.ExecuteCount);
+    }
+
+    [Fact]
+    public async Task ConfirmPendingQueryParametersAsync_RejectsMissingRequiredValue()
+    {
+        ConnectionConfig config = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db",
+            "user",
+            "pass");
+        var factory = new SqlCapturingOrchestratorFactory();
+        var sut = new SqlEditorViewModel(
+            executionService: new SqlEditorExecutionService(factory),
+            connectionConfigResolver: () => config);
+        sut.ActiveTab.SqlText = "SELECT * FROM clientes WHERE cidade = :cidade;";
+
+        _ = await sut.ExecuteSelectionOrCurrentAsync(0, 0, 0);
+        Assert.True(sut.HasPendingQueryParameterPrompt);
+
+        SqlQueryParameterPromptItemViewModel cidade = Assert.Single(sut.PendingQueryParameters);
+        cidade.InputValue = string.Empty;
+        SqlEditorResultSet? confirmed = await sut.ConfirmPendingQueryParametersAsync();
+
+        Assert.Null(confirmed);
+        Assert.Equal(0, factory.ExecuteCount);
+        Assert.True(sut.HasPendingQueryParameterPrompt);
+        Assert.True(sut.HasExecutionError);
     }
 
     [Fact]
@@ -1237,6 +1710,80 @@ public sealed class SqlEditorViewModelTests
             sut.ExplainSummaryText,
             "Nada para explicar. Escreva um SQL primeiro.",
             "Nothing to explain. Write SQL first.");
+    }
+
+    [Fact]
+    public async Task NotifyConnectionContextChanged_WhenExplainIsInFlightAndConnectionChanges_CancelsExplain()
+    {
+        ConnectionConfig configA = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db_a",
+            "user",
+            "pass");
+        ConnectionConfig configB = new(
+            DatabaseProvider.Postgres,
+            "localhost",
+            5432,
+            "db_b",
+            "user",
+            "pass");
+        var manager = new ConnectionManagerViewModel();
+        var profileA = new ConnectionProfile
+        {
+            Id = "profile-a",
+            Name = "Profile A",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_a",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        var profileB = new ConnectionProfile
+        {
+            Id = "profile-b",
+            Name = "Profile B",
+            Provider = DatabaseProvider.Postgres,
+            Host = "localhost",
+            Port = 5432,
+            Database = "db_b",
+            Username = "u",
+            Password = "p",
+            TimeoutSeconds = 30,
+        };
+        manager.Profiles.Add(profileA);
+        manager.Profiles.Add(profileB);
+        manager.ActiveProfileId = profileA.Id;
+
+        var explainExecutor = new CancelAwareExplainExecutor();
+        var executionController = new SqlEditorExecutionController(
+            explainService: new SqlEditorExplainService(explainExecutor));
+        var sut = new SqlEditorViewModel(
+            sharedConnectionManagerResolver: () => manager,
+            connectionConfigResolver: () => configA,
+            connectionConfigByProfileIdResolver: profileId =>
+                string.Equals(profileId, profileB.Id, StringComparison.Ordinal) ? configB : configA,
+            connectionProfilesResolver: () =>
+            [
+                new SqlEditorConnectionProfileOption { Id = profileA.Id, DisplayName = profileA.Name, Provider = profileA.Provider },
+                new SqlEditorConnectionProfileOption { Id = profileB.Id, DisplayName = profileB.Name, Provider = profileB.Provider },
+            ],
+            executionController: executionController);
+        sut.ActiveTabConnectionProfileId = profileA.Id;
+        sut.NotifyConnectionContextChanged();
+
+        Task run = sut.RunExplainForSqlAsync("SELECT 1");
+        await explainExecutor.Started.Task;
+
+        manager.ActiveProfileId = profileB.Id;
+        sut.NotifyConnectionContextChanged();
+        await run;
+
+        AssertLocalized(sut.ExplainSummaryText, "Explain cancelado.", "Explain canceled.");
+        Assert.False(sut.IsExplainRunning);
     }
 
     [Fact]
@@ -1315,6 +1862,23 @@ public sealed class SqlEditorViewModelTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
+    private sealed class CancelAwareExplainExecutor : IExplainExecutor
+    {
+        public TaskCompletionSource<bool> Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<ExplainResult> RunAsync(
+            string sql,
+            DatabaseProvider provider,
+            ConnectionConfig? connectionConfig,
+            ExplainOptions options,
+            CancellationToken ct = default)
+        {
+            Started.TrySetResult(true);
+            await Task.Delay(Timeout.Infinite, ct);
+            return new ExplainResult([], null, null, string.Empty, false);
+        }
+    }
+
     private static DataTable BuildTable(int rows)
     {
         var table = new DataTable();
@@ -1387,6 +1951,40 @@ public sealed class SqlEditorViewModelTests
             public Task<PreviewResult> ExecutePreviewAsync(string sql, int maxRows = PreviewExecutionOptions.UseConfiguredDefault, CancellationToken ct = default)
             {
                 owner.ExecuteCount++;
+                return Task.FromResult(new PreviewResult(true, BuildTable(rows: 1), null, TimeSpan.FromMilliseconds(2), 1));
+            }
+
+            public Task<DdlExecutionResult> ExecuteDdlAsync(string sql, bool stopOnError = true, CancellationToken ct = default) =>
+                Task.FromResult(new DdlExecutionResult(true, []));
+
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class SqlCapturingOrchestratorFactory : IDbOrchestratorFactory
+    {
+        public int ExecuteCount { get; private set; }
+        public string? LastSql { get; private set; }
+
+        public IDbOrchestrator Create(ConnectionConfig config) => new SqlCapturingOrchestrator(config, this);
+        public Func<ConnectionConfig, IDbOrchestrator>? Register(DatabaseProvider provider, Func<ConnectionConfig, IDbOrchestrator> factory) => null;
+        public bool IsRegistered(DatabaseProvider provider) => true;
+
+        private sealed class SqlCapturingOrchestrator(ConnectionConfig config, SqlCapturingOrchestratorFactory owner) : IDbOrchestrator
+        {
+            public DatabaseProvider Provider => config.Provider;
+            public ConnectionConfig Config => config;
+
+            public Task<ConnectionTestResult> TestConnectionAsync(CancellationToken ct = default) =>
+                Task.FromResult(new ConnectionTestResult(true));
+
+            public Task<DatabaseSchema> GetSchemaAsync(CancellationToken ct = default) =>
+                Task.FromResult(new DatabaseSchema("db", config.Provider, []));
+
+            public Task<PreviewResult> ExecutePreviewAsync(string sql, int maxRows = PreviewExecutionOptions.UseConfiguredDefault, CancellationToken ct = default)
+            {
+                owner.ExecuteCount++;
+                owner.LastSql = sql;
                 return Task.FromResult(new PreviewResult(true, BuildTable(rows: 1), null, TimeSpan.FromMilliseconds(2), 1));
             }
 

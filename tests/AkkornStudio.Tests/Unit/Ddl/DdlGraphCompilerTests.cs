@@ -45,14 +45,19 @@ public class DdlGraphCompilerTests
     }
 
     [Fact]
-    public void Compile_CreateIndexWithInclude_OnMySql_EmitsCompatibilityWarning()
+    public void Compile_CreateIndexWithInclude_OnMySql_FailsWithExplicitError()
     {
         var graph = BuildCreateIndexGraph();
         var compiler = new DdlGraphCompiler(graph, DatabaseProvider.MySql);
 
         DdlCompileResult result = compiler.CompileWithDiagnostics();
 
-        Assert.Contains(result.Warnings, w => w.Code == "W-DDL-INDEX-INCLUDE-UNSUPPORTED");
+        Assert.Empty(result.Statements);
+        Assert.True(result.HasErrors);
+        Assert.Contains(result.Diagnostics, d =>
+            d.Code == "E-DDL-COMPILE-CREATEINDEX"
+            && d.Severity == DdlDiagnosticSeverity.Error
+            && d.Message.Contains("does not support INCLUDE columns", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

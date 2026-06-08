@@ -43,7 +43,6 @@ public sealed class DefaultShortcutCatalog
             Def(ShortcutActionIds.SendToBack, "Send to Back", "Send selection to back", "Canvas and Navigation", ShortcutContext.Canvas, "layer", "arrange", "Ctrl+Shift+PgDown"),
 
             Def(ShortcutActionIds.TogglePreview, "Toggle Preview", "Toggle preview panel", "Preview and Inspection", ShortcutContext.Canvas, "preview", "data", "F3"),
-            Def(ShortcutActionIds.RunPreview, "Run Preview", "Run preview query", "Preview and Inspection", ShortcutContext.Canvas, "preview", "execute", "F5"),
             Def(ShortcutActionIds.ExplainPlan, "Explain Plan", "Open explain plan", "Preview and Inspection", ShortcutContext.Canvas, "explain", "plan", "F4"),
 
             Def(ShortcutActionIds.ZoomIn, "Zoom In", "Increase zoom", "Zoom, pan and precision", ShortcutContext.Canvas, "zoom", "canvas", "Ctrl++"),

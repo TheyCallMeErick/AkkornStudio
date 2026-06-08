@@ -1,5 +1,6 @@
 using AkkornStudio.UI.Controls;
 using Xunit;
+using System.Reflection;
 
 namespace AkkornStudio.Tests.Unit.Controls;
 
@@ -10,7 +11,8 @@ public class InfiniteCanvasBindingTests
     {
         var canvas = new InfiniteCanvas();
 
-        Assert.Equal(3, canvas.Children.Count);
+        Assert.Single(canvas.Children);
+        Assert.IsType<InfiniteCanvasCoreControl>(canvas.Children[0]);
     }
 
     [Fact]
@@ -23,5 +25,18 @@ public class InfiniteCanvasBindingTests
 
         Assert.NotNull(cacheField);
         Assert.Contains("Dictionary", cacheField!.FieldType.Name, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Constructor_ConfiguresWireLayer_AsNonHitTestable()
+    {
+        var canvas = new InfiniteCanvas();
+        FieldInfo? wiresField = typeof(InfiniteCanvas).GetField(
+            "_wires",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(wiresField);
+        var wires = Assert.IsType<BezierWireLayer>(wiresField!.GetValue(canvas));
+        Assert.False(wires.IsHitTestVisible);
     }
 }

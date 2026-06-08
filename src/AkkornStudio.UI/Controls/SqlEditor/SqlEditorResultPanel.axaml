@@ -5,10 +5,8 @@
              xmlns:mi="using:Material.Icons.Avalonia"
              x:Class="AkkornStudio.UI.Controls.SqlEditor.SqlEditorResultPanel"
              x:DataType="vm:SqlEditorViewModel">
-  <Border Background="{StaticResource Bg0Brush}"
-          BorderBrush="{StaticResource BorderSubtleBrush}"
-          BorderThickness="1"
-          CornerRadius="{StaticResource RadiusMD}"
+  <Border Classes="surface-panel"
+          Background="{StaticResource Bg0Brush}"
           Padding="8"
           ClipToBounds="True">
     <Grid RowDefinitions="Auto,Auto,*">
@@ -22,15 +20,11 @@
                      FontSize="{StaticResource FontSizeBody}"/>
           <Button Content="{Binding ShowAllColumnsButtonText}"
                   IsVisible="{Binding HasHiddenResultColumns}"
-                  Padding="10,2"
-                  MinHeight="24"
-                  FontSize="{StaticResource FontSizeCaption}"
+                  Classes="secondary compact"
                   Click="ShowAllColumnsButton_Click"/>
           <Button Content="{Binding UndoHiddenColumnButtonText}"
                   IsVisible="{Binding HasHiddenColumnUndo}"
-                  Padding="10,2"
-                  MinHeight="24"
-                  FontSize="{StaticResource FontSizeCaption}"
+                  Classes="secondary compact"
                   Click="UndoHiddenColumnButton_Click"/>
           <TextBlock x:Name="RowsCounterText"
                      Foreground="{StaticResource TextMutedBrush}"
@@ -40,33 +34,25 @@
 
         <Grid Grid.Column="1" ColumnDefinitions="*,Auto" IsVisible="{Binding IsResultsOutputPaneSelected}">
           <TextBox Grid.Column="0"
+                   Classes="field"
                    Text="{Binding ResultGridFilterText}"
                    Watermark="{Binding [sqlEditor.results.filterWatermark], Source={x:Static loc:LocalizationService.Instance}}"
                    FontSize="{StaticResource FontSizeCaption}"
-                   HorizontalAlignment="Stretch"
-                   Background="{StaticResource Bg1Brush}"
-                   Foreground="{StaticResource TextPrimaryBrush}"
-                   BorderBrush="{StaticResource BorderSubtleBrush}"/>
+                   HorizontalAlignment="Stretch"/>
           <Button Grid.Column="1"
                   Content="{Binding [common.clear], Source={x:Static loc:LocalizationService.Instance}}"
                   Margin="6,0,0,0"
-                  Padding="10,2"
-                  MinHeight="24"
-                  FontSize="{StaticResource FontSizeCaption}"
+                  Classes="secondary compact"
                   Click="ClearResultFilterButton_Click"/>
         </Grid>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
           <Button Content="{Binding [sqlEditor.export.action], Source={x:Static loc:LocalizationService.Instance}}"
                   IsVisible="{Binding CanExportReport}"
-                  Padding="10,2"
-                  MinHeight="24"
-                  FontSize="{StaticResource FontSizeCaption}"
+                  Classes="secondary compact"
                   Click="ExportReportButton_Click"/>
           <Button IsVisible="{Binding IsMessagesOutputPaneSelected}"
-                  Padding="10,2"
-                  MinHeight="24"
-                  FontSize="{StaticResource FontSizeCaption}"
+                  Classes="secondary compact"
                   Click="ClearMessagesButton_Click"
                   Content="{Binding [common.clear], Source={x:Static loc:LocalizationService.Instance}}"/>
         </StackPanel>
@@ -74,15 +60,10 @@
 
       <Border Grid.Row="1"
               Margin="0,0,0,6"
-              Background="{StaticResource Bg1Brush}"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="1"
-              CornerRadius="{StaticResource RadiusSM}"
+              Classes="surface-card"
               Padding="6,4">
         <StackPanel Orientation="Horizontal" Spacing="6">
-          <Button Padding="10,2"
-                  MinHeight="24"
-                  FontSize="{StaticResource FontSizeCaption}"
+          <Button Classes="secondary compact"
                   Click="ResultsPaneButton_Click"
                   Classes.primary="{Binding IsResultsOutputPaneSelected}">
             <StackPanel Orientation="Horizontal" Spacing="6">
@@ -91,9 +72,7 @@
             </StackPanel>
           </Button>
 
-          <Button Padding="10,2"
-                  MinHeight="24"
-                  FontSize="{StaticResource FontSizeCaption}"
+          <Button Classes="secondary compact"
                   Click="MessagesPaneButton_Click"
                   Classes.primary="{Binding IsMessagesOutputPaneSelected}">
             <StackPanel Orientation="Horizontal" Spacing="6">
@@ -146,16 +125,13 @@
               <DataTemplate x:DataType="vm:SqlEditorMessageEntry">
                 <Border Margin="0,0,0,8"
                         Padding="10"
-                        Background="{StaticResource Bg1Brush}"
-                        BorderBrush="{StaticResource BorderSubtleBrush}"
-                        BorderThickness="1"
-                        CornerRadius="{StaticResource RadiusSM}">
+                        Classes="surface-card">
                   <StackPanel Spacing="4">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                      <Border Background="#223E7BFF" CornerRadius="8" Padding="6,1" IsVisible="{Binding IsError, Converter={x:Static BoolConverters.Not}}">
+                      <Border Classes="badge info" IsVisible="{Binding IsError, Converter={x:Static BoolConverters.Not}}">
                         <TextBlock Text="{Binding LevelText}" FontSize="{StaticResource FontSizeMonoSmall}" Foreground="{StaticResource TextPrimaryBrush}"/>
                       </Border>
-                      <Border Background="#22FF6F7E" CornerRadius="8" Padding="6,1" IsVisible="{Binding IsError}">
+                      <Border Classes="badge danger" IsVisible="{Binding IsError}">
                         <TextBlock Text="{Binding LevelText}" FontSize="{StaticResource FontSizeMonoSmall}" Foreground="{StaticResource TextPrimaryBrush}"/>
                       </Border>
                       <TextBlock Text="{Binding Source}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource AccentPrimaryHoverBrush}"/>

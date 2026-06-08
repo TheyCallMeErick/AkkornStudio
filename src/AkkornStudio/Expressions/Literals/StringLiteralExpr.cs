@@ -5,5 +5,11 @@ public sealed record StringLiteralExpr(string Value) : ISqlExpression
 {
     public PinDataType OutputType => PinDataType.Text;
 
-    public string Emit(EmitContext ctx) => EmitContext.QuoteLiteral(Value);
+    public string Emit(EmitContext ctx)
+    {
+        if (Value is null)
+            throw new InvalidOperationException("String literal value cannot be null.");
+
+        return EmitContext.QuoteLiteral(Value);
+    }
 }

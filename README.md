@@ -1,8 +1,8 @@
-
 <div align="center">
 
 <br/>
-<img width="512" alt="banner" src="https://github.com/user-attachments/assets/3b6f5b91-3020-43d1-9bff-ec596f30531f" />
+
+# AkkornStudio
 
 ### Monte consultas SQL arrastando nós — veja o SQL ao vivo enquanto você cria.
 

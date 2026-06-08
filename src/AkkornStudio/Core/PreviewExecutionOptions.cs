@@ -5,10 +5,15 @@ namespace AkkornStudio.Core;
 public sealed class PreviewExecutionOptions
 {
     public const int UseConfiguredDefault = -1;
+    public const int NoLimit = -2;
     public const int BuiltInDefaultMaxRows = 200;
     public const string MaxRowsEnvironmentVariable = "VSA_PREVIEW_MAX_ROWS";
+    public const int BuiltInDefaultMaxCellBytes = 256 * 1024;
+    public const long BuiltInDefaultMaxPayloadBytes = 8L * 1024 * 1024;
 
     public int DefaultMaxRows { get; set; } = BuiltInDefaultMaxRows;
+    public int MaxCellBytes { get; set; } = BuiltInDefaultMaxCellBytes;
+    public long MaxPayloadBytes { get; set; } = BuiltInDefaultMaxPayloadBytes;
 
     public static int ResolveDefaultMaxRows(IOptions<PreviewExecutionOptions>? options)
     {
@@ -25,4 +30,6 @@ public sealed class PreviewExecutionOptions
 
         return BuiltInDefaultMaxRows;
     }
+
+    public static bool IsUnlimitedRequested(int maxRows) => maxRows == NoLimit;
 }

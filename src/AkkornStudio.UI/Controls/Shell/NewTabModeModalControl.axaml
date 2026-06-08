@@ -1,0 +1,78 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AkkornStudio.UI.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             x:Class="AkkornStudio.UI.Controls.Shell.NewTabModeModalControl"
+             x:DataType="vm:NewTabModeModalViewModel"
+             x:Name="Root">
+  <UserControl.Styles>
+    <Style Selector="Border.newtab-overlay">
+      <Setter Property="Background" Value="#99070B14"/>
+    </Style>
+    <Style Selector="Border.newtab-card">
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusLG}"/>
+      <Setter Property="Padding" Value="18"/>
+      <Setter Property="MaxWidth" Value="560"/>
+      <Setter Property="BoxShadow" Value="{StaticResource ShadowLG}"/>
+    </Style>
+    <Style Selector="Button.newtab-mode">
+      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusMD}"/>
+      <Setter Property="Padding" Value="14"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    </Style>
+    <Style Selector="Button.newtab-mode:pointerover">
+      <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Border Classes="newtab-overlay" PointerPressed="Overlay_OnPointerPressed">
+    <Border Classes="newtab-card"
+            VerticalAlignment="Center"
+            HorizontalAlignment="Center"
+            PointerPressed="Card_OnPointerPressed">
+      <StackPanel Spacing="14">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Grid.Column="0" Spacing="2">
+            <TextBlock Text="{Binding Title}" FontSize="{StaticResource FontSizeTitle}" FontWeight="{StaticResource FontWeightTitle}"/>
+            <TextBlock Text="Escolha o modo de trabalho desta aba." Foreground="{StaticResource TextSecondaryBrush}"/>
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost compact" Command="{Binding CloseCommand}" VerticalAlignment="Top">
+            <mi:MaterialIcon Kind="Close" Width="16" Height="16"/>
+          </Button>
+        </Grid>
+
+        <ItemsControl ItemsSource="{Binding Modes}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Columns="2"/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:NewTabModeOption">
+              <Button Classes="newtab-mode"
+                      Margin="0,0,8,8"
+                      Command="{Binding DataContext.ChooseModeCommand, ElementName=Root}"
+                      CommandParameter="{Binding Mode}">
+                <StackPanel Spacing="6">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <mi:MaterialIcon Kind="{Binding Icon}" Width="20" Height="20" Foreground="{StaticResource AccentPrimaryBrush}"/>
+                    <TextBlock Text="{Binding Title}" FontWeight="{StaticResource FontWeightStrong}" VerticalAlignment="Center"/>
+                  </StackPanel>
+                  <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{StaticResource FontSizeCaption}" TextWrapping="Wrap"/>
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+  </Border>
+</UserControl>

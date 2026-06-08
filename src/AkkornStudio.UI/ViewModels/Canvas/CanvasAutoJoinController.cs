@@ -25,6 +25,8 @@ internal sealed class CanvasAutoJoinController : IDisposable
     private readonly Func<NodeDefinition, Point, NodeViewModel> _spawnNode;
     private readonly Action<PinViewModel, PinViewModel> _connectPins;
     private readonly Action _notifyRunSelectedAutoJoinCanExecute;
+    private readonly Dictionary<string, SuggestionNodeAnchor> _suggestionAnchorsByKey = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<JoinSuggestion> _lastSuggestions = [];
 
     public CanvasAutoJoinController(
         ObservableCollection<NodeViewModel> nodes,
@@ -58,6 +60,7 @@ internal sealed class CanvasAutoJoinController : IDisposable
     }
 
     public bool HasTwoSelectedTableSources => GetSelectedTableSources().Count == 2;
+    public bool CanRunAutoJoin => HasTwoSelectedTableSources || _lastSuggestions.Count > 0;
 
     /// <summary>
     /// Analyses join opportunities involving <paramref name="newTableFullName"/>
@@ -65,9 +68,16 @@ internal sealed class CanvasAutoJoinController : IDisposable
     /// </summary>
     public void TriggerAutoJoinAnalysis(string newTableFullName)
     {
-        IReadOnlyList<JoinSuggestion> suggestions = _suggestionService.AnalyzeNewTable(newTableFullName, _nodes);
-        if (suggestions.Count > 0)
-            ShowAutoJoinSuggestionsMessage(suggestions);
+        try
+        {
+            IReadOnlyList<JoinSuggestion> suggestions = _suggestionService.AnalyzeNewTable(newTableFullName, _nodes);
+            if (suggestions.Count > 0)
+                ShowAutoJoinSuggestionsMessage(suggestions);
+        }
+        catch
+        {
+            _notifier.ShowSuggestionsUnavailable();
+        }
     }
 
     /// <summary>
@@ -76,21 +86,41 @@ internal sealed class CanvasAutoJoinController : IDisposable
     /// </summary>
     public void AnalyzeAllCanvasJoins()
     {
-        IReadOnlyList<JoinSuggestion> allSuggestions = _suggestionService.AnalyzeAllTables(_nodes);
-        if (allSuggestions.Count > 0)
-            ShowAutoJoinSuggestionsMessage(allSuggestions);
+        try
+        {
+            IReadOnlyList<JoinSuggestion> allSuggestions = _suggestionService.AnalyzeAllTables(_nodes);
+            if (allSuggestions.Count > 0)
+                ShowAutoJoinSuggestionsMessage(allSuggestions);
+        }
+        catch
+        {
+            _notifier.ShowSuggestionsUnavailable();
+        }
     }
 
     public void RunSelectedAutoJoin()
     {
         List<NodeViewModel> selected = GetSelectedTableSources();
         if (selected.Count != 2)
+        {
+            TryReopenLastSuggestions();
             return;
+        }
 
         NodeViewModel left = selected[0];
         NodeViewModel right = selected[1];
 
-        IReadOnlyList<JoinSuggestion> suggestions = _suggestionService.AnalyzePair(left, right, _nodes);
+        IReadOnlyList<JoinSuggestion> suggestions;
+        try
+        {
+            suggestions = _suggestionService.AnalyzePair(left, right, _nodes);
+        }
+        catch
+        {
+            _manualJoinDialog.Open(left, right);
+            _notifier.ShowSuggestionsUnavailable();
+            return;
+        }
         if (suggestions.Count == 0)
         {
             _manualJoinDialog.Open(left, right);
@@ -127,6 +157,9 @@ internal sealed class CanvasAutoJoinController : IDisposable
 
     private bool TryApplySuggestion(JoinSuggestion suggestion)
     {
+        if (!IsSuggestionAnchorCurrent(suggestion))
+            return false;
+
         return _applicationService.TryApplySuggestion(
             suggestion,
             _nodes,
@@ -166,9 +199,40 @@ internal sealed class CanvasAutoJoinController : IDisposable
 
     private void ShowAutoJoinSuggestionsMessage(IReadOnlyList<JoinSuggestion> suggestions)
     {
+        CacheSuggestions(suggestions);
+        CacheSuggestionAnchors(suggestions);
         _notifier.ShowSuggestionsFound(
             suggestions.Count,
             onDetails: () => OpenManualDialogFromSuggestions(suggestions));
+    }
+
+    private void CacheSuggestions(IReadOnlyList<JoinSuggestion> suggestions)
+    {
+        _lastSuggestions = suggestions
+            .Where(static s => s is not null)
+            .ToArray();
+        _notifyRunSelectedAutoJoinCanExecute();
+    }
+
+    private bool TryReopenLastSuggestions()
+    {
+        if (_lastSuggestions.Count == 0)
+            return false;
+
+        List<JoinSuggestion> currentSuggestions = _lastSuggestions
+            .Where(IsSuggestionAnchorCurrent)
+            .ToList();
+
+        if (currentSuggestions.Count == 0)
+        {
+            _lastSuggestions = [];
+            _notifyRunSelectedAutoJoinCanExecute();
+            _notifier.ShowSuggestionsUnavailable();
+            return false;
+        }
+
+        OpenManualDialogFromSuggestions(currentSuggestions);
+        return true;
     }
 
     private void OpenManualDialogFromSuggestions(IReadOnlyList<JoinSuggestion> suggestions)
@@ -176,6 +240,12 @@ internal sealed class CanvasAutoJoinController : IDisposable
         JoinSuggestion? best = suggestions.OrderByDescending(s => s.Score).FirstOrDefault();
         if (best is null)
             return;
+
+        if (!IsSuggestionAnchorCurrent(best))
+        {
+            _notifier.ShowSuggestionsUnavailable();
+            return;
+        }
 
         NodeViewModel? left = FindTableSourceNode(best.ExistingTable);
         NodeViewModel? right = FindTableSourceNode(best.NewTable);
@@ -199,7 +269,8 @@ internal sealed class CanvasAutoJoinController : IDisposable
 
     private void OnJoinAccepted(object? _, JoinSuggestion suggestion)
     {
-        _ = TryApplySuggestion(suggestion);
+        if (!TryApplySuggestion(suggestion))
+            _notifier.ShowSuggestionsUnavailable();
     }
 
     private void OnManualJoinConfirmed(object? _, ManualJoinRequest request)
@@ -259,4 +330,43 @@ internal sealed class CanvasAutoJoinController : IDisposable
 
     private static bool MatchesSource(NodeViewModel node, string sourceRef) =>
         CanvasAutoJoinSemantics.MatchesSource(node.Subtitle, node.Title, node.Alias, sourceRef);
+
+    private void CacheSuggestionAnchors(IReadOnlyList<JoinSuggestion> suggestions)
+    {
+        _suggestionAnchorsByKey.Clear();
+
+        foreach (JoinSuggestion suggestion in suggestions)
+        {
+            NodeViewModel? existing = FindTableSourceNode(suggestion.ExistingTable);
+            NodeViewModel? incoming = FindTableSourceNode(suggestion.NewTable);
+            if (existing is null || incoming is null)
+                continue;
+
+            _suggestionAnchorsByKey[BuildSuggestionKey(suggestion)] = new SuggestionNodeAnchor(existing.Id, incoming.Id);
+        }
+    }
+
+    private bool IsSuggestionAnchorCurrent(JoinSuggestion suggestion)
+    {
+        string key = BuildSuggestionKey(suggestion);
+        if (!_suggestionAnchorsByKey.TryGetValue(key, out SuggestionNodeAnchor? anchor))
+            return true;
+
+        NodeViewModel? existing = FindTableSourceNode(suggestion.ExistingTable);
+        NodeViewModel? incoming = FindTableSourceNode(suggestion.NewTable);
+        if (existing is null || incoming is null)
+            return false;
+
+        return existing.Id == anchor.ExistingNodeId
+            && incoming.Id == anchor.IncomingNodeId;
+    }
+
+    private static string BuildSuggestionKey(JoinSuggestion suggestion) =>
+        CanvasAutoJoinSemantics.BuildSuggestionPairKey(
+            suggestion.ExistingTable,
+            suggestion.NewTable,
+            suggestion.LeftColumn,
+            suggestion.RightColumn);
+
+    private sealed record SuggestionNodeAnchor(string ExistingNodeId, string IncomingNodeId);
 }

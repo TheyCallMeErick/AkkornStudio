@@ -10,12 +10,12 @@
 
     <!-- Version row -->
     <Style Selector="Border.version-row">
-      <Setter Property="Background"     Value="{StaticResource Bg1Brush}"/>
-      <Setter Property="BorderBrush"    Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius"   Value="{StaticResource RadiusSM}"/>
-      <Setter Property="Padding"        Value="10,8"/>
-      <Setter Property="Margin"         Value="0,3"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="Margin" Value="0,3"/>
     </Style>
     <Style Selector="Border.version-row:pointerover">
       <Setter Property="BorderBrush" Value="{StaticResource BorderFocusBrush}"/>
@@ -52,21 +52,14 @@
   <!-- ══ Overlay panel ══════════════════════════════════════════════════════ -->
   <Border MaxWidth="540"
       MaxHeight="680"
-          Background="{StaticResource Bg0Brush}"
-          BorderBrush="{StaticResource BorderSubtleBrush}"
-          BorderThickness="1"
-          CornerRadius="{StaticResource RadiusLG}"
-          BoxShadow="{StaticResource ShadowXL}">
+          Classes="surface-floating">
 
       <Grid RowDefinitions="Auto,*,Auto">
 
       <!-- ── Header ───────────────────────────────────────────────────────── -->
         <Border Grid.Row="0"
-          Background="{StaticResource Bg1Brush}"
-              CornerRadius="{StaticResource RadiusLGTop}"
-          Padding="12,10"
-          BorderBrush="{StaticResource BorderSubtleBrush}"
-          BorderThickness="0,0,0,1">
+          Classes="surface-floating-header"
+          Padding="12,10">
 
         <Grid ColumnDefinitions="Auto,*,Auto">
 
@@ -117,14 +110,9 @@
                          FontSize="{StaticResource FontSizeCaption}"
                          Foreground="{StaticResource TextMutedBrush}"/>
 
-              <TextBox Text="{Binding NewLabel}"
+              <TextBox Classes="field"
+                       Text="{Binding NewLabel}"
                        Watermark="{Binding [flowVersion.watermark], Source={x:Static loc:LocalizationService.Instance}}"
-                       FontSize="{StaticResource FontSizeCaption}"
-                       Background="{StaticResource Bg0Brush}"
-                       Foreground="{StaticResource TextSecondaryBrush}"
-                       BorderBrush="{StaticResource BorderSubtleBrush}"
-                       BorderThickness="1"
-                       CornerRadius="{StaticResource RadiusSM}"
                        Padding="8,5"
                        Name="LabelBox"/>
             </StackPanel>
@@ -326,10 +314,7 @@
       </ScrollViewer>
 
       <Border Grid.Row="2"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="0,1,0,0"
-              Background="{StaticResource Bg1Brush}"
-              CornerRadius="{StaticResource RadiusLGBottom}"
+              Classes="surface-floating-footer"
               Padding="12,10">
         <Grid ColumnDefinitions="*,Auto,Auto">
           <TextBlock Grid.Column="0"

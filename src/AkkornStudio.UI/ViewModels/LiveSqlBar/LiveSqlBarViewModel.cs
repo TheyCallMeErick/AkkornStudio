@@ -5,6 +5,7 @@ using AkkornStudio.Nodes;
 using AkkornStudio.QueryEngine;
 using AkkornStudio.Registry;
 using AkkornStudio.UI.Services.LiveSqlBar;
+using AkkornStudio.UI.Services;
 using AkkornStudio.UI.Services.QueryPreview.Models;
 using AkkornStudio.UI.Services.QueryPreview;
 
@@ -29,9 +30,11 @@ public sealed class LiveSqlBarViewModel : ViewModelBase
     private readonly SqlSyntaxHighlighter _highlighter;
     private QueryGraphBuilder? _graphBuilder;
     private readonly object _debounceLock = new();  // Synchronization for _debounce
+    private readonly object _recompileLock = new(); // Synchronization for Recompile state transitions
 
     private string _rawSql = string.Empty;
     private string _displaySql = string.Empty;
+    private string? _executionSqlTemplate;
     private bool _isValid = true;
     private bool _isCompiling;
     private string? _compileError;
@@ -53,8 +56,12 @@ public sealed class LiveSqlBarViewModel : ViewModelBase
         get => _rawSql;
         private set
         {
-            Set(ref _rawSql, value);
+            if (!Set(ref _rawSql, value))
+                return;
+
             _canvas.UpdateQueryText(value);
+            RaisePropertyChanged(nameof(HasSql));
+            RaisePropertyChanged(nameof(CanExecutePreviewActions));
         }
     }
 
@@ -64,10 +71,29 @@ public sealed class LiveSqlBarViewModel : ViewModelBase
         private set => Set(ref _displaySql, value);
     }
 
+    public string? ExecutionSqlTemplate
+    {
+        get => _executionSqlTemplate;
+        private set
+        {
+            if (!Set(ref _executionSqlTemplate, value))
+                return;
+
+            RaisePropertyChanged(nameof(HasExecutionSqlTemplate));
+            RaisePropertyChanged(nameof(CanExecutePreviewActions));
+        }
+    }
+
     public bool IsValid
     {
         get => _isValid;
-        private set => Set(ref _isValid, value);
+        private set
+        {
+            if (!Set(ref _isValid, value))
+                return;
+
+            RaisePropertyChanged(nameof(CanExecutePreviewActions));
+        }
     }
 
     public bool IsCompiling
@@ -102,11 +128,23 @@ public sealed class LiveSqlBarViewModel : ViewModelBase
         };
 
     public bool HasSql => !string.IsNullOrWhiteSpace(RawSql);
+    public bool HasExecutionSqlTemplate => !string.IsNullOrWhiteSpace(ExecutionSqlTemplate);
+    public bool CanExecutePreviewActions =>
+        HasSql && HasExecutionSqlTemplate && IsValid && !IsMutatingCommand;
+    public IReadOnlyList<QueryParameter> ExecutionParameters { get; private set; } = [];
+    public IReadOnlyDictionary<string, QueryExecutionParameterContext> ExecutionParameterContexts { get; private set; }
+        = new Dictionary<string, QueryExecutionParameterContext>(StringComparer.OrdinalIgnoreCase);
 
     public bool IsMutatingCommand
     {
         get => _isMutatingCommand;
-        private set => Set(ref _isMutatingCommand, value);
+        private set
+        {
+            if (!Set(ref _isMutatingCommand, value))
+                return;
+
+            RaisePropertyChanged(nameof(CanExecutePreviewActions));
+        }
     }
 
     public string? BlockedReason =>
@@ -175,112 +213,169 @@ public sealed class LiveSqlBarViewModel : ViewModelBase
     // â”€â”€ Debounced recompile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private CancellationTokenSource? _debounce;
+    private long _recompileVersion;
 
     private void ScheduleRecompile()
     {
+        CancellationToken token;
+        long version;
+
         lock (_debounceLock)
         {
             _debounce?.Cancel();
             _debounce?.Dispose();
             _debounce = new CancellationTokenSource();
-            CancellationToken token = _debounce.Token;
-
-            // 120ms debounce â€” avoids recompiling on every intermediate drag step
-            Task.Delay(120, token)
-                .ContinueWith(
-                    _ =>
-                    {
-                        if (!token.IsCancellationRequested)
-                            Avalonia.Threading.Dispatcher.UIThread.Post(Recompile);
-                    },
-                    TaskScheduler.Default
-                );
+            token = _debounce.Token;
+            version = ++_recompileVersion;
         }
+
+        // 120ms debounce â€” avoids recompiling on every intermediate drag step.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(120, token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+
+            lock (_debounceLock)
+            {
+                if (version != _recompileVersion)
+                    return;
+            }
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(Recompile);
+        });
     }
 
     // â”€â”€ Compilation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public void Recompile()
     {
-        ErrorHints.Clear();
-        Diagnostics.Clear();
-        DiagnosticItems.Clear();
-        GuardIssues.Clear();
-        IsCompiling = true;
-
-        try
+        lock (_recompileLock)
         {
-            // Apply in-flight edits from the property panel before reading node parameters.
-            _canvas.PropertyPanel.CommitDirty();
+            string previousRawSql = RawSql;
+            string previousDisplaySql = DisplaySql;
+            string? previousExecutionSqlTemplate = ExecutionSqlTemplate;
+            bool previousIsMutatingCommand = IsMutatingCommand;
+            IReadOnlyList<QueryParameter> previousExecutionParameters = ExecutionParameters.ToArray();
+            IReadOnlyDictionary<string, QueryExecutionParameterContext> previousExecutionParameterContexts =
+                new Dictionary<string, QueryExecutionParameterContext>(ExecutionParameterContexts, StringComparer.OrdinalIgnoreCase);
+            List<SqlToken> previousTokens = Tokens.ToList();
 
-            _graphBuilder = new QueryGraphBuilder(_canvas, _provider);
-
-            // â”€â”€ Portability pre-check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            List<GuardIssue> portabilityIssues = QueryValidationService.CheckPortability(
-                _canvas.Nodes.Select(n => n.Type),
-                _provider
-            );
-            foreach (GuardIssue issue in portabilityIssues)
-                GuardIssues.Add(issue);
-
-            (string sql, List<PreviewDiagnostic> diagnostics) = _graphBuilder.BuildSqlWithDiagnostics();
-            List<string> errors = diagnostics.Select(d => d.Message).ToList();
-
-            RawSql = sql;
-            DisplaySql = FormatSqlText(sql);
-            IsValid = errors.Count == 0;
-            CompileError = errors.Count > 0 ? errors[0] : null;
-
-            // Detect mutating commands â€” block preview execution
-            IsMutatingCommand = QueryValidationService.IsMutating(sql);
-            RaisePropertyChanged(nameof(BlockedReason));
-
-            // Run guardrails (only when not a mutating command)
-            if (!IsMutatingCommand)
-            {
-                foreach (GuardIssue issue in QueryGuardrails.Check(sql))
-                    GuardIssues.Add(issue);
-            }
-            RaisePropertyChanged(nameof(HasGuardWarning));
-
-            foreach (string err in errors)
-                ErrorHints.Add(err);
-
-            foreach (PreviewDiagnostic diagnostic in diagnostics)
-            {
-                Diagnostics.Add(diagnostic);
-                (string? actionLabel, string? actionHint) = ResolveQuickAction(diagnostic);
-                Action<PreviewDiagnostic>? quickAction = actionHint is null
-                    ? null
-                    : _ => _canvas.Toasts.ShowWarning(actionHint);
-
-                DiagnosticItems.Add(
-                    new LiveSqlDiagnosticItem(diagnostic, FocusDiagnostic, quickAction, actionLabel)
-                );
-            }
-
-            SqlSyntaxHighlighter.Tokenize(DisplaySql, Tokens);
-        }
-        catch (Exception ex)
-        {
-            RawSql = string.Empty;
-            DisplaySql = string.Empty;
-            IsValid = false;
-            CompileError = ex.Message;
-            IsMutatingCommand = false;
-            ErrorHints.Add($"Compile error: {ex.Message}");
+            ErrorHints.Clear();
             Diagnostics.Clear();
             DiagnosticItems.Clear();
-            Tokens.Clear();
-        }
-        finally
-        {
-            IsCompiling = false;
-            RaisePropertyChanged(nameof(HasSql));
-            RaisePropertyChanged(nameof(ProviderLabel));
-            RaisePropertyChanged(nameof(BlockedReason));
-            RaisePropertyChanged(nameof(HasGuardWarning));
-            RaisePropertyChanged(nameof(HasDiagnostics));
+            GuardIssues.Clear();
+            IsCompiling = true;
+
+            try
+            {
+                // Apply in-flight edits from the property panel before reading node parameters.
+                _canvas.PropertyPanel.CommitDirty();
+
+                _graphBuilder = new QueryGraphBuilder(_canvas, _provider);
+
+                // â”€â”€ Portability pre-check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                List<GuardIssue> portabilityIssues = QueryValidationService.CheckPortability(
+                    _canvas.Nodes.Select(n => n.Type),
+                    _provider
+                );
+                foreach (GuardIssue issue in portabilityIssues)
+                    GuardIssues.Add(issue);
+
+                QuerySqlBuildResult build = _graphBuilder.BuildSqlWithDiagnostics();
+                List<string> errors = build.Diagnostics.Select(d => d.Message).ToList();
+
+                RawSql = build.PreviewSql;
+                DisplaySql = FormatSqlText(build.PreviewSql);
+                ExecutionSqlTemplate = build.ExecutionSqlTemplate;
+                ExecutionParameters = build.Bindings
+                    .Select(binding => new QueryParameter(binding.Key, binding.Value))
+                    .ToArray();
+                ExecutionParameterContexts = build.ParameterContexts;
+                IsValid = errors.Count == 0;
+                CompileError = errors.Count > 0 ? errors[0] : null;
+
+                // Detect mutating commands â€” block preview execution
+                IsMutatingCommand = QueryValidationService.IsMutating(build.PreviewSql);
+                RaisePropertyChanged(nameof(BlockedReason));
+
+                // Run guardrails (only when not a mutating command)
+                if (!IsMutatingCommand)
+                {
+                    foreach (GuardIssue issue in QueryGuardrails.Check(build.PreviewSql))
+                        GuardIssues.Add(issue);
+                }
+                RaisePropertyChanged(nameof(HasGuardWarning));
+
+                foreach (string err in errors)
+                    ErrorHints.Add(err);
+
+                foreach (PreviewDiagnostic diagnostic in build.Diagnostics)
+                {
+                    Diagnostics.Add(diagnostic);
+                    (string? actionLabel, string? actionHint) = ResolveQuickAction(diagnostic);
+                    Action<PreviewDiagnostic>? quickAction = actionHint is null
+                        ? null
+                        : _ => _canvas.Toasts.ShowWarning(actionHint);
+
+                    DiagnosticItems.Add(
+                        new LiveSqlDiagnosticItem(diagnostic, FocusDiagnostic, quickAction, actionLabel)
+                    );
+                }
+
+                SqlSyntaxHighlighter.Tokenize(DisplaySql, Tokens);
+            }
+            catch (Exception ex)
+            {
+                if (!string.IsNullOrWhiteSpace(previousRawSql))
+                {
+                    // Preserve the last valid SQL preview/context when recompilation fails.
+                    RawSql = previousRawSql;
+                    DisplaySql = previousDisplaySql;
+                    ExecutionSqlTemplate = previousExecutionSqlTemplate;
+                    ExecutionParameters = previousExecutionParameters;
+                    ExecutionParameterContexts = previousExecutionParameterContexts;
+                    IsMutatingCommand = previousIsMutatingCommand;
+
+                    Tokens.Clear();
+                    foreach (SqlToken token in previousTokens)
+                        Tokens.Add(token);
+                }
+                else
+                {
+                    RawSql = string.Empty;
+                    DisplaySql = string.Empty;
+                    ExecutionSqlTemplate = null;
+                    ExecutionParameters = [];
+                    ExecutionParameterContexts = new Dictionary<string, QueryExecutionParameterContext>(StringComparer.OrdinalIgnoreCase);
+                    IsMutatingCommand = false;
+                    Tokens.Clear();
+                }
+
+                IsValid = false;
+                CompileError = ex.Message;
+                ErrorHints.Add($"Compile error: {ex.Message}");
+                Diagnostics.Clear();
+                DiagnosticItems.Clear();
+            }
+            finally
+            {
+                IsCompiling = false;
+                RaisePropertyChanged(nameof(HasSql));
+                RaisePropertyChanged(nameof(ProviderLabel));
+                RaisePropertyChanged(nameof(BlockedReason));
+                RaisePropertyChanged(nameof(HasGuardWarning));
+                RaisePropertyChanged(nameof(HasDiagnostics));
+            }
         }
     }
 
@@ -360,6 +455,9 @@ public sealed class LiveSqlBarViewModel : ViewModelBase
         string sql = FormatSqlText(RawSql);
         RawSql = sql;
         DisplaySql = sql;
+        ExecutionSqlTemplate = sql;
+        ExecutionParameters = [];
+        ExecutionParameterContexts = new Dictionary<string, QueryExecutionParameterContext>(StringComparer.OrdinalIgnoreCase);
         SqlSyntaxHighlighter.Tokenize(sql, Tokens);
         RaisePropertyChanged(nameof(HasSql));
     }
@@ -432,5 +530,3 @@ public sealed class LiveSqlBarViewModel : ViewModelBase
         return sql;
     }
 }
-
-

@@ -10,6 +10,7 @@ public sealed record SqlEditorSessionDraftEntry
     public string? FilePath { get; init; }
     public DatabaseProvider Provider { get; init; }
     public string? ConnectionProfileId { get; init; }
+    public IReadOnlyDictionary<string, string>? QueryParameterLastValues { get; init; }
     public int TabOrder { get; init; }
     public bool IsActive { get; init; }
     public DateTimeOffset SavedAtUtc { get; init; }

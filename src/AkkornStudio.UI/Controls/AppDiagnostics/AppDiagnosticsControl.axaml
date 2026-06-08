@@ -9,15 +9,12 @@
 
   <UserControl.Styles>
     <Style Selector="Border.diag-row">
-      <Setter Property="Background"    Value="Transparent"/>
-      <Setter Property="CornerRadius"  Value="8"/>
       <Setter Property="Padding"       Value="12,9"/>
       <Setter Property="Margin"        Value="4,2"/>
       <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
       <Setter Property="RenderTransform" Value="scale(1)"/>
       <Setter Property="Transitions">
         <Transitions>
-          <BrushTransition Property="Background" Duration="0:0:0.08"/>
           <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.10"/>
         </Transitions>
       </Setter>
@@ -30,19 +27,17 @@
 
   <!-- ══ Floating diagnostics panel ════════════════════════════════════════════ -->
   <Border Width="520"
-          CornerRadius="{StaticResource RadiusLG}"
+          Classes="surface-floating"
           Background="{StaticResource Bg0Brush}"
           BorderBrush="{StaticResource BorderBrush}"
-          BorderThickness="1"
-          BoxShadow="{StaticResource ShadowXL}"
           RenderTransformOrigin="50%,50%"
           RenderTransform="scale(1)">
 
     <StackPanel>
 
       <!-- ── Header ───────────────────────────────────────────────────────── -->
-      <Border Background="{StaticResource PanelElevatedBrush}"
-              CornerRadius="{StaticResource RadiusLGTop}"
+      <Border Classes="surface-floating-header"
+              Background="{StaticResource PanelElevatedBrush}"
               Padding="16,12">
         <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
 
@@ -68,13 +63,8 @@
           <!-- Run button -->
           <Button Grid.Column="2"
                   Command="{Binding RunChecksCommand}"
-                  Background="{StaticResource BorderSoftBrush}"
-                  BorderBrush="{StaticResource BorderBrush}"
-                  BorderThickness="1"
-                  CornerRadius="{StaticResource RadiusSM}"
-                  Padding="10,5"
+                  Classes="secondary compact"
                   Margin="0,0,6,0"
-                  Cursor="Hand"
                   ToolTip.Tip="{Binding [diagnostics.tooltip.rerun], Source={x:Static loc:LocalizationService.Instance}}"
                   AutomationProperties.Name="{Binding [diagnostics.run], Source={x:Static loc:LocalizationService.Instance}}">
             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -86,12 +76,9 @@
           <!-- Copy report button -->
           <Button Grid.Column="3"
                   Command="{Binding CopyReportCommand}"
-                  Background="Transparent"
-                  BorderThickness="0"
-                  CornerRadius="{StaticResource RadiusSM}"
-                  Padding="8,5"
+                  Classes="icon-ghost"
+                  Width="28" Height="28"
                   Margin="0,0,6,0"
-                  Cursor="Hand"
                   ToolTip.Tip="{Binding [diagnostics.tooltip.copy], Source={x:Static loc:LocalizationService.Instance}}"
                   AutomationProperties.Name="{Binding [diagnostics.tooltip.copy], Source={x:Static loc:LocalizationService.Instance}}">
             <mi:MaterialIcon Kind="ContentCopy" Width="15" Height="15" Foreground="{StaticResource TextMutedBrush}"/>
@@ -100,11 +87,8 @@
           <!-- Close button -->
           <Button Grid.Column="4"
                   Command="{Binding CloseCommand}"
-                  Background="Transparent"
-                  BorderThickness="0"
-                  CornerRadius="{StaticResource RadiusSM}"
-                  Padding="8,5"
-                  Cursor="Hand"
+                  Classes="icon-ghost"
+                  Width="28" Height="28"
                   ToolTip.Tip="{Binding [diagnostics.tooltip.close], Source={x:Static loc:LocalizationService.Instance}}"
                   AutomationProperties.Name="{Binding [diagnostics.tooltip.close], Source={x:Static loc:LocalizationService.Instance}}">
             <mi:MaterialIcon Kind="Close" Width="14" Height="14" Foreground="{StaticResource TextMutedBrush}"/>
@@ -136,7 +120,7 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="appdiag:AppDiagnosticEntry">
 
-              <Border Classes="diag-row">
+              <Border Classes="diag-row list-row">
                 <Grid ColumnDefinitions="28,*,Auto">
 
                   <!-- Status icon -->
@@ -200,25 +184,25 @@
               Padding="12,8">
         <StackPanel Orientation="Horizontal" Spacing="16">
           <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Background="{StaticResource BorderSoftBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1">
+            <Border Classes="kbd-chip">
               <mi:MaterialIcon Kind="CheckCircle" Width="12" Height="12" Foreground="{StaticResource StatusOkBrush}"/>
             </Border>
             <TextBlock Text="{Binding [diagnostics.ok], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Background="{StaticResource BorderSoftBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1">
+            <Border Classes="kbd-chip">
               <mi:MaterialIcon Kind="Alert" Width="12" Height="12" Foreground="{StaticResource StatusWarningBrush}"/>
             </Border>
             <TextBlock Text="{Binding [diagnostics.warning], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Background="{StaticResource BorderSoftBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1">
+            <Border Classes="kbd-chip">
               <mi:MaterialIcon Kind="CloseCircle" Width="12" Height="12" Foreground="{StaticResource StatusErrorBrush}"/>
             </Border>
             <TextBlock Text="{Binding [diagnostics.error], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Background="{StaticResource BorderSoftBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1">
+            <Border Classes="kbd-chip">
               <TextBlock Text="{Binding [common.esc], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
             </Border>
             <TextBlock Text="{Binding [common.close], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>

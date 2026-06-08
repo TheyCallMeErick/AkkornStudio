@@ -5,8 +5,17 @@ public sealed record SqlEditorReportExportRequest(
     string FilePath,
     string Title,
     string Description,
+    SqlEditorReportExportProfile Profile,
+    SqlEditorReportMetadataLevel MetadataLevel,
+    SqlEditorReportEmptyValueDisplayMode EmptyValueDisplayMode,
     bool IncludeSchema,
-    bool IncludeNodeDetails,
-    bool IncludeMetadata,
-    bool UseDashForEmptyFields
-);
+    bool IncludeSql,
+    bool IncludeLineage
+)
+{
+    public bool IncludeMetadata => MetadataLevel != SqlEditorReportMetadataLevel.None;
+
+    public bool IncludeNodeDetails => IncludeLineage;
+
+    public bool UseDashForEmptyFields => EmptyValueDisplayMode == SqlEditorReportEmptyValueDisplayMode.Dash;
+}

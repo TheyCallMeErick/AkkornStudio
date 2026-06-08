@@ -334,11 +334,14 @@ public sealed class BezierWireLayer : Control
 
     // ── Rendering ─────────────────────────────────────────────────────────────
 
+    private static bool HasValidViewportDimensions(double width, double height) =>
+        double.IsFinite(width) && double.IsFinite(height) && width > 1 && height > 1;
+
     public override void Render(DrawingContext dc)
     {
-        // Bounds can be transiently zero right after topology/materialization updates.
+        // Bounds can be transiently invalid right after topology/materialization updates.
         // In that case, disable aggressive culling by using a safe virtual viewport.
-        Rect viewport = Bounds.Width > 1 && Bounds.Height > 1
+        Rect viewport = HasValidViewportDimensions(Bounds.Width, Bounds.Height)
             ? new Rect(Bounds.Size)
             : new Rect(0, 0, 20000, 20000);
         _toolbarLayout = default;

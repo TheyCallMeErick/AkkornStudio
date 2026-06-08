@@ -87,6 +87,46 @@ public class SqlFunctionRegistryTests
         }
     }
 
+    [Fact]
+    public void StringAgg_Sqlite_UsesGroupConcatTranslation()
+    {
+        var reg = new SqlFunctionRegistry(DatabaseProvider.SQLite);
+        string sql = reg.GetFunction(SqlFn.StringAgg, "name", "','");
+        Assert.Equal("GROUP_CONCAT(name, ',')", sql);
+    }
+
+    [Fact]
+    public void RegexReplace_SqlServer_UsesFallbackReplace()
+    {
+        var reg = new SqlFunctionRegistry(DatabaseProvider.SqlServer);
+        string sql = reg.GetFunction(SqlFn.RegexReplace, "email", "'corp'", "'team'");
+        Assert.Equal("REPLACE(email, 'corp', 'team')", sql);
+    }
+
+    [Fact]
+    public void RegexReplace_Sqlite_UsesFallbackReplace()
+    {
+        var reg = new SqlFunctionRegistry(DatabaseProvider.SQLite);
+        string sql = reg.GetFunction(SqlFn.RegexReplace, "email", "'corp'", "'team'");
+        Assert.Equal("REPLACE(email, 'corp', 'team')", sql);
+    }
+
+    [Fact]
+    public void RegexExtract_SqlServer_UsesFallbackPatIndexGuard()
+    {
+        var reg = new SqlFunctionRegistry(DatabaseProvider.SqlServer);
+        string sql = reg.GetFunction(SqlFn.RegexExtract, "email", "'%@corp%'");
+        Assert.Equal("CASE WHEN PATINDEX('%@corp%', email) > 0 THEN '%@corp%' ELSE NULL END", sql);
+    }
+
+    [Fact]
+    public void RegexExtract_Sqlite_UsesFallbackInstrGuard()
+    {
+        var reg = new SqlFunctionRegistry(DatabaseProvider.SQLite);
+        string sql = reg.GetFunction(SqlFn.RegexExtract, "email", "'corp'");
+        Assert.Equal("CASE WHEN INSTR(email, 'corp') > 0 THEN 'corp' ELSE NULL END", sql);
+    }
+
     // ── GREATEST (SQL Server emulation) ───────────────────────────────────────
 
     [Fact]
@@ -319,7 +359,6 @@ public class ConnectionConfigTests
         Assert.Contains("mydb", cs);
     }
 }
-
 
 
 

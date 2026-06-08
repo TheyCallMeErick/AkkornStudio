@@ -10,13 +10,18 @@ using AkkornStudio.Nodes;
 using AkkornStudio.UI.Services.Export;
 using AkkornStudio.UI.Services.Localization;
 using AkkornStudio.UI.Serialization;
+using AkkornStudio.UI.Controls;
 using AkkornStudio.UI.ViewModels.Canvas;
 using AkkornStudio.UI.ViewModels.Canvas.Strategies;
 using AkkornStudio.UI.Services.QueryPreview;
+using AkkornStudio.UI.Services.Ddl;
+using AkkornStudio.UI.Services;
 using AkkornStudio.UI.ViewModels.UndoRedo;
 using AkkornStudio.UI.ViewModels.UndoRedo.Commands;
 using AkkornStudio.UI.ViewModels.Validation.Conventions;
 using AkkornStudio.UI.Services.ConnectionManager;
+using AkkornStudio.UI.Services.Settings;
+using AkkornStudio.UI.Services.Validation;
 
 namespace AkkornStudio.UI.ViewModels;
 
@@ -29,8 +34,10 @@ namespace AkkornStudio.UI.ViewModels;
 ///   - <see cref="NodeLayoutManager"/>  â€” zoom, pan, snap, auto-layout
 ///   - <see cref="ValidationManager"/>  â€” graph validation and orphan detection
 /// </summary>
-public sealed class CanvasViewModel : ViewModelBase, IDisposable
+public sealed class CanvasViewModel : ViewModelBase, IDisposable, ICanvasViewportState, ICanvasViewportSelectionState
 {
+    private const double SelectionFrameDefaultNodeHeight = 130d;
+
     public ObservableCollection<NodeViewModel> Nodes { get; } = [];
     public ObservableCollection<ConnectionViewModel> Connections { get; } = [];
 
@@ -91,11 +98,11 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
     private PropertyChangedEventHandler? _explainPlanPropertyChangedHandler;
     private NotifyCollectionChangedEventHandler? _nodesCollectionChangedHandler;
     private NotifyCollectionChangedEventHandler? _connectionsCollectionChangedHandler;
-    private Action? _propertyPanelNamingChangedHandler;
     private Action? _propertyPanelWireStyleChangedHandler;
     private readonly HashSet<string> _pendingTableSourceReplacementConfirmations = [];
     private bool _isReplacingTableSourceNode;
     private string? _primaryFromSourceOverrideNodeId;
+    private ProjectConventionSettings _projectConventionSettings = AppSettingsStore.LoadProjectConventionSettings() ?? new ProjectConventionSettings();
 
     // â”€â”€ Canvas state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -108,6 +115,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
     private CanvasWireCurveMode _wireCurveMode = CanvasWireCurveMode.Bezier;
     private DbMetadata? _databaseMetadata;
     private ConnectionConfig? _activeConnectionConfig;
+    private readonly Dictionary<string, string> _previewParameterInputs = new(StringComparer.OrdinalIgnoreCase);
     // Backward-compatibility bridge used by legacy tests that inspect/corrupt
     // sub-editor sessions via reflection on CanvasViewModel.
     private object? _cteEditorSession;
@@ -174,6 +182,8 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
                 LiveSql.Provider = value?.Provider ?? DatabaseProvider.Postgres;
         }
     }
+
+    public IReadOnlyDictionary<string, string> PreviewParameterInputs => _previewParameterInputs;
 
     public string WindowTitle =>
         (
@@ -282,6 +292,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
     public RelayCommand ToggleSnapCommand => _layoutManager.ToggleSnapCommand;
 
     public bool HasTwoSelectedTableSources => _autoJoinController.HasTwoSelectedTableSources;
+    public bool CanRunAutoJoin => _autoJoinController.CanRunAutoJoin;
 
 
     public CanvasViewModel()
@@ -308,7 +319,9 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
             () => Connections,
             () => DatabaseMetadata,
             OnPropertyPanelParametersCommitted,
-            TrySetPrimaryFromSourceNode);
+            TrySetPrimaryFromSourceNode,
+            () => Nodes);
+        ApplyProjectConventionSettings(_projectConventionSettings);
         PropertyPanel.SelectedWireCurveMode = WireCurveMode;
         _localizationService = localizationService ?? LocalizationService.Instance;
         _domainStrategy = domainStrategy ?? new QueryDomainStrategy();
@@ -404,7 +417,11 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
                 _pinManager.ConnectPins(from, to);
                 IsDirty = true;
             },
-            notifyRunSelectedAutoJoinCanExecute: () => RunSelectedAutoJoinCommand?.NotifyCanExecuteChanged()
+            notifyRunSelectedAutoJoinCanExecute: () =>
+            {
+                RunSelectedAutoJoinCommand?.NotifyCanExecuteChanged();
+                RaisePropertyChanged(nameof(CanRunAutoJoin));
+            }
         );
 
         // Build commands
@@ -460,7 +477,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
         );
         RunSelectedAutoJoinCommand = new RelayCommand(
             _autoJoinController.RunSelectedAutoJoin,
-            () => HasTwoSelectedTableSources
+            () => CanRunAutoJoin
         );
 
         // Link commands into validation manager for CanExecute refresh
@@ -497,8 +514,8 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
                 _ = _domainStrategy.TryHandleSchemaTableInsert(
                     table,
                     position,
-                    null,
-                    null,
+                    isDdlModeActiveResolver: () => _domainStrategy is DdlDomainStrategy,
+                    importDdlTableAction: TryImportSchemaTableToDdlCanvas,
                     () => _nodeManager.SpawnTableNode(tableName, columns, position)
                 );
             }
@@ -515,8 +532,6 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
         };
         LiveSql.PropertyChanged += _liveSqlPropertyChangedHandler;
         DataPreview.ErrorNotified += OnDataPreviewErrorNotified;
-        _propertyPanelNamingChangedHandler = () => _validationManager.ScheduleValidation();
-        PropertyPanel.NamingSettingsChanged += _propertyPanelNamingChangedHandler;
         _propertyPanelWireStyleChangedHandler = () =>
         {
             if (SelectedConnection is not null)
@@ -561,24 +576,73 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
     {
         IsDirty = true;
         RaisePropertyChanged(nameof(IsCanvasEmpty));
+        bool selectedNodesChanged = false;
+        bool selectedPanelNodeDetached = false;
 
         if (e.NewItems is not null)
         {
             foreach (NodeViewModel node in e.NewItems)
+            {
                 AttachNodeTracking(node);
+                node.SyncComparisonInlineSummary(Connections);
+
+                if (node.IsSelected)
+                    selectedNodesChanged = true;
+            }
         }
 
         if (e.OldItems is not null)
         {
             foreach (NodeViewModel node in e.OldItems)
+            {
+                if (node.IsSelected)
+                    selectedNodesChanged = true;
+                if (ReferenceEquals(PropertyPanel.SelectedNode, node))
+                    selectedPanelNodeDetached = true;
                 DetachNodeTracking(node);
+            }
         }
 
-        _validationManager.ScheduleValidation();
+        if (!selectedPanelNodeDetached
+            && PropertyPanel.SelectedNode is NodeViewModel selectedNode
+            && !Nodes.Contains(selectedNode))
+        {
+            selectedPanelNodeDetached = true;
+        }
+
+        if (selectedNodesChanged || selectedPanelNodeDetached)
+            RefreshPropertyPanelSelectionState();
+
+        _validationManager?.ScheduleValidation();
         RaisePropertyChanged(nameof(HasTwoSelectedTableSources));
+        RaisePropertyChanged(nameof(CanRunAutoJoin));
         RunSelectedAutoJoinCommand.NotifyCanExecuteChanged();
         ApplyExplainNodeHighlight(ExplainPlan.HighlightedTableName);
         RefreshPrimaryFromSourceMarkers();
+    }
+
+    private void RefreshPropertyPanelSelectionState()
+    {
+        if (PropertyPanel.HasSelectedWire)
+            return;
+
+        List<NodeViewModel> selected = _selectionManager.SelectedNodes();
+        if (selected.Count == 1)
+        {
+            NodeViewModel node = selected[0];
+            if (!ReferenceEquals(PropertyPanel.SelectedNode, node))
+                PropertyPanel.ShowNode(node);
+            return;
+        }
+
+        if (selected.Count > 1)
+        {
+            PropertyPanel.ShowMultiSelection(selected);
+            return;
+        }
+
+        if (PropertyPanel.SelectedNode is not null || PropertyPanel.IsVisible)
+            PropertyPanel.Clear();
     }
 
     private void AttachNodeTracking(NodeViewModel node)
@@ -601,7 +665,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
 
     private void OnTrackedNodePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        _validationManager.ScheduleValidation();
+        _validationManager?.ScheduleValidation();
 
         if (sender is NodeViewModel changedNode
             && !string.IsNullOrWhiteSpace(e.PropertyName)
@@ -617,6 +681,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
         NotifyLayerCommandsCanExecuteChanged();
         NotifyCteEditorCommandsCanExecuteChanged();
         RaisePropertyChanged(nameof(HasTwoSelectedTableSources));
+        RaisePropertyChanged(nameof(CanRunAutoJoin));
         RunSelectedAutoJoinCommand.NotifyCanExecuteChanged();
     }
 
@@ -629,7 +694,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
             ClearConnectionSelection();
 
         IsDirty = true;
-        _validationManager.ScheduleValidation();
+        _validationManager?.ScheduleValidation();
         NotifyLayerCommandsCanExecuteChanged();
         NotifyCteEditorCommandsCanExecuteChanged();
 
@@ -648,6 +713,8 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
                 node.SyncWindowFunctionPins(Connections);
             else if (node.Type is NodeType.Subquery or NodeType.SubqueryReference or NodeType.SubqueryDefinition)
                 node.SyncSubqueryInputPins(Connections);
+
+            node.SyncComparisonInlineSummary(Connections);
         }
 
         if (e.NewItems is not null)
@@ -733,7 +800,7 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
 
         _primaryFromSourceOverrideNodeId = node!.Id;
         RefreshPrimaryFromSourceMarkers();
-        _validationManager.ScheduleValidation();
+        _validationManager?.ScheduleValidation();
         return true;
     }
 
@@ -767,14 +834,22 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
         if (outputs.Count == 1)
             return outputs[0];
 
-        NodeViewModel? externalSink = outputs.FirstOrDefault(output =>
-            !Connections.Any(c =>
-                c.FromPin.Owner == output
-                && c.ToPin is not null
-                && c.ToPin.Owner.Type == NodeType.CteDefinition
-                && c.ToPin.Name.Equals("query", StringComparison.OrdinalIgnoreCase)));
+        List<NodeViewModel> externalSinks = outputs
+            .Where(IsExternalResultOutputSink)
+            .ToList();
 
-        return externalSink ?? outputs[0];
+        return externalSinks.Count == 1
+            ? externalSinks[0]
+            : null;
+    }
+
+    private bool IsExternalResultOutputSink(NodeViewModel output)
+    {
+        return !Connections.Any(c =>
+            c.FromPin.Owner == output
+            && c.ToPin is not null
+            && c.ToPin.Owner.Type == NodeType.CteDefinition
+            && c.ToPin.Name.Equals("query", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsTransientConnectionDragChange(NotifyCollectionChangedEventArgs e)
@@ -821,6 +896,9 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
     public Task<bool> ExitCteEditorAsync(bool forceDiscard = false) =>
         _subCanvasController.ExitCteEditorAsync(forceDiscard);
 
+    public bool TryAbortActiveSubEditorSession(bool forceDiscard = false) =>
+        _subCanvasController.AbortActiveEditorSession(forceDiscard);
+
     public Task<bool> EnterViewEditorAsync(NodeViewModel viewNode) =>
         _subCanvasController.EnterViewEditorAsync(viewNode);
 
@@ -863,8 +941,27 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
             {
                 subgraph = JsonSerializer.Deserialize<SavedSubquerySubgraph>(payload);
             }
-            catch
+            catch (Exception ex)
             {
+                Toasts.ShowWarning(
+                    L("toast.subqueryPayloadInvalid", "A subconsulta possui dados internos inválidos."),
+                    string.Format(
+                        L(
+                            "toast.subqueryPayloadInvalidDetails",
+                            "Node: {0}. Reabra o editor da subconsulta para regenerar o payload."),
+                        owner.Title));
+                Diagnostics.AddWarning(
+                    area: L("diagnostics.area.subqueryPayload", "Subquery Payload"),
+                    message: string.Format(
+                        L(
+                            "diagnostics.subqueryPayloadDeserializeError",
+                            "Falha ao desserializar payload da subconsulta '{0}': {1}"),
+                        owner.Title,
+                        ex.Message),
+                    recommendation: L(
+                        "diagnostics.subqueryPayloadRecommendation",
+                        "Abra e salve novamente a subconsulta para restaurar o payload interno."),
+                    openPanel: false);
                 continue;
             }
 
@@ -923,7 +1020,24 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
             () => _nodeManager.SpawnTableNode(tableFullName, columns.Select(c => (c.Name, c.Type)), position));
 
         if (!handled)
+        {
+            Toasts.ShowWarning(
+                L("toast.schemaTableInsertFailed", "Não foi possível inserir a tabela no canvas atual."),
+                tableFullName);
+            Diagnostics.AddWarning(
+                area: L("diagnostics.area.schemaTableInsert", "Schema Table Insert"),
+                message: string.Format(
+                    L(
+                        "diagnostics.schemaTableInsertNotHandled",
+                        "A inserção de tabela '{0}' não foi tratada pelo domínio '{1}'."),
+                    tableFullName,
+                    _domainStrategy.DomainName),
+                recommendation: L(
+                    "diagnostics.schemaTableInsertRecommendation",
+                    "Verifique o contexto do canvas atual e a estratégia de domínio antes de tentar novamente."),
+                openPanel: false);
             return false;
+        }
 
         IsDirty = true;
         return true;
@@ -983,6 +1097,8 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
     public void LoadTemplate(QueryTemplate template)
     {
         var stateBeforeTemplate = new RestoreCanvasStateCommand(this, "Load Template");
+        if (!TryAbortActiveSubEditorSession())
+            return;
 
         Connections.Clear();
         Nodes.Clear();
@@ -1043,11 +1159,62 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
     /// <summary>Converts all alias violations to snake_case (undoable).</summary>
     public void AutoFixNaming()
     {
-        NamingConventionPolicy policy = PropertyPanel.BuildNamingConventionPolicy();
+        NamingConventionPolicy policy = BuildNamingConventionPolicy();
         var cmd = new AutoFixNamingCommand(Nodes, policy, _aliasConventionRegistry);
         if (!cmd.HasChanges)
             return;
         UndoRedo.Execute(cmd);
+    }
+
+    public void ApplyProjectConventionSettings(ProjectConventionSettings settings)
+    {
+        settings ??= new ProjectConventionSettings();
+        _projectConventionSettings = new ProjectConventionSettings
+        {
+            NamingConvention = settings.NamingConvention,
+            EnforceAliasNaming = settings.EnforceAliasNaming,
+            WarnOnReservedKeywords = settings.WarnOnReservedKeywords,
+            MaxAliasLength = Math.Max(0, settings.MaxAliasLength),
+            DefaultWireCurveMode = settings.DefaultWireCurveMode,
+        };
+
+        // Keep the property panel in sync with project-level settings so
+        // validation and auto-fix entry points read the same convention state.
+        PropertyPanel.SelectedNamingConvention = _projectConventionSettings.NamingConvention;
+        PropertyPanel.EnforceAliasNaming = _projectConventionSettings.EnforceAliasNaming;
+        PropertyPanel.WarnOnReservedKeywords = _projectConventionSettings.WarnOnReservedKeywords;
+        PropertyPanel.MaxAliasLength = _projectConventionSettings.MaxAliasLength.ToString();
+
+        if (Enum.TryParse(_projectConventionSettings.DefaultWireCurveMode, ignoreCase: true, out CanvasWireCurveMode defaultWireCurveMode))
+        {
+            WireCurveMode = defaultWireCurveMode;
+            if (SelectedConnection is null)
+                PropertyPanel.SelectedWireCurveMode = defaultWireCurveMode;
+        }
+
+        _validationManager?.ScheduleValidation();
+    }
+
+    public NamingConventionPolicy BuildNamingConventionPolicy()
+    {
+        string conventionName = _projectConventionSettings.NamingConvention switch
+        {
+            "snake_case" => "snake_case",
+            "camelCase" => "camelCase",
+            "PascalCase" => "PascalCase",
+            "SCREAMING_SNAKE_CASE" => "SCREAMING_SNAKE_CASE",
+            _ => "snake_case",
+        };
+
+        return new NamingConventionPolicy
+        {
+            EnforceSnakeCase = _projectConventionSettings.EnforceAliasNaming
+                && string.Equals(conventionName, "snake_case", StringComparison.OrdinalIgnoreCase),
+            MaxLength = Math.Max(0, _projectConventionSettings.MaxAliasLength),
+            NoLeadingDigit = true,
+            NoSpaces = true,
+            ConventionName = _projectConventionSettings.EnforceAliasNaming ? conventionName : null,
+        };
     }
 
     public IAliasConventionRegistry AliasConventions => _aliasConventionRegistry;
@@ -1181,7 +1348,17 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
     /// type-defining node's parameter changes.
     /// </summary>
     internal void NotifyNodeParameterChanged(NodeViewModel node, string paramName)
-        => _domainStrategy.OnParameterChanged(node, paramName, Connections, Nodes);
+    {
+        _domainStrategy.OnParameterChanged(node, paramName, Connections, Nodes);
+        RefreshComparisonInlineSummaries();
+        _validationManager?.ScheduleValidation();
+    }
+
+    private void RefreshComparisonInlineSummaries()
+    {
+        foreach (NodeViewModel node in Nodes)
+            node.SyncComparisonInlineSummary(Connections);
+    }
 
     // â”€â”€ Selection (delegated to SelectionManager) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -1191,6 +1368,36 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
     {
         _selectionManager.DeselectAll();
         ClearConnectionSelection();
+    }
+
+    public void ClearSelection() => DeselectAll();
+
+    public bool TrySelectInRegion(Rect region)
+    {
+        ClearConnectionSelection();
+        bool anySelected = CanvasSelectionViewportMath.TrySelectNodesInRegion(
+            Nodes,
+            region,
+            SelectionFrameDefaultNodeHeight);
+
+        List<NodeViewModel> selected = [.. Nodes.Where(node => node.IsSelected)];
+        if (selected.Count == 1)
+            PropertyPanel.ShowNode(selected[0]);
+        else if (selected.Count > 1)
+            PropertyPanel.ShowMultiSelection(selected);
+        else
+            PropertyPanel.Clear();
+
+        return anySelected;
+    }
+
+    public bool TryGetSelectionFrame(double padding, out Rect frame)
+    {
+        return CanvasSelectionViewportMath.TryGetSelectionFrame(
+            Nodes.Where(node => node.IsSelected),
+            SelectionFrameDefaultNodeHeight,
+            padding,
+            out frame);
     }
 
     public void SelectNode(NodeViewModel node, bool add = false) =>
@@ -1215,6 +1422,8 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
 
     public void ClearConnectionSelection()
     {
+        ConnectionViewModel? previousSelectedConnection = SelectedConnection;
+        ConnectionViewModel? previousSelectedBreakpointConnection = SelectedBreakpointConnection;
         ClearSelectedWireBreakpoint();
 
         bool changed = false;
@@ -1224,6 +1433,22 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
                 continue;
 
             connection.IsSelected = false;
+            changed = true;
+        }
+
+        if (previousSelectedConnection is not null
+            && !Connections.Contains(previousSelectedConnection)
+            && previousSelectedConnection.IsSelected)
+        {
+            previousSelectedConnection.IsSelected = false;
+            changed = true;
+        }
+
+        if (previousSelectedBreakpointConnection is not null
+            && !Connections.Contains(previousSelectedBreakpointConnection)
+            && previousSelectedBreakpointConnection.IsSelected)
+        {
+            previousSelectedBreakpointConnection.IsSelected = false;
             changed = true;
         }
 
@@ -1455,6 +1680,53 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
         DataPreview.QueryText = sql;
     }
 
+    public void RememberPreviewParameterInputs(IReadOnlyDictionary<string, string> values)
+    {
+        foreach ((string key, string value) in values)
+            _previewParameterInputs[key] = value;
+    }
+
+    public void ReplacePreviewParameterInputs(IReadOnlyDictionary<string, string>? values)
+    {
+        _previewParameterInputs.Clear();
+        if (values is null)
+            return;
+
+        foreach ((string key, string value) in values)
+            _previewParameterInputs[key] = value;
+    }
+
+    internal int PrunePreviewParameterInputs(
+        ConnectionConfig? config,
+        IReadOnlyCollection<string> activeParameterStorageKeys)
+    {
+        if (config is null)
+            return 0;
+
+        string scopePrefix = PreviewParameterInputScopeKey.BuildScopePrefix(config);
+        var keepKeys = new HashSet<string>(
+            activeParameterStorageKeys
+                .Where(static key => !string.IsNullOrWhiteSpace(key))
+                .Select(key => PreviewParameterInputScopeKey.BuildScopedKey(config, key)),
+            StringComparer.OrdinalIgnoreCase);
+
+        List<string> keysToRemove = [];
+        foreach (string key in _previewParameterInputs.Keys)
+        {
+            if (!key.StartsWith(scopePrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (keepKeys.Contains(key))
+                continue;
+
+            keysToRemove.Add(key);
+        }
+
+        foreach (string key in keysToRemove)
+            _previewParameterInputs.Remove(key);
+
+        return keysToRemove.Count;
+    }
+
     /// <summary>
     /// Finds the first export node of <paramref name="exportType"/> and triggers export.
     /// Returns the generated file path, or null if none found or export failed.
@@ -1499,6 +1771,15 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
 
     private void OnDataPreviewErrorNotified(string message, string? details) =>
         NotifyError(message, details);
+
+    private void TryImportSchemaTableToDdlCanvas(TableMetadata table, Point position)
+    {
+        if (DatabaseMetadata is null)
+            return;
+
+        var importer = new DdlSchemaImporter();
+        _ = importer.ImportTable(DatabaseMetadata, table.FullName, this, position);
+    }
 
     private string L(string key, string fallback)
     {
@@ -1711,8 +1992,6 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
             LiveSql.PropertyChanged -= _liveSqlPropertyChangedHandler;
 
         DataPreview.ErrorNotified -= OnDataPreviewErrorNotified;
-        if (_propertyPanelNamingChangedHandler is not null)
-            PropertyPanel.NamingSettingsChanged -= _propertyPanelNamingChangedHandler;
         if (_propertyPanelWireStyleChangedHandler is not null)
             PropertyPanel.WireStyleChanged -= _propertyPanelWireStyleChangedHandler;
 
@@ -1738,10 +2017,10 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
         if (_connectionsCollectionChangedHandler is not null)
             Connections.CollectionChanged -= _connectionsCollectionChangedHandler;
 
-        // Unsubscribe from all node validation handlers
-        foreach (var handler in _nodeValidationHandlers.Values)
-            foreach (var node in Nodes)
-                node.PropertyChanged -= handler;
+        // Unsubscribe from all tracked node validation handlers, including
+        // handlers associated with nodes that are no longer present in Nodes.
+        foreach ((NodeViewModel node, PropertyChangedEventHandler handler) in _nodeValidationHandlers.ToArray())
+            node.PropertyChanged -= handler;
         _nodeValidationHandlers.Clear();
     }
 
@@ -1775,4 +2054,3 @@ public sealed class CanvasViewModel : ViewModelBase, IDisposable
         }
     }
 }
-

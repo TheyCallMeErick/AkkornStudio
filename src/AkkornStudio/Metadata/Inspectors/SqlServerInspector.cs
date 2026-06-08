@@ -190,6 +190,95 @@ public sealed class SqlServerInspector(ConnectionConfig config) : BaseInspector(
         return columns;
     }
 
+    // ── Check constraints (best-effort) ─────────────────────────────────────────
+
+    protected override async Task<IReadOnlyList<CheckConstraintMetadata>> FetchCheckConstraintsAsync(
+        DbConnection conn,
+        string schema,
+        string table,
+        CancellationToken ct
+    )
+    {
+        const string sql = """
+            SELECT cc.name, cc.definition
+            FROM sys.check_constraints cc
+            JOIN sys.objects o ON o.object_id = cc.parent_object_id
+            JOIN sys.schemas s ON s.schema_id = o.schema_id
+            WHERE s.name = @schema
+              AND o.name = @table
+            """;
+
+        try
+        {
+            await using var cmd = (SqlCommand)conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("@schema", schema);
+            cmd.Parameters.AddWithValue("@table", table);
+
+            var checks = new List<CheckConstraintMetadata>();
+            await using SqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (reader.IsDBNull(0) || reader.IsDBNull(1))
+                    continue;
+
+                checks.Add(new CheckConstraintMetadata(reader.GetString(0), reader.GetString(1).Trim()));
+            }
+
+            return checks;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    // ── Column attributes (best-effort) ──────────────────────────────────────────
+
+    protected override async Task<IReadOnlyDictionary<string, ColumnAttributes>> FetchColumnAttributesAsync(
+        DbConnection conn,
+        string schema,
+        string table,
+        CancellationToken ct
+    )
+    {
+        const string sql = """
+            SELECT c.name, c.is_identity, cc.definition, c.collation_name
+            FROM sys.columns c
+            JOIN sys.objects o ON o.object_id = c.object_id
+            JOIN sys.schemas s ON s.schema_id = o.schema_id
+            LEFT JOIN sys.computed_columns cc ON cc.object_id = c.object_id AND cc.column_id = c.column_id
+            WHERE s.name = @schema
+              AND o.name = @table
+            """;
+
+        var map = new Dictionary<string, ColumnAttributes>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            await using var cmd = (SqlCommand)conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("@schema", schema);
+            cmd.Parameters.AddWithValue("@table", table);
+
+            await using SqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                string name = reader.GetString(0);
+                bool isIdentity = !reader.IsDBNull(1) && reader.GetBoolean(1);
+                string? gen = reader.IsDBNull(2) ? null : reader.GetString(2);
+                string? collation = reader.IsDBNull(3) ? null : reader.GetString(3);
+
+                map[name] = new ColumnAttributes(isIdentity, gen, collation);
+            }
+        }
+        catch
+        {
+            return map;
+        }
+
+        return map;
+    }
+
     // ── Indexes ───────────────────────────────────────────────────────────────
 
     protected override async Task<IReadOnlyList<IndexMetadata>> FetchIndexesAsync(

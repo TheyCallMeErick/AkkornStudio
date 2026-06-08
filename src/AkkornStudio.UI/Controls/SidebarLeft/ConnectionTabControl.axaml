@@ -72,6 +72,7 @@
           AvailableConnections="{Binding Profiles}"
           SelectedConnection="{Binding SidebarSelectedConnection}"
           AvailableDatabases="{Binding AvailableDatabases}"
+          AvailableDatabaseOptions="{Binding AvailableDatabaseCatalogs}"
           SelectedDatabase="{Binding SelectedDatabase}"
           IsDatabaseSelectionVisible="{Binding IsDatabaseSelectionVisible}"
           AvailableSchemas="{Binding AvailableSchemas}"
@@ -81,6 +82,7 @@
           LatencyMs="{Binding ActiveLatencyMs}"
           IsReloading="{Binding IsBusy}"
           DisconnectCommand="{Binding DisconnectCommand}"
+          OpenConnectionManagerCommand="{Binding ConnectOrOpenManagerCommand}"
           SwitchConnectionCommand="{Binding SwitchConnectionCommand}"
           SwitchDatabaseCommand="{Binding SwitchDatabaseCommand}"
           SwitchSchemaCommand="{Binding SwitchSchemaCommand}"
@@ -131,17 +133,11 @@
                  Margin="2,8,0,8"/>
 
       <Border Grid.Row="1"
-              Background="{StaticResource Bg1Brush}"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="1"
-              CornerRadius="{StaticResource RadiusLG}"
+              Classes="surface-card"
               Padding="10"
               Margin="0,0,0,8">
         <Grid ColumnDefinitions="*,Auto">
-          <Border Background="{StaticResource Bg2Brush}"
-                  BorderBrush="{StaticResource BorderSubtleBrush}"
-                  BorderThickness="1"
-                  CornerRadius="{StaticResource RadiusSM}"
+          <Border Classes="surface-card"
                   Padding="10,8">
             <DockPanel>
               <mi:MaterialIcon DockPanel.Dock="Left"
@@ -153,23 +149,22 @@
                                Margin="0,0,7,0"/>
               <TextBox Classes="sidebar-input"
                        Text="{Binding SchemaFilterQuery}"
-                       Watermark="{Binding [schema.search], Source={x:Static loc:LocalizationService.Instance}}"
+                       Watermark="Buscar schema (@tabela #view !coluna schema:dbo fk: idx: pk:)"
                        Background="Transparent"
                        BorderBrush="Transparent"
                        BorderThickness="1"
                        Foreground="{StaticResource TextPrimaryBrush}"
                        Padding="0"
                        FontSize="{StaticResource FontSizeCaption}"
-                       FontFamily="{StaticResource MonoFont}"/>
+                       FontFamily="{StaticResource MonoFont}"
+                       ToolTip.Tip="@nome tabela | #nome view | !coluna | schema:dbo | fk | pk | idx"/>
             </DockPanel>
           </Border>
 
           <Button Grid.Column="1"
-                  Classes="secondary"
+                  Classes="secondary compact"
                   Command="{Binding ReloadMetadataCommand}"
-                  Padding="8"
               Margin="8,0,0,0"
-                  CornerRadius="{StaticResource RadiusSM}"
                   ToolTip.Tip="Recarregar metadados">
             <mi:MaterialIcon Kind="Refresh"
                      Width="16"
@@ -179,10 +174,7 @@
       </Border>
 
       <Border Grid.Row="2"
-              Background="{StaticResource Bg1Brush}"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="1"
-              CornerRadius="{StaticResource RadiusLG}"
+              Classes="surface-card"
               ClipToBounds="True"
               VerticalAlignment="Stretch">
         <ctrl:SchemaControl Margin="0"

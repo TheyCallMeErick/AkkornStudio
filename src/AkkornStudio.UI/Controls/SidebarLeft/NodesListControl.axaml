@@ -131,9 +131,7 @@
 
     <!-- Search Bar -->
     <Border Grid.Row="0"
-          Background="{StaticResource Bg1Brush}"
-          BorderBrush="{StaticResource BorderSubtleBrush}"
-            BorderThickness="0,0,0,1"
+            Classes="surface-panel"
             Padding="12,10,12,10">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <mi:MaterialIcon Grid.Column="0"
@@ -155,14 +153,13 @@
                  Padding="4,0,0,0"
                  FontSize="{StaticResource FontSizeBody}"/>
         <Button Grid.Column="2"
-                Content="✕"
+                Classes="icon-ghost"
                 IsVisible="{Binding SearchQuery, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                 Command="{Binding ClearSearchCommand}"
-                Background="Transparent"
-                Foreground="{StaticResource TextSecondaryBrush}"
-                Padding="4,2"
                 Margin="6,0,0,0"
-                FontSize="{StaticResource FontSizeTitle}"/>
+                FontSize="{StaticResource FontSizeTitle}">
+          <mi:MaterialIcon Kind="Close" Width="12" Height="12"/>
+        </Button>
       </Grid>
     </Border>
 
@@ -417,3 +414,4 @@
   </Grid>
 
 </UserControl>
+

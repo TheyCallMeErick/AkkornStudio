@@ -1,5 +1,6 @@
 using System.Text;
 using System.Threading;
+using System.Reflection;
 using AkkornStudio.UI.Serialization;
 using Xunit;
 
@@ -29,9 +30,10 @@ public class StoreCorruptionFallbackTests
     [Fact]
     public void SnippetStore_Load_WithCorruptJson_ReturnsEmptyAndRaisesWarning()
     {
-        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        string dir = Path.Combine(appData, "AkkornStudio");
-        string path = Path.Combine(dir, "snippets.json");
+        string path = (string)typeof(SnippetStore)
+            .GetMethod("StoreFilePath", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, null)!;
+        string dir = Path.GetDirectoryName(path)!;
         string backup = path + ".bak-test-" + Guid.NewGuid().ToString("N");
 
         Directory.CreateDirectory(dir);
@@ -73,9 +75,10 @@ public class StoreCorruptionFallbackTests
     [Fact]
     public void FlowVersionStore_Load_WithCorruptJson_ReturnsEmptyAndRaisesWarning()
     {
-        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        string dir = Path.Combine(appData, "AkkornStudio");
-        string path = Path.Combine(dir, "flow_versions.json");
+        string path = (string)typeof(FlowVersionStore)
+            .GetMethod("StorePath", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, null)!;
+        string dir = Path.GetDirectoryName(path)!;
         string backup = path + ".bak-test-" + Guid.NewGuid().ToString("N");
 
         Directory.CreateDirectory(dir);

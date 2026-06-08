@@ -1,0 +1,795 @@
+﻿
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AkkornStudio.UI.ViewModels"
+             xmlns:result="using:AkkornStudio.UI.Services.SqlEditor.Results"
+             xmlns:loc="using:AkkornStudio.UI.Services.Localization"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             x:Class="AkkornStudio.UI.Controls.SqlEditor.SqlResultPageControl"
+             x:Name="Root"
+             x:DataType="vm:SqlResultPageViewModel">
+  <UserControl.Styles>
+    <Style Selector="DataGrid.sql-result-grid">
+      <Setter Property="RowHeight" Value="36"/>
+      <Setter Property="ColumnHeaderHeight" Value="42"/>
+      <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderSoftBrush}"/>
+      <Setter Property="VerticalGridLinesBrush" Value="Transparent"/>
+      <Setter Property="RowBackground" Value="Transparent"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridRow:pointerover">
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridRow:selected">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridRow:selected:pointerover">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridCell">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSoftBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridCell:selected">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderFocusBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridCell:current">
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridCell:selected:current">
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryHoverBrush}"/>
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridRowHeader">
+      <Setter Property="Background" Value="{StaticResource Bg0Brush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSoftBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridRow:selected DataGridRowHeader">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="DataGrid.sql-result-grid DataGridCell:focus-visible">
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryHoverBrush}"/>
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.sql-null">
+      <Setter Property="FontStyle" Value="Italic"/>
+      <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+      <Setter Property="Opacity" Value="0.82"/>
+    </Style>
+    <Style Selector="Button.split-main">
+      <Setter Property="CornerRadius" Value="5,0,0,5"/>
+    </Style>
+    <Style Selector="Button.split-tail">
+      <Setter Property="CornerRadius" Value="0,5,5,0"/>
+      <Setter Property="Padding" Value="6,4"/>
+      <Setter Property="MinWidth" Value="30"/>
+    </Style>
+    <Style Selector="ToggleButton.secondary:checked">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="ToggleButton.secondary:checked:pointerover">
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
+    </Style>
+    <Style Selector="ToggleButton.secondary:focus-visible">
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryHoverBrush}"/>
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
+    </Style>
+    <Style Selector="Border.result-meta-chip">
+      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="Padding" Value="10,4"/>
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="MinHeight" Value="28"/>
+    </Style>
+    <Style Selector="Border.result-meta-chip.success">
+      <Setter Property="Background" Value="{StaticResource BtnSuccessBgBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource StatusOkBrush}"/>
+    </Style>
+    <Style Selector="Border.result-meta-chip.warning">
+      <Setter Property="Background" Value="{StaticResource BtnWarningBgBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource StatusWarningBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.result-meta-text">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="FontWeight" Value="{StaticResource FontWeightHeading}"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+    <Style Selector="Button.grid-menu-button">
+      <Setter Property="Padding" Value="8,4"/>
+      <Setter Property="MinWidth" Value="92"/>
+    </Style>
+    <Style Selector="ListBox.sql-session-list ListBoxItem">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+    </Style>
+    <Style Selector="ListBox.sql-session-list ListBoxItem:selected">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+    <Style Selector="ListBox.sql-session-list ListBoxItem:selected Border.list-row">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryPressedBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="ListBox.sql-session-list ListBoxItem:pointerover Border.list-row">
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderFocusBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="ContextMenu.sql-result-menu">
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="ContextMenu.sql-result-menu MenuItem">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="ContextMenu.sql-result-menu MenuItem:selected">
+      <Setter Property="Background" Value="{StaticResource PanelHoverBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="TabControl.result-bottom-tabs">
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="TabControl.result-bottom-tabs TabItem">
+      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="10,6"/>
+    </Style>
+    <Style Selector="TabControl.result-bottom-tabs TabItem:selected">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderFocusBrush}"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid Margin="8"
+        RowDefinitions="Auto,Auto,*"
+        IsVisible="{Binding HasSession}">
+    <Border Grid.Row="0"
+            Classes="surface-card"
+            Padding="10">
+      <Grid RowDefinitions="Auto,Auto"
+            ColumnDefinitions="Auto,*,Auto"
+            RowSpacing="8"
+            ColumnSpacing="10">
+        <Button Grid.Row="0"
+                Grid.Column="0"
+                Classes="secondary compact"
+                Command="{Binding BackToEditorCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <mi:MaterialIcon Kind="ArrowLeft" Width="14" Height="14"/>
+            <TextBlock Text="{Binding [common.back], Source={x:Static loc:LocalizationService.Instance}}"/>
+          </StackPanel>
+        </Button>
+
+        <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
+          <TextBlock Classes="txt-title"
+                     Text="Resultado da consulta"/>
+          <TextBlock Text="{Binding SqlHeaderText}"
+                     ToolTip.Tip="{Binding SqlText}"
+                     TextWrapping="NoWrap"
+                     TextTrimming="CharacterEllipsis"
+                     FontFamily="{StaticResource MonoFont}"
+                     FontSize="12"/>
+          <TextBlock Text="{Binding ResultBreadcrumbText}"
+                     Foreground="{StaticResource TextSecondaryBrush}"
+                     TextTrimming="CharacterEllipsis"
+                     FontSize="11"/>
+        </StackPanel>
+
+        <WrapPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" ItemSpacing="6">
+          <Border Classes="result-meta-chip success">
+            <TextBlock Classes="result-meta-text" Text="{Binding StatusText}"/>
+          </Border>
+          <Border Classes="result-meta-chip">
+            <TextBlock Classes="result-meta-text" Text="{Binding RowCountText, StringFormat='Rows: {0}'}"/>
+          </Border>
+          <Border Classes="result-meta-chip">
+            <TextBlock Classes="result-meta-text" Text="{Binding ColumnCountText, StringFormat='Cols: {0}'}"/>
+          </Border>
+          <Border Classes="result-meta-chip" MaxWidth="360">
+            <TextBlock Classes="result-meta-text" Text="{Binding EditabilityStatusText}" ToolTip.Tip="{Binding EditabilityStatusText}"/>
+          </Border>
+          <Border Classes="result-meta-chip">
+            <TextBlock Classes="result-meta-text" Text="{Binding PendingEditsCount, StringFormat='Pending: {0}'}"/>
+          </Border>
+        </WrapPanel>
+
+        <WrapPanel Grid.Row="1"
+                   Grid.Column="0"
+                   Grid.ColumnSpan="3"
+                   Orientation="Horizontal"
+                   VerticalAlignment="Center">
+          <Button Classes="secondary compact"
+                  Command="{Binding RefreshSessionCommand}"
+                  Content="Refresh"/>
+          <Button Classes="secondary compact"
+                  Margin="8,0,0,0"
+                  Command="{Binding PreviewSelectedForeignKeyCommand}"
+                  Content="Preview FK"/>
+
+          <Grid ColumnDefinitions="Auto,Auto" Margin="8,0,0,0">
+            <Button Grid.Column="0"
+                    Classes="secondary compact split-main"
+                    Command="{Binding CopySelectedCellCommand}"
+                    Content="Copiar"/>
+            <Button Grid.Column="1"
+                    Classes="secondary compact split-tail"
+                    ToolTip.Tip="Mais ações de cópia">
+              <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14"/>
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="220">
+                    <StackPanel Spacing="6">
+                      <Button Classes="secondary compact" Command="{Binding CopySelectedCellCommand}" Content="Copiar célula"/>
+                      <Button Classes="secondary compact" Command="{Binding CopySelectedRowAsJsonCommand}" Content="Copiar linha JSON"/>
+                      <Button Classes="secondary compact" Command="{Binding CopySelectedRowAsCsvCommand}" Content="Copiar linha CSV"/>
+                      <Button Classes="secondary compact" Command="{Binding CopySelectedRowAsMarkdownCommand}" Content="Copiar linha Markdown"/>
+                      <Separator/>
+                      <Button Classes="secondary compact" Command="{Binding CopyVisibleRowsAsJsonCommand}" Content="Copiar página JSON"/>
+                      <Button Classes="secondary compact" Command="{Binding CopyVisibleRowsAsCsvCommand}" Content="Copiar página CSV"/>
+                      <Button Classes="secondary compact" Command="{Binding CopySelectedColumnAsSqlInCommand}" Content="Copiar SQL IN"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+          </Grid>
+
+          <Grid ColumnDefinitions="Auto,Auto" Margin="8,0,0,0">
+            <Button Grid.Column="0"
+                    Classes="secondary compact split-main"
+                    Command="{Binding ExportVisibleRowsAsCsvCommand}"
+                    Content="Exportar"/>
+            <Button Grid.Column="1"
+                    Classes="secondary compact split-tail"
+                    ToolTip.Tip="Mais ações de exportação">
+              <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14"/>
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="220">
+                    <StackPanel Spacing="6">
+                      <Button Classes="secondary compact" Command="{Binding ExportVisibleRowsAsCsvCommand}" Content="Exportar CSV"/>
+                      <Button Classes="secondary compact" Command="{Binding ExportVisibleRowsAsJsonCommand}" Content="Exportar JSON"/>
+                      <Button Classes="secondary compact" Click="ExportReportButton_Click" Content="Exportar relatório"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+          </Grid>
+
+          <Grid ColumnDefinitions="Auto,Auto" Margin="8,0,0,0">
+            <Button Grid.Column="0"
+                    Classes="secondary compact split-main"
+                    Command="{Binding PreparePendingChangesPreviewCommand}"
+                    Content="Pendências"/>
+            <Button Grid.Column="1"
+                    Classes="secondary compact split-tail"
+                    ToolTip.Tip="Mais ações de pendências"
+                    IsEnabled="{Binding HasPendingEdits}">
+              <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14"/>
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="260">
+                    <StackPanel Spacing="6">
+                      <Button Classes="secondary compact" Command="{Binding PreparePendingChangesPreviewCommand}" Content="Preview pendências"/>
+                      <Button Classes="secondary compact" Command="{Binding GeneratePendingSqlCommand}" Content="Gerar SQL"/>
+                      <Button Classes="secondary compact" Command="{Binding CopyGeneratedPendingSqlCommand}" Content="Copiar SQL"/>
+                      <Button Classes="secondary compact" Command="{Binding SendGeneratedPendingSqlToEditorCommand}" Content="Enviar para editor"/>
+                      <Separator/>
+                      <Button Classes="secondary compact" Command="{Binding CancelPendingEditsCommand}" Content="Descartar pendências"/>
+                      <Button Classes="danger compact" Command="{Binding RequestExecutePendingChangesCommand}" Content="Executar pendências"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+          </Grid>
+
+          <ToggleButton Classes="secondary compact"
+                        Margin="8,0,0,0"
+                        IsChecked="{Binding UseTransactionalExecution, Mode=TwoWay}"
+                        IsEnabled="{Binding IsTransactionModeAvailable}">
+            <TextBlock Text="Tx Mode"/>
+          </ToggleButton>
+
+          <Button Classes="secondary compact"
+                  Margin="8,0,0,0"
+                  Command="{Binding TogglePinCommand}"
+                  Content="{Binding TogglePinText}"/>
+
+          <ToggleButton Classes="secondary compact"
+                        Margin="8,0,0,0"
+                        IsChecked="{Binding IsSidebarVisible, Mode=TwoWay}">
+            <TextBlock Text="Painel lateral"/>
+          </ToggleButton>
+
+          <ToggleButton Classes="secondary compact"
+                        Margin="8,0,0,0"
+                        IsChecked="{Binding IsBottomPanelVisible, Mode=TwoWay}">
+            <TextBlock Text="Painel inferior"/>
+          </ToggleButton>
+
+          <Button Classes="danger compact"
+                  Margin="8,0,0,0"
+                  Command="{Binding CloseSessionCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+              <TextBlock Text="Close Session"/>
+            </StackPanel>
+          </Button>
+        </WrapPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="1"
+            Margin="0,8,0,8"
+            Classes="surface-card"
+            Padding="8"
+            IsVisible="{Binding HasPendingPreviewPanel}">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <StackPanel Grid.Column="0" Spacing="4">
+          <TextBlock Text="Pendências"
+                     FontWeight="{StaticResource FontWeightStrong}"/>
+          <TextBlock Text="{Binding PendingChangeSetSummaryText}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding PendingDiffPreviewText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding PendingExecutionStatusText}" IsVisible="{Binding HasPendingExecutionStatusText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+          <Button Classes="secondary compact" Command="{Binding ClearPendingChangesPreviewCommand}" Content="Fechar"/>
+          <Button Classes="danger compact" Command="{Binding RequestExecutePendingChangesCommand}" Content="Executar"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="2" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+      <Border Grid.Column="0"
+              Width="308"
+              Classes="surface-card"
+              Padding="8"
+              IsVisible="{Binding IsSidebarVisible}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="8">
+            <Expander Classes="app-accordion" IsExpanded="True" IsVisible="{Binding HasSessions}">
+              <Expander.Header>
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="Sessões recentes"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Sessions.Count}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                </Grid>
+              </Expander.Header>
+              <ListBox Classes="sql-session-list"
+                       ItemsSource="{Binding Sessions}"
+                       SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
+                       MaxHeight="220">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="result:SqlResultSession">
+                    <Border Classes="list-row" Margin="0,0,0,6">
+                      <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding SqlText}" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding ExecutedAt.LocalDateTime, StringFormat='dd/MM HH:mm:ss'}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding ResultSet.Data.Rows.Count, StringFormat='{}{0} linhas'}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <Button Grid.Row="0"
+                                Grid.Column="1"
+                                Classes="secondary compact"
+                                Command="{Binding DataContext.SelectSessionCommand, ElementName=Root}"
+                                CommandParameter="{Binding .}"
+                                Content="Open"/>
+                        <Button Grid.Row="0"
+                                Grid.Column="2"
+                                Classes="danger compact"
+                                Command="{Binding DataContext.CloseSessionTabCommand, ElementName=Root}"
+                                CommandParameter="{Binding .}"
+                                Content="x"/>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Expander>
+
+            <Expander Classes="app-accordion" IsExpanded="True">
+              <Expander.Header>
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Colunas visíveis"/><TextBlock Grid.Column="1" Text="{Binding VisibleColumnsSummaryText}" Foreground="{StaticResource TextSecondaryBrush}"/></Grid>
+              </Expander.Header>
+              <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                  <TextBox Grid.Column="0" Watermark="Buscar coluna..." Text="{Binding ColumnSearchText}" KeyDown="ColumnSearchBox_OnKeyDown"/>
+                  <Button Grid.Column="1" Classes="secondary compact" Command="{Binding ClearColumnSearchTextCommand}" Content="×" IsVisible="{Binding HasColumnSearchText}"/>
+                </Grid>
+                <Button Classes="secondary compact" Command="{Binding ShowAllColumnsCommand}" Content="Mostrar todas" HorizontalAlignment="Left"/>
+                <ItemsControl ItemsSource="{Binding FilteredColumnVisibilityItems}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4" Margin="0,0,0,4">
+                        <CheckBox Grid.Column="0" Content="{Binding ColumnName}" IsChecked="{Binding IsVisible, Mode=TwoWay}"/>
+                        <Button Grid.Column="1" Classes="secondary compact" ToolTip.Tip="Ações da coluna">
+                          <mi:MaterialIcon Kind="DotsHorizontal" Width="14" Height="14"/>
+                          <Button.Flyout>
+                            <Flyout Placement="RightEdgeAlignedTop">
+                              <Border Classes="surface-card" Padding="8" MinWidth="190">
+                                <StackPanel Spacing="6">
+                                  <Button Classes="secondary compact" Command="{Binding DataContext.MoveColumnUpCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="Mover para cima"/>
+                                  <Button Classes="secondary compact" Command="{Binding DataContext.MoveColumnDownCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="Mover para baixo"/>
+                                  <Button Classes="secondary compact" Command="{Binding DataContext.ToggleColumnFrozenCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="{Binding FrozenActionText}"/>
+                                </StackPanel>
+                              </Border>
+                            </Flyout>
+                          </Button.Flyout>
+                        </Button>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Expander>
+
+            <Expander Classes="app-accordion" IsExpanded="False">
+              <Expander.Header>
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Filtros"/><TextBlock Grid.Column="1" Text="{Binding ActiveFilterCount}" Foreground="{StaticResource TextSecondaryBrush}"/></Grid>
+              </Expander.Header>
+              <StackPanel Spacing="6">
+                <ItemsControl ItemsSource="{Binding ActiveFilterCriteria}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                          <TextBlock Text="{Binding ColumnName}"/>
+                          <TextBlock Text="{Binding OperationText}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                          <TextBlock Text="{Binding Value}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="secondary compact" Command="{Binding DataContext.RemoveColumnFilterCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="×"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="secondary compact" Command="{Binding ClearColumnFilterCommand}" Content="Limpar filtros"/>
+              </StackPanel>
+            </Expander>
+
+            <Expander Classes="app-accordion" IsExpanded="False">
+              <Expander.Header>
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Ordenação"/><TextBlock Grid.Column="1" Text="{Binding ActiveSortCount}" Foreground="{StaticResource TextSecondaryBrush}"/></Grid>
+              </Expander.Header>
+              <StackPanel Spacing="6">
+                <ItemsControl ItemsSource="{Binding ActiveSortCriteria}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                          <TextBlock Text="{Binding ColumnName}"/>
+                          <TextBlock Text="{Binding DirectionText}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="secondary compact" Command="{Binding DataContext.RemoveSortCriterionCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="×"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="secondary compact" Command="{Binding ClearSortCriteriaCommand}" Content="Limpar ordenação"/>
+              </StackPanel>
+            </Expander>
+
+            <Expander Classes="app-accordion" IsExpanded="False">
+              <Expander.Header>
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Agrupamento"/><TextBlock Grid.Column="1" Text="{Binding ActiveGroupCount}" Foreground="{StaticResource TextSecondaryBrush}"/></Grid>
+              </Expander.Header>
+              <StackPanel Spacing="6">
+                <ItemsControl ItemsSource="{Binding ActiveGroupColumns}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                        <TextBlock Grid.Column="0" Text="{Binding ColumnName}"/>
+                        <Button Grid.Column="1" Classes="secondary compact" Command="{Binding DataContext.RemoveGroupColumnCommand, ElementName=Root}" CommandParameter="{Binding .}" Content="×"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="secondary compact" Command="{Binding ClearGroupColumnsCommand}" Content="Limpar agrupamentos"/>
+              </StackPanel>
+            </Expander>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+
+      <Border Grid.Column="1" Classes="surface-card" Padding="8">
+        <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" RowSpacing="8">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+            <Grid Grid.Column="0" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <TextBox Grid.Column="0"
+                       x:Name="SearchBox"
+                       Watermark="Buscar nos resultados..."
+                       Text="{Binding SearchText}"
+                       KeyDown="SearchBox_OnKeyDown"/>
+              <Button Grid.Column="1" Classes="secondary compact" Command="{Binding ClearSearchTextCommand}" Content="×" IsVisible="{Binding HasSearchText}"/>
+            </Grid>
+
+            <Button Grid.Column="1" Classes="secondary compact grid-menu-button" Content="Filtros">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="240">
+                    <StackPanel Spacing="6">
+                      <ComboBox ItemsSource="{Binding AvailableSortColumns}" SelectedItem="{Binding SelectedFilterColumn, Mode=TwoWay}"/>
+                      <ComboBox ItemsSource="{Binding AvailableFilterOperations}" SelectedItem="{Binding SelectedFilterOperation, Mode=TwoWay}"/>
+                      <TextBox Watermark="Valor" Text="{Binding ColumnFilterValue}"/>
+                      <Button Classes="secondary compact" Command="{Binding ApplyColumnFilterCommand}" Content="Adicionar filtro"/>
+                      <Button Classes="secondary compact" Command="{Binding ClearColumnFilterCommand}" Content="Limpar filtros"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+
+            <Button Grid.Column="2" Classes="secondary compact grid-menu-button" Content="Ordenar">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="220">
+                    <StackPanel Spacing="6">
+                      <ComboBox ItemsSource="{Binding AvailableSortColumns}" SelectedItem="{Binding SelectedSortColumn, Mode=TwoWay}"/>
+                      <Button Classes="secondary compact" Command="{Binding ToggleSortDirectionCommand}" Content="{Binding SortDirectionText}"/>
+                      <Button Classes="secondary compact" Command="{Binding AddSortCriterionCommand}" Content="Adicionar ordenação"/>
+                      <Button Classes="secondary compact" Command="{Binding ClearSortCriteriaCommand}" Content="Limpar ordenações"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+
+            <Button Grid.Column="3" Classes="secondary compact grid-menu-button" Content="Agrupar">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="220">
+                    <StackPanel Spacing="6">
+                      <ComboBox ItemsSource="{Binding AvailableSortColumns}" SelectedItem="{Binding SelectedGroupColumn, Mode=TwoWay}"/>
+                      <Button Classes="secondary compact" Command="{Binding AddGroupColumnCommand}" Content="Agrupar por coluna"/>
+                      <Button Classes="secondary compact" Command="{Binding ClearGroupColumnsCommand}" Content="Limpar agrupamentos"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+
+            <Button Grid.Column="4" Classes="secondary compact grid-menu-button" Content="Colunas">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="200">
+                    <StackPanel Spacing="6">
+                      <Button Classes="secondary compact" Command="{Binding ShowAllColumnsCommand}" Content="Mostrar todas"/>
+                      <TextBlock Text="Reordenação e freeze no painel lateral." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" FontSize="11"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+
+            <Button Grid.Column="5" Classes="secondary compact" Content="Densidade">
+              <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                  <Border Classes="surface-card" Padding="8" MinWidth="180">
+                    <StackPanel Spacing="6">
+                      <Button Classes="secondary compact" Click="DensityCompact_Click" Content="Compacta"/>
+                      <Button Classes="secondary compact" Click="DensityComfortable_Click" Content="Confortável"/>
+                      <Button Classes="secondary compact" Click="DensitySpacious_Click" Content="Espaçosa"/>
+                    </StackPanel>
+                  </Border>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+          </Grid>
+
+          <DataGrid Grid.Row="1"
+                    x:Name="ResultGrid"
+                    Classes="sql-result-grid"
+                    ItemsSource="{Binding RowsView}"
+                    SelectedItem="{Binding SelectedRowItem, Mode=TwoWay}"
+                    IsReadOnly="False"
+                    AutoGenerateColumns="False"
+                    FrozenColumnCount="{Binding FrozenColumnCount}"
+                    SelectionMode="Extended"
+                    CellPointerPressed="ResultGrid_OnCellPointerPressed"
+                    DoubleTapped="ResultGrid_OnDoubleTapped"
+                    CellEditEnding="ResultGrid_OnCellEditEnding">
+            <DataGrid.ContextMenu>
+              <ContextMenu Classes="sql-result-menu">
+                <MenuItem Header="Copiar célula" Command="{Binding CopySelectedCellCommand}"/>
+                <MenuItem Header="Copiar linha JSON" Command="{Binding CopySelectedRowAsJsonCommand}"/>
+                <MenuItem Header="Copiar linha CSV" Command="{Binding CopySelectedRowAsCsvCommand}"/>
+                <MenuItem Header="Copiar linha Markdown" Command="{Binding CopySelectedRowAsMarkdownCommand}"/>
+                <Separator/>
+                <MenuItem Header="Filtrar por este valor" Command="{Binding FilterBySelectedCellValueCommand}"/>
+                <MenuItem Header="Ordenar ASC" Command="{Binding SortSelectedColumnAscendingCommand}"/>
+                <MenuItem Header="Ordenar DESC" Command="{Binding SortSelectedColumnDescendingCommand}"/>
+                <MenuItem Header="Ocultar coluna" Command="{Binding HideSelectedCellColumnCommand}"/>
+                <Separator/>
+                <MenuItem Header="Editar célula (duplo clique)"
+                          IsEnabled="{Binding IsEditableSession}"
+                          Click="BeginInlineEditMenuItem_Click"/>
+                <MenuItem Header="Ver detalhes da linha" Command="{Binding OpenDetailsTabCommand}"/>
+                <MenuItem Header="Gerar WHERE" Command="{Binding GenerateWhereClauseCommand}"/>
+                <MenuItem Header="Abrir FK relacionada" Command="{Binding NavigateSelectedForeignKeyCommand}"/>
+                <MenuItem Header="Preview FK relacionada" Command="{Binding PreviewSelectedForeignKeyCommand}"/>
+              </ContextMenu>
+            </DataGrid.ContextMenu>
+          </DataGrid>
+
+          <Border Grid.Row="2"
+                  Classes="surface-card"
+                  Padding="6"
+                  IsVisible="{Binding HasSelectionContext}">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="6">
+              <Border Grid.Column="0" Classes="badge">
+                <TextBlock Text="{Binding SelectionContextText}"/>
+              </Border>
+              <Button Grid.Column="1"
+                      Classes="secondary compact"
+                      Command="{Binding CopySelectedCellCommand}"
+                      Content="Copiar célula"
+                      IsVisible="{Binding HasSelectedCell}"/>
+              <Button Grid.Column="2"
+                      Classes="secondary compact"
+                      Command="{Binding CopySelectedRowAsJsonCommand}"
+                      Content="Copiar linha"
+                      IsVisible="{Binding HasSelectedRow}"/>
+              <Button Grid.Column="3"
+                      Classes="secondary compact"
+                      Command="{Binding FilterBySelectedCellValueCommand}"
+                      Content="Filtrar por valor"
+                      IsVisible="{Binding HasSelectedCell}"/>
+              <Button Grid.Column="4"
+                      Classes="secondary compact"
+                      Command="{Binding NavigateSelectedForeignKeyCommand}"
+                      Content="Abrir FK"
+                      IsVisible="{Binding HasSelectedCell}"/>
+              <Button Grid.Column="5"
+                      Classes="secondary compact"
+                      HorizontalAlignment="Right"
+                      Command="{Binding PreviewSelectedForeignKeyCommand}"
+                      Content="Preview FK"
+                      IsVisible="{Binding HasSelectedCell}"/>
+              <Button Grid.Column="6"
+                      Classes="secondary compact"
+                      HorizontalAlignment="Right"
+                      Command="{Binding OpenDetailsTabCommand}"
+                      Content="Detalhes"
+                      IsVisible="{Binding HasSelectedRow}"/>
+            </Grid>
+          </Border>
+
+          <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="8">
+            <Button Grid.Column="0" Classes="secondary compact" Command="{Binding FirstPageCommand}" Content="‹‹"/>
+            <Button Grid.Column="1" Classes="secondary compact" Command="{Binding PreviousPageCommand}" Content="‹"/>
+            <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Página" Foreground="{StaticResource TextSecondaryBrush}"/>
+            <TextBlock Grid.Column="3" VerticalAlignment="Center" Text="{Binding PageSummaryText}"/>
+            <Button Grid.Column="4" Classes="secondary compact" Command="{Binding NextPageCommand}" Content="›"/>
+            <Button Grid.Column="5" Classes="secondary compact" Command="{Binding LastPageCommand}" Content="››"/>
+            <TextBlock Grid.Column="6" VerticalAlignment="Center" Text="{Binding RowWindowText, StringFormat='Linhas {0} de'}" Foreground="{StaticResource TextSecondaryBrush}"/>
+            <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="6">
+              <TextBlock VerticalAlignment="Center" Text="{Binding RowCountText}" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <ComboBox Width="92" ItemsSource="{Binding AvailablePageSizes}" SelectedItem="{Binding PageSize, Mode=TwoWay}"/>
+            </StackPanel>
+          </Grid>
+
+          <Border Grid.Row="4"
+                  Classes="surface-card"
+                  Padding="8"
+                  IsVisible="{Binding IsBottomPanelVisible}">
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+              <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="6">
+                <Button Grid.Column="0" Classes="secondary compact" Command="{Binding OpenDetailsTabCommand}" Content="Detalhes"/>
+                <Button Grid.Column="1" Classes="secondary compact" Command="{Binding OpenColumnProfilesTabCommand}" Content="Perfil"/>
+                <Button Grid.Column="2" Classes="secondary compact" Command="{Binding OpenComparisonTabCommand}" Content="Comparação"/>
+                <Button Grid.Column="3" Classes="secondary compact" Command="{Binding OpenMessagesTabCommand}" Content="Mensagens"/>
+                <Border Grid.Column="4" Classes="badge" IsVisible="{Binding HasSelectedCell}">
+                  <TextBlock Text="{Binding SelectedCellSummary}"/>
+                </Border>
+                <Button Grid.Column="5" Classes="secondary compact" Command="{Binding ToggleBottomPanelCommand}" Content="Fechar"/>
+              </Grid>
+
+              <TabControl Grid.Row="1"
+                          Classes="result-bottom-tabs"
+                          SelectedIndex="{Binding SelectedBottomPanelTabIndex, Mode=TwoWay}">
+                <TabItem Header="Detalhes" IsVisible="{Binding IsResultDetailVisible}">
+                  <Grid ColumnDefinitions="2*,3*" ColumnSpacing="10">
+                    <ItemsControl Grid.Column="0" ItemsSource="{Binding SelectedRowFields}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Grid Margin="0,0,0,4" ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                            <TextBlock Grid.Column="0" Text="{Binding ColumnName}" FontWeight="{StaticResource FontWeightStrong}"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"/>
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBox Grid.Column="1" Text="{Binding SelectedRowJson}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" FontFamily="{StaticResource MonoFont}"/>
+                  </Grid>
+                </TabItem>
+
+                <TabItem Header="Perfil da coluna">
+                  <StackPanel Spacing="6">
+                    <Button Classes="secondary compact" Command="{Binding BuildColumnProfilesCommand}" Content="Analyze" HorizontalAlignment="Left"/>
+                    <TextBlock Text="{Binding ColumnProfileStatusText}" IsVisible="{Binding HasColumnProfileStatusText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding DataQualitySummaryText}" IsVisible="{Binding HasDataQualitySummaryText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasColumnProfiles}">
+                      <ItemsControl ItemsSource="{Binding ColumnProfiles}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Border Classes="surface-card" Margin="0,0,0,6" Padding="6">
+                              <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding ColumnName}" FontWeight="{StaticResource FontWeightStrong}"/>
+                                <TextBlock Text="{Binding KindText}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="{Binding SummaryText}" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding TopValuesText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                              </StackPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </ScrollViewer>
+                  </StackPanel>
+                </TabItem>
+
+                <TabItem Header="Comparação">
+                  <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                      <ComboBox Grid.Column="0" ItemsSource="{Binding ComparableSessions}" SelectedItem="{Binding SelectedComparisonSession, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"/>
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
+                      <Button Grid.Column="1" Classes="secondary compact" Command="{Binding CompareWithSelectedSessionCommand}" Content="Comparar"/>
+                      <Button Grid.Column="2" Classes="secondary compact" Command="{Binding ClearComparisonCommand}" Content="Limpar"/>
+                    </Grid>
+                    <TextBlock Text="{Binding ComparisonSummaryText}" IsVisible="{Binding HasComparisonSummaryText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasComparisonDiffItems}">
+                      <ItemsControl ItemsSource="{Binding ComparisonDiffItems}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Border Classes="surface-card" Margin="0,0,0,6" Padding="6">
+                              <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding ChangeType}" FontWeight="{StaticResource FontWeightStrong}"/>
+                                <TextBlock Text="{Binding RowKey}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="{Binding Detail}" TextWrapping="Wrap"/>
+                              </StackPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </ScrollViewer>
+                  </StackPanel>
+                </TabItem>
+
+                <TabItem Header="Mensagens">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding ExecutionSafetyStatusText}" IsVisible="{Binding HasExecutionSafetyStatusText}" Foreground="{StaticResource StatusWarningBrush}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding TransactionModeStatusText}" IsVisible="{Binding HasTransactionModeStatusText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding PendingExecutionStatusText}" IsVisible="{Binding HasPendingExecutionStatusText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding ColumnProfileStatusText}" IsVisible="{Binding HasColumnProfileStatusText}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </TabItem>
+              </TabControl>
+            </Grid>
+          </Border>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>
+

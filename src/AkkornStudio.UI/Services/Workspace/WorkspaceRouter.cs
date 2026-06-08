@@ -92,6 +92,8 @@ public sealed class WorkspaceRouter : IWorkspaceRouter
             return;
         }
 
-        ActiveDocumentId = _openDocuments[0].Descriptor.DocumentId;
+        OpenWorkspaceDocument? queryDocument = _openDocuments.FirstOrDefault(document =>
+            document.Descriptor.DocumentType == WorkspaceDocumentType.QueryCanvas);
+        ActiveDocumentId = queryDocument?.Descriptor.DocumentId ?? _openDocuments[0].Descriptor.DocumentId;
     }
 }

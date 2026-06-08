@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Material.Icons;
 using AkkornStudio.UI;
+using Avalonia.Svg.Skia;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using AkkornStudio.Core;
@@ -13,6 +14,9 @@ using AkkornStudio.UI.Services.Localization;
 using AkkornStudio.UI.Services.Modal;
 using AkkornStudio.UI.ViewModels.Canvas;
 using AkkornStudio.UI.Services.Theming;
+using System.Diagnostics;
+using System.IO;
+using System.Collections.Specialized;
 
 namespace AkkornStudio.UI.ViewModels;
 
@@ -20,8 +24,23 @@ namespace AkkornStudio.UI.ViewModels;
 
 public sealed class ConnectionManagerViewModel : ViewModelBase
 {
+    public enum ConnectionModalMode
+    {
+        Picker = 1,
+        Form = 2,
+    }
+
+    public enum ConnectionWizardStep
+    {
+        SelectProvider = 1,
+        ConfigureConnection = 2,
+    }
+
+    private const string ConnectionModalLogFile = "connection-modal-debug.log";
+    private const int DatabaseReadProbeLimit = 30;
     // Latency above this threshold is considered "Degraded" rather than "Online"
     private const double DegradedLatencyThresholdMs = 500.0;
+    private const int AutoReconnectCooldownSeconds = 15;
     // How often the background health monitor pings the active connection (seconds)
     // Value is defined in AppConstants.HealthCheckIntervalSeconds
 
@@ -46,6 +65,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     private readonly IConnectionHealthLifecycleCoordinator _healthLifecycleCoordinator;
     private readonly IGlobalModalManager _globalModalManager;
     private readonly IConnectionCatalogCapabilityProvider _connectionCatalogCapabilityProvider;
+    private readonly IConnectionProfilesChangedNotifier _profilesChangedNotifier;
 
     /// <summary>
     /// Reference to the canvas search menu where database tables will be loaded.
@@ -71,6 +91,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     // ── Profile list ──────────────────────────────────────────────────────────
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
+    public bool HasProfiles => Profiles.Count > 0;
 
     private ConnectionProfile? _selectedProfile;
     public ConnectionProfile? SelectedProfile
@@ -79,10 +100,13 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         set
         {
             Set(ref _selectedProfile, value);
-            if (value is not null) LoadProfileIntoForm(value);
+            if (value is not null && IsConnectionFormMode)
+                LoadProfileIntoForm(value);
             DeleteProfileCommand.NotifyCanExecuteChanged();
             ConnectCommand.NotifyCanExecuteChanged();
             RaisePropertyChanged(nameof(IsSelectedProfileActive));
+            RaisePropertyChanged(nameof(CanShowConnectAction));
+            RaisePropertyChanged(nameof(CanShowDisconnectAction));
             RaisePropertyChanged(nameof(SidebarSelectedConnection));
             RaisePropertyChanged(nameof(SidebarConnectionName));
             RaisePropertyChanged(nameof(SidebarConnectionSubtitle));
@@ -90,6 +114,30 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             SwitchDatabaseCommand.NotifyCanExecuteChanged();
         }
     }
+
+    public ObservableCollection<ConnectionProfileCardItem> ConnectionCards { get; } = [];
+    public ObservableCollection<ConnectionProfileCardItem> FilteredConnectionCards { get; } = [];
+
+    private string _connectionPickerSearchQuery = string.Empty;
+    public string ConnectionPickerSearchQuery
+    {
+        get => _connectionPickerSearchQuery;
+        set
+        {
+            string normalized = value?.Trim() ?? string.Empty;
+            if (!Set(ref _connectionPickerSearchQuery, normalized))
+                return;
+
+            RefreshFilteredConnectionCards();
+            RaisePropertyChanged(nameof(HasConnectionPickerSearchQuery));
+            RaisePropertyChanged(nameof(ShowConnectionPickerNoResultsState));
+        }
+    }
+
+    public bool HasConnectionPickerSearchQuery => !string.IsNullOrWhiteSpace(ConnectionPickerSearchQuery);
+    public bool HasVisibleConnectionCards => FilteredConnectionCards.Count > 0;
+    public bool ShowConnectionPickerNoProfilesState => !HasProfiles;
+    public bool ShowConnectionPickerNoResultsState => HasProfiles && !HasVisibleConnectionCards;
 
     // ── Active connection & health ────────────────────────────────────────────
 
@@ -111,6 +159,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             RestartHealthMonitor();
             DisconnectCommand.NotifyCanExecuteChanged();
             ConnectCommand.NotifyCanExecuteChanged();
+            RaisePropertyChanged(nameof(CanShowConnectAction));
+            RaisePropertyChanged(nameof(CanShowDisconnectAction));
             RefreshHealthCommand.NotifyCanExecuteChanged();
             ReloadMetadataCommand.NotifyCanExecuteChanged();
             SwitchSchemaCommand.NotifyCanExecuteChanged();
@@ -174,6 +224,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     public ObservableCollection<string> AvailableSchemas { get; } = [];
 
     public ObservableCollection<string> AvailableDatabases { get; } = [];
+    public ObservableCollection<DatabaseCatalogItem> AvailableDatabaseCatalogs { get; } = [];
 
     private string? _selectedDatabase;
     public string? SelectedDatabase
@@ -306,6 +357,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         }
     }
 
+    public DbMetadata? ActiveMetadata => ResolveCurrentMetadata();
+
     public string ActiveConnectionLabel
     {
         get
@@ -361,8 +414,77 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     public bool IsEditing
     {
         get => _isEditing;
-        set => Set(ref _isEditing, value);
+        set
+        {
+            if (!Set(ref _isEditing, value))
+                return;
+
+            RaisePropertyChanged(nameof(IsProviderSelectionStepVisible));
+            RaisePropertyChanged(nameof(IsConnectionFormStepVisible));
+            SelectProviderForNewProfileCommand.NotifyCanExecuteChanged();
+            BackToProviderSelectionCommand.NotifyCanExecuteChanged();
+            SaveProfileCommand?.NotifyCanExecuteChanged();
+        }
     }
+
+    private bool _isNewProfileFlow;
+    public bool IsNewProfileFlow
+    {
+        get => _isNewProfileFlow;
+        private set
+        {
+            if (!Set(ref _isNewProfileFlow, value))
+                return;
+
+            RaisePropertyChanged(nameof(IsProviderSelectionStepVisible));
+            RaisePropertyChanged(nameof(IsConnectionFormStepVisible));
+            RaisePropertyChanged(nameof(IsProviderSummaryVisible));
+            SelectProviderForNewProfileCommand.NotifyCanExecuteChanged();
+            BackToProviderSelectionCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private ConnectionWizardStep _wizardStep = ConnectionWizardStep.ConfigureConnection;
+    public ConnectionWizardStep WizardStep
+    {
+        get => _wizardStep;
+        private set
+        {
+            if (!Set(ref _wizardStep, value))
+                return;
+
+            RaisePropertyChanged(nameof(IsProviderSelectionStepVisible));
+            RaisePropertyChanged(nameof(IsConnectionFormStepVisible));
+            RaisePropertyChanged(nameof(IsProviderSummaryVisible));
+            SelectProviderForNewProfileCommand.NotifyCanExecuteChanged();
+            BackToProviderSelectionCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    public bool IsProviderSelectionStepVisible =>
+        IsEditing && IsNewProfileFlow && WizardStep == ConnectionWizardStep.SelectProvider;
+
+    public bool IsConnectionFormStepVisible =>
+        IsEditing && (!IsNewProfileFlow || WizardStep == ConnectionWizardStep.ConfigureConnection);
+
+    public bool IsProviderSummaryVisible => IsNewProfileFlow && WizardStep == ConnectionWizardStep.ConfigureConnection;
+
+    private ConnectionModalMode _modalMode = ConnectionModalMode.Picker;
+    public ConnectionModalMode ModalMode
+    {
+        get => _modalMode;
+        private set
+        {
+            if (!Set(ref _modalMode, value))
+                return;
+
+            RaisePropertyChanged(nameof(IsConnectionPickerMode));
+            RaisePropertyChanged(nameof(IsConnectionFormMode));
+        }
+    }
+
+    public bool IsConnectionPickerMode => ModalMode == ConnectionModalMode.Picker;
+    public bool IsConnectionFormMode => ModalMode == ConnectionModalMode.Form;
 
     private string _editId = Guid.NewGuid().ToString();
 
@@ -394,6 +516,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             RaisePropertyChanged(nameof(SupportsIntegratedSecurity));
             RaisePropertyChanged(nameof(ShowCredentials));
             RaisePropertyChanged(nameof(SelectedProviderOption));
+            SyncWizardProviderSelection(value);
         }
     }
 
@@ -402,6 +525,9 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         get => AvailableProviderOptions.First(x => x.Provider == EditProvider);
         set
         {
+            if (value is null)
+                return;
+
             if (value.Provider != EditProvider)
                 EditProvider = value.Provider;
         }
@@ -482,6 +608,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         SelectedProfile is not null
         && !string.IsNullOrWhiteSpace(ActiveProfileId)
         && string.Equals(SelectedProfile.Id, ActiveProfileId, StringComparison.OrdinalIgnoreCase);
+    public bool CanShowConnectAction => SelectedProfile is not null && !IsSelectedProfileActive;
+    public bool CanShowDisconnectAction => SelectedProfile is not null && IsSelectedProfileActive;
 
     // ── Test connection state ─────────────────────────────────────────────────
 
@@ -493,6 +621,19 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         {
             Set(ref _isTesting, value);
             TestConnectionCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private bool _isSavingProfile;
+    public bool IsSavingProfile
+    {
+        get => _isSavingProfile;
+        set
+        {
+            if (!Set(ref _isSavingProfile, value))
+                return;
+
+            SaveProfileCommand?.NotifyCanExecuteChanged();
         }
     }
 
@@ -518,15 +659,19 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
 
     private CancellationTokenSource? _healthMonitorCts;
     private CancellationTokenSource? _connectCts;
+    private CancellationTokenSource? _wizardStepAdvanceCts;
+    private long _connectActivationVersion;
+    private bool _isAutoReconnectInProgress;
+    private DateTimeOffset _lastAutoReconnectAttemptUtc = DateTimeOffset.MinValue;
 
     // ── Provider list for ComboBox ────────────────────────────────────────────
 
     public static IReadOnlyList<ProviderOption> AvailableProviderOptions { get; } =
     [
-        new(DatabaseProvider.Postgres, "PostgreSQL", MaterialIconKind.Elephant),
-        new(DatabaseProvider.MySql, "MySQL", MaterialIconKind.Database),
-        new(DatabaseProvider.SqlServer, "SQL Server", MaterialIconKind.MicrosoftWindows),
-           new(DatabaseProvider.SQLite, "SQLite", MaterialIconKind.FileOutline),
+        new(DatabaseProvider.Postgres, "PostgreSQL", MaterialIconKind.Elephant, "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/PostgreSQL.svg"),
+        new(DatabaseProvider.MySql, "MySQL", MaterialIconKind.Database, "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/MySQL.svg"),
+        new(DatabaseProvider.SqlServer, "SQL Server", MaterialIconKind.MicrosoftWindows, "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/Microsoft_SQL_Server.svg"),
+        new(DatabaseProvider.SQLite, "SQLite", MaterialIconKind.FileOutline, "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/Sqlite.svg"),
     ];
 
     // ── Commands ──────────────────────────────────────────────────────────────
@@ -541,6 +686,13 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     public RelayCommand CloseCommand { get; }
     public RelayCommand OpenNewProfileCommand { get; }
     public RelayCommand ConnectOrOpenManagerCommand { get; }
+    public RelayCommand OpenCreateConnectionFormCommand { get; }
+    public RelayCommand<ConnectionProfile> EditConnectionProfileCommand { get; }
+    public RelayCommand<ConnectionProfile> DeleteConnectionProfileCommand { get; }
+    public RelayCommand<ConnectionProfile> ConnectWithProfileCommand { get; }
+    public RelayCommand BackToConnectionPickerCommand { get; }
+    public RelayCommand<ProviderOption> SelectProviderForNewProfileCommand { get; }
+    public RelayCommand BackToProviderSelectionCommand { get; }
     public RelayCommand RefreshHealthCommand { get; }
     public RelayCommand<ConnectionProfile> SwitchConnectionCommand { get; }
     public RelayCommand<string> SwitchDatabaseCommand { get; }
@@ -573,7 +725,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         IFireAndForgetSafetyExecutor? fireAndForgetSafetyExecutor = null,
         IConnectionHealthLifecycleCoordinator? healthLifecycleCoordinator = null,
         IGlobalModalManager? globalModalManager = null,
-        IConnectionCatalogCapabilityProvider? connectionCatalogCapabilityProvider = null)
+        IConnectionCatalogCapabilityProvider? connectionCatalogCapabilityProvider = null,
+        IConnectionProfilesChangedNotifier? profilesChangedNotifier = null)
     {
         _logger = NullLogger<ConnectionManagerViewModel>.Instance;
         _dbConnectionService = new DatabaseConnectionService();
@@ -585,7 +738,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         IConnectionProfileStore resolvedProfileStore = profileStore ?? new ConnectionProfileStore();
         _connectionTestExecutor = connectionTestExecutor ?? new DbOrchestratorConnectionTestExecutor();
 
-        _connectionCatalogService = connectionCatalogService ?? new ConnectionCatalogService(resolvedProfileStore);
+        _profilesChangedNotifier = profilesChangedNotifier ?? new ConnectionProfilesChangedNotifier();
+        _connectionCatalogService = connectionCatalogService ?? new ConnectionCatalogService(resolvedProfileStore, _profilesChangedNotifier);
 
         IProviderCapabilityService providerCapabilityService = new ProviderCapabilityService();
         IConnectionValidationService connectionValidationService = new ConnectionValidationService();
@@ -608,6 +762,11 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         _globalModalManager = globalModalManager ?? GlobalModalManager.Instance;
         _connectionCatalogCapabilityProvider = connectionCatalogCapabilityProvider ?? new ConnectionCatalogCapabilityProvider();
 
+        _profilesChangedNotifier.ProfilesChanged += async _ =>
+        {
+            await ReloadProfilesFromCatalogAsync(SelectedProfile?.Id);
+        };
+
         _loc.PropertyChanged += (_, _) =>
         {
             RaisePropertyChanged(nameof(ActiveConnectionLabel));
@@ -616,21 +775,91 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         };
 
         NewProfileCommand     = new RelayCommand(BeginNewProfile);
-        SaveProfileCommand    = new RelayCommand(StartSaveProfileSafe);
+        SaveProfileCommand    = new RelayCommand(StartSaveProfileSafe, () => IsEditing && !IsSavingProfile);
         DeleteProfileCommand  = new RelayCommand(StartDeleteProfileSafe, () => SelectedProfile is not null);
         TestConnectionCommand = new RelayCommand(StartTestConnectionSafe, () => !IsTesting && IsEditing);
         ImportFromUrlCommand  = new RelayCommand(StartImportFromUrlSafe, () => !string.IsNullOrWhiteSpace(EditConnectionUrl));
-        ConnectCommand        = new RelayCommand(StartConnectSafe, () => IsEditing ? IsFormValid : SelectedProfile is not null);
+        ConnectCommand        = new RelayCommand(StartConnectSafe, () => SelectedProfile is not null);
         DisconnectCommand     = new RelayCommand(StartDisconnectSafe, () => _activeProfileId is not null);
-        CloseCommand          = new RelayCommand(() => IsVisible = false);
+        CloseCommand          = new RelayCommand(() =>
+        {
+            LogConnectionModal("CloseCommand invoked");
+            IsVisible = false;
+            LogConnectionModal("CloseCommand completed");
+        });
         OpenNewProfileCommand = new RelayCommand(() =>
         {
             Open();
             BeginNewProfile();
         });
+        OpenCreateConnectionFormCommand = new RelayCommand(() =>
+        {
+            Open();
+            BeginNewProfile();
+        });
+        EditConnectionProfileCommand = new RelayCommand<ConnectionProfile>(
+            profile =>
+            {
+                if (profile is null)
+                    return;
+
+                ModalMode = ConnectionModalMode.Form;
+                SelectedProfile = profile;
+                IsNewProfileFlow = false;
+                WizardStep = ConnectionWizardStep.ConfigureConnection;
+                IsEditing = true;
+                TestStatus = string.Empty;
+            },
+            profile => profile is not null);
+        DeleteConnectionProfileCommand = new RelayCommand<ConnectionProfile>(
+            profile =>
+            {
+                if (profile is null)
+                    return;
+
+                SelectedProfile = profile;
+                StartDeleteProfileSafe();
+            },
+            profile => profile is not null);
+        ConnectWithProfileCommand = new RelayCommand<ConnectionProfile>(
+            profile =>
+            {
+                if (profile is null)
+                    return;
+
+                SelectedProfile = profile;
+                StartConnectSafe();
+            },
+            profile => profile is not null && !IsConnecting && !IsReloadingSchema);
+        BackToConnectionPickerCommand = new RelayCommand(
+            () =>
+            {
+                ModalMode = ConnectionModalMode.Picker;
+                IsEditing = false;
+                IsNewProfileFlow = false;
+                WizardStep = ConnectionWizardStep.ConfigureConnection;
+                TestStatus = string.Empty;
+            },
+            () => IsConnectionFormMode && Profiles.Count > 0);
         ConnectOrOpenManagerCommand = new RelayCommand(
             ConnectOrOpenManager,
             () => !IsConnecting && !IsReloadingSchema);
+        SelectProviderForNewProfileCommand = new RelayCommand<ProviderOption>(
+            option =>
+            {
+                if (option is null)
+                    return;
+
+                _ = AdvanceWizardFromProviderSelectionAsync(option);
+            },
+            option => option is not null && IsEditing && IsNewProfileFlow);
+        BackToProviderSelectionCommand = new RelayCommand(
+            () =>
+            {
+                SyncWizardProviderSelection(EditProvider);
+                WizardStep = ConnectionWizardStep.SelectProvider;
+            },
+            () => IsEditing && IsNewProfileFlow && WizardStep == ConnectionWizardStep.ConfigureConnection);
         RefreshHealthCommand  = new RelayCommand(StartRefreshHealthSafe, () => _activeProfileId is not null);
         SwitchConnectionCommand = new RelayCommand<ConnectionProfile>(
             profile =>
@@ -682,59 +911,155 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             }
         };
 
+        Profiles.CollectionChanged += OnProfilesCollectionChanged;
         LoadProfiles();
     }
 
-    public void Open() => IsVisible = true;
+    public void Open()
+    {
+        LogConnectionModal("Open invoked");
+        IsVisible = true;
+
+        // Always anchor selection to the first saved profile when opening.
+        // This keeps the manager deterministic across entry points.
+        if (Profiles.Count > 0 && SelectedProfile is null)
+        {
+            SelectedProfile = Profiles[0];
+        }
+        else if (Profiles.Count > 0 && !ReferenceEquals(SelectedProfile, Profiles[0]))
+        {
+            SelectedProfile = Profiles[0];
+        }
+        else if (Profiles.Count == 0 && SelectedProfile is not null)
+        {
+            // No profiles available, clear selection to show the "add connection" message
+            SelectedProfile = null;
+            IsEditing = false;
+        }
+
+        ModalMode = Profiles.Count == 0 ? ConnectionModalMode.Form : ConnectionModalMode.Picker;
+        BackToConnectionPickerCommand.NotifyCanExecuteChanged();
+
+        LogConnectionModal("Open completed");
+    }
 
     // ── Form operations ───────────────────────────────────────────────────────
 
     private void BeginNewProfile()
     {
+        ModalMode = ConnectionModalMode.Form;
         _selectedProfile = null;
         RaisePropertyChanged(nameof(SelectedProfile));
 
         ApplyFormData(_formMapper.CreateNew());
+        SyncWizardProviderSelection(EditProvider);
+        IsNewProfileFlow = true;
+        WizardStep = ConnectionWizardStep.SelectProvider;
         IsEditing = true;
         TestStatus = "";
         TestConnectionCommand.NotifyCanExecuteChanged();
+        BackToConnectionPickerCommand.NotifyCanExecuteChanged();
     }
 
     private void LoadProfileIntoForm(ConnectionProfile p)
     {
         ApplyFormData(_formMapper.FromProfile(p));
+        SyncWizardProviderSelection(EditProvider);
+        IsNewProfileFlow = false;
+        WizardStep = ConnectionWizardStep.ConfigureConnection;
         IsEditing = true;
         TestStatus = "";
         TestConnectionCommand.NotifyCanExecuteChanged();
     }
 
+    private async Task AdvanceWizardFromProviderSelectionAsync(ProviderOption option)
+    {
+        if (!IsEditing || !IsNewProfileFlow)
+            return;
+
+        if (option.Provider != EditProvider)
+            EditProvider = option.Provider;
+        else
+            SyncWizardProviderSelection(option.Provider);
+
+        _wizardStepAdvanceCts?.Cancel();
+        _wizardStepAdvanceCts?.Dispose();
+        CancellationTokenSource localCts = new();
+        _wizardStepAdvanceCts = localCts;
+
+        try
+        {
+            await Task.Delay(170, localCts.Token);
+            WizardStep = ConnectionWizardStep.ConfigureConnection;
+        }
+        catch (TaskCanceledException)
+        {
+            // Ignore stale step-change attempts from rapid clicks.
+        }
+        finally
+        {
+            if (ReferenceEquals(_wizardStepAdvanceCts, localCts))
+                _wizardStepAdvanceCts = null;
+
+            localCts.Dispose();
+        }
+    }
+
+    private static void SyncWizardProviderSelection(DatabaseProvider provider)
+    {
+        foreach (ProviderOption option in AvailableProviderOptions)
+            option.IsSelectedWizard = option.Provider == provider;
+    }
+
     private async Task SaveProfileAsync()
     {
-        if (!TryValidateForm(requireName: true, out string? validationError))
-        {
-            ApplyTestStatus(_statusPresenter.Failed(validationError));
+        if (IsSavingProfile)
             return;
-        }
 
-        ConnectionProfile profile = _formMapper.ToProfile(CaptureFormData());
-        OperationResultDto<ConnectionDetailsDto> result = await _connectionCatalogService.SaveAsync(
-            ConnectionContractMapper.ToDetails(profile),
-            CancellationToken.None);
-        if (!result.Success || result.Payload is null)
+        IsSavingProfile = true;
+        try
         {
-            ApplyTestStatus(_statusPresenter.Failed(result.UserMessage));
-            return;
+            if (!TryValidateForm(requireName: true, out string? validationError))
+            {
+                ApplyTestStatus(_statusPresenter.Failed(validationError));
+                return;
+            }
+
+            ConnectionProfile profile = _formMapper.ToProfile(CaptureFormData());
+            OperationResultDto<ConnectionDetailsDto> result = await _connectionCatalogService.SaveAsync(
+                ConnectionContractMapper.ToDetails(profile),
+                CancellationToken.None);
+            if (!result.Success || result.Payload is null)
+            {
+                ApplyTestStatus(_statusPresenter.Failed(result.UserMessage));
+                return;
+            }
+
+            await ReloadProfilesFromCatalogAsync(result.Payload.Id);
+
+            if (string.Equals(_activeProfileId, result.Payload.Id, StringComparison.Ordinal))
+            {
+                RaisePropertyChanged(nameof(ActiveConnectionLabel));
+                RaisePropertyChanged(nameof(ConnectionHealthTooltip));
+            }
+
+            // Keep the modal open and return to picker with explicit success feedback.
+            ApplyTestStatus(new ConnectionStatusViewState(
+                L("connection.status.saved", "Conexao salva com sucesso."),
+                UiColorConstants.C_4ADE80));
+            ModalMode = ConnectionModalMode.Picker;
+            IsEditing = false;
+            IsNewProfileFlow = false;
+            WizardStep = ConnectionWizardStep.ConfigureConnection;
+            BackToConnectionPickerCommand.NotifyCanExecuteChanged();
+
+            RebuildConnectionCards();
+            ProfilesChanged?.Invoke();
         }
-
-        await ReloadProfilesFromCatalogAsync(result.Payload.Id);
-
-        if (string.Equals(_activeProfileId, result.Payload.Id, StringComparison.Ordinal))
+        finally
         {
-            RaisePropertyChanged(nameof(ActiveConnectionLabel));
-            RaisePropertyChanged(nameof(ConnectionHealthTooltip));
+            IsSavingProfile = false;
         }
-
-        ProfilesChanged?.Invoke();
     }
 
     private async Task DeleteProfileAsync()
@@ -758,28 +1083,25 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             ActiveProfileId = null;
 
         SelectedProfile = null;
+        IsNewProfileFlow = false;
+        WizardStep = ConnectionWizardStep.ConfigureConnection;
         IsEditing = false;
+        ModalMode = Profiles.Count == 0 ? ConnectionModalMode.Form : ConnectionModalMode.Picker;
         TestStatus = string.Empty;
+        RebuildConnectionCards();
+        BackToConnectionPickerCommand.NotifyCanExecuteChanged();
         ProfilesChanged?.Invoke();
     }
 
     private async Task ConnectAsync()
     {
-        ConnectionProfile candidate;
-        if (!IsEditing && SelectedProfile is not null)
+        ConnectionProfile? candidate = SelectedProfile;
+        if (candidate is null)
         {
-            candidate = SelectedProfile;
-        }
-        else
-        {
-            if (!TryValidateForm(requireName: false, out string? validationError))
-            {
-                ApplyTestStatus(_statusPresenter.Failed(validationError));
-                NotifyConnectionFailed(validationError);
-                return;
-            }
-
-            candidate = _formMapper.ToProfile(CaptureFormData());
+            string message = L("connection.validation.saveBeforeConnect", "Save the connection before connecting.");
+            ApplyTestStatus(_statusPresenter.Failed(message));
+            NotifyConnectionFailed(message);
+            return;
         }
 
         OperationResultDto<ActiveConnectionSessionDto> connectSessionResult = await _connectionSessionService.ConnectAsync(
@@ -799,32 +1121,62 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         _connectCts = state.ConnectCts;
         IsConnecting = state.IsConnecting;
         ApplyTestStatus(_statusPresenter.Connecting());
+        long activationVersion = Interlocked.Increment(ref _connectActivationVersion);
         // Load database tables into the search menu in the background
-        StartLoadDatabaseTablesSafe(state.Profile, _connectCts!.Token);
+        StartLoadDatabaseTablesSafe(state.Profile, _connectCts!.Token, activationVersion);
     }
 
     private void ConnectOrOpenManager()
     {
+        LogConnectionModal("ConnectOrOpenManager invoked");
         if (IsConnecting || IsReloadingSchema)
+        {
+            LogConnectionModal("ConnectOrOpenManager aborted: busy");
             return;
+        }
 
         bool beginNewProfile = Profiles.Count == 0;
-        if (_globalModalManager.RequestConnectionManager(beginNewProfile: beginNewProfile, keepStartVisible: false))
-            return;
+        // When invoked from a canvas-local sidebar (DDL/Query), keep the flow local
+        // to this manager instance and avoid double-open race with global routing.
+        if (Canvas is null)
+            _ = _globalModalManager.RequestConnectionManager(beginNewProfile: beginNewProfile, keepStartVisible: false);
 
         Open();
+        LogConnectionModal("ConnectOrOpenManager after Open");
 
         if (Profiles.Count > 0)
         {
             if (SelectedProfile is null)
                 SelectedProfile = Profiles[0];
 
+            ModalMode = ConnectionModalMode.Picker;
+            IsNewProfileFlow = false;
+            WizardStep = ConnectionWizardStep.ConfigureConnection;
             IsEditing = false;
             TestStatus = string.Empty;
+            BackToConnectionPickerCommand.NotifyCanExecuteChanged();
+            LogConnectionModal("ConnectOrOpenManager completed with existing profiles");
             return;
         }
 
         BeginNewProfile();
+        LogConnectionModal("ConnectOrOpenManager completed with BeginNewProfile");
+    }
+
+    private void LogConnectionModal(string message)
+    {
+        string line =
+            $"{DateTimeOffset.Now:O} | message={message} | isVisible={IsVisible} | canvasBound={(Canvas is not null)} | profileCount={Profiles.Count} | selectedProfile={(SelectedProfile?.Id ?? "<null>")} | activeProfile={(ActiveProfileId ?? "<null>")}";
+        Debug.WriteLine(line);
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, ConnectionModalLogFile);
+            File.AppendAllText(path, line + Environment.NewLine);
+        }
+        catch
+        {
+            // Best-effort diagnostics only.
+        }
     }
 
     private async Task DisconnectAsync()
@@ -861,15 +1213,42 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     /// 4. Resets the canvas to show the new database
     /// </summary>
     private Task LoadDatabaseTablesAsync(ConnectionProfile profile)
-        => LoadDatabaseTablesAsync(profile, CancellationToken.None);
+        => LoadDatabaseTablesAsync(
+            profile,
+            CancellationToken.None,
+            suppressClearCanvasPrompt: false,
+            expectedActivationVersion: null);
 
-    private async Task LoadDatabaseTablesAsync(ConnectionProfile profile, CancellationToken ct)
+    private Task LoadDatabaseTablesAsync(ConnectionProfile profile, CancellationToken ct)
+        => LoadDatabaseTablesAsync(
+            profile,
+            ct,
+            suppressClearCanvasPrompt: false,
+            expectedActivationVersion: null);
+
+    private async Task LoadDatabaseTablesAsync(
+        ConnectionProfile profile,
+        CancellationToken ct,
+        bool suppressClearCanvasPrompt,
+        long? expectedActivationVersion)
     {
         try
         {
+            if (IsStaleConnectActivation(expectedActivationVersion))
+                return;
+
+            SearchMenuViewModel? searchMenu = SearchMenu;
+            if (searchMenu is null)
+            {
+                string reason = $"{L("connection.error.searchMenuNotInitialized", "search menu not initialized")}.";
+                ApplyTestStatus(_statusPresenter.FailedWithPrefix(reason));
+                NotifyConnectionFailed(reason);
+                return;
+            }
+
             ConnectionActivationResult result = await _activationWorkflow.ExecuteAsync(
                 profile,
-                SearchMenu,
+                searchMenu,
                 Canvas,
                 async (config, searchMenu, token) =>
                 {
@@ -878,16 +1257,24 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
                 },
                 ct);
 
+            if (IsStaleConnectActivation(expectedActivationVersion))
+                return;
+
             switch (result.Outcome)
             {
                 case ConnectionActivationOutcome.Connected:
-                    if (result.ShouldOpenClearCanvasPrompt && result.Metadata is not null && result.Config is not null)
+                    if (!suppressClearCanvasPrompt
+                        && Canvas is not null
+                        && result.ShouldOpenClearCanvasPrompt
+                        && result.Metadata is not null
+                        && result.Config is not null)
                         OpenClearCanvasPrompt(result.Metadata, result.Config);
                     else
                         CloseClearCanvasPrompt(dismissedByUser: false);
 
                     // Mark as active only after successful activation.
                     ActiveProfileId = profile.Id;
+                    await RefreshActiveLatencyAsync(profile, ct);
                     StartRefreshHealthSafe();
 
                     ActiveServerVersion = await _dbConnectionService.GetServerVersionAsync()
@@ -930,7 +1317,8 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         }
         finally
         {
-            IsConnecting = false;
+            if (!IsStaleConnectActivation(expectedActivationVersion))
+                IsConnecting = false;
         }
     }
 
@@ -1013,8 +1401,14 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     private void StartReloadMetadataSafe() =>
         _ = _fireAndForgetSafetyExecutor.ExecuteSafeAsync(ReloadMetadataAsync, "reload metadata");
 
-    private void StartLoadDatabaseTablesSafe(ConnectionProfile profile, CancellationToken ct) =>
-        _ = _fireAndForgetSafetyExecutor.ExecuteSafeAsync(() => LoadDatabaseTablesAsync(profile, ct), "load database tables");
+    private void StartLoadDatabaseTablesSafe(ConnectionProfile profile, CancellationToken ct, long activationVersion) =>
+        _ = _fireAndForgetSafetyExecutor.ExecuteSafeAsync(
+            () => LoadDatabaseTablesAsync(
+                profile,
+                ct,
+                suppressClearCanvasPrompt: false,
+                expectedActivationVersion: activationVersion),
+            "load database tables");
 
     private void StartHealthMonitorLoopSafe(CancellationToken token) =>
         _ = _fireAndForgetSafetyExecutor.ExecuteSafeAsync(() => HealthMonitorLoopAsync(token), "health monitor loop");
@@ -1028,32 +1422,80 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     {
         ConnectionProfile? profile = Profiles.FirstOrDefault(x => x.Id == _activeProfileId);
         if (profile is not null)
-        {
-            try
-            {
-                ConnectionTestResult testResult = await _connectionTestExecutor.ExecuteAsync(
-                    profile.ToConnectionConfig(),
-                    profile.Provider,
-                    profile.TimeoutSeconds,
-                    ct);
+            await RefreshActiveLatencyAsync(profile, ct);
 
-                if (testResult.Success && testResult.Latency.HasValue)
-                    ActiveLatencyMs = (int)testResult.Latency.Value.TotalMilliseconds;
-                else if (!testResult.Success)
-                    ActiveLatencyMs = null;
-            }
-            catch
-            {
-                ActiveLatencyMs = null;
-            }
-        }
-
-        ActiveHealthStatus = await _healthLifecycleCoordinator.EvaluateActiveStatusAsync(
+        ConnectionHealthStatus evaluatedStatus = await _healthLifecycleCoordinator.EvaluateActiveStatusAsync(
             Profiles,
             _activeProfileId,
             _connectionTestExecutor.ExecuteAsync,
             DegradedLatencyThresholdMs,
             ct);
+
+        ActiveHealthStatus = evaluatedStatus;
+
+        if (evaluatedStatus == ConnectionHealthStatus.Offline && profile is not null)
+            await TryAutoReconnectAfterOfflineAsync(profile, ct);
+    }
+
+    private async Task TryAutoReconnectAfterOfflineAsync(ConnectionProfile profile, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested
+            || _isAutoReconnectInProgress
+            || IsConnecting
+            || IsReloadingSchema)
+        {
+            return;
+        }
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (now - _lastAutoReconnectAttemptUtc < TimeSpan.FromSeconds(AutoReconnectCooldownSeconds))
+            return;
+
+        _isAutoReconnectInProgress = true;
+        _lastAutoReconnectAttemptUtc = now;
+        _logger.LogInformation(
+            "Health check reported offline for profile {ProfileId}; attempting automatic reconnect.",
+            profile.Id);
+
+        try
+        {
+            IsConnecting = true;
+            await LoadDatabaseTablesAsync(
+                profile,
+                ct,
+                suppressClearCanvasPrompt: true,
+                expectedActivationVersion: null);
+        }
+        finally
+        {
+            _isAutoReconnectInProgress = false;
+        }
+    }
+
+    private bool IsStaleConnectActivation(long? expectedActivationVersion)
+    {
+        return expectedActivationVersion is long expected
+            && expected != Interlocked.Read(ref _connectActivationVersion);
+    }
+
+    private async Task RefreshActiveLatencyAsync(ConnectionProfile profile, CancellationToken ct = default)
+    {
+        try
+        {
+            ConnectionTestResult testResult = await _connectionTestExecutor.ExecuteAsync(
+                profile.ToConnectionConfig(),
+                profile.Provider,
+                profile.TimeoutSeconds,
+                ct);
+
+            ActiveLatencyMs = testResult.Success && testResult.Latency.HasValue
+                ? (int)testResult.Latency.Value.TotalMilliseconds
+                : null;
+        }
+        catch
+        {
+            ActiveLatencyMs = null;
+        }
     }
 
     private async Task ReloadMetadataAsync()
@@ -1066,7 +1508,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         IsReloadingSchema = true;
         try
         {
-            CancellationToken token = _connectCts?.Token ?? CancellationToken.None;
+            CancellationToken token = ResolveConnectCancellationTokenSafely();
             await LoadDatabaseTablesAsync(activeProfile, token);
             await SyncDatabaseOptionsAsync(token);
             SyncSchemaOptions();
@@ -1117,6 +1559,7 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
     private async Task SyncDatabaseOptionsAsync(CancellationToken ct)
     {
         AvailableDatabases.Clear();
+        AvailableDatabaseCatalogs.Clear();
 
         ConnectionProfile? activeProfile = Profiles.FirstOrDefault(p =>
             string.Equals(p.Id, ActiveProfileId, StringComparison.OrdinalIgnoreCase));
@@ -1130,15 +1573,40 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         if (!SupportsDatabaseOrCatalogSelection)
         {
             SelectedDatabase = activeProfile.Database;
+            if (!string.IsNullOrWhiteSpace(activeProfile.Database))
+            {
+                AvailableDatabases.Add(activeProfile.Database);
+                AvailableDatabaseCatalogs.Add(new DatabaseCatalogItem(activeProfile.Database, true));
+            }
             RaisePropertyChanged(nameof(IsDatabaseSelectionVisible));
             return;
         }
 
         string[] databases = await _dbConnectionService.ListDatabasesAsync(ct);
-        foreach (string name in databases)
+        string[] distinctDatabases = databases
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        int probeCount = 0;
+        foreach (string name in distinctDatabases)
         {
-            if (!string.IsNullOrWhiteSpace(name))
-                AvailableDatabases.Add(name);
+            AvailableDatabases.Add(name);
+            bool? hasReadPermission = null;
+            if (probeCount < DatabaseReadProbeLimit)
+            {
+                hasReadPermission = await _dbConnectionService.HasReadAccessToDatabaseAsync(name, ct);
+                probeCount++;
+            }
+
+            AvailableDatabaseCatalogs.Add(new DatabaseCatalogItem(name, hasReadPermission));
+        }
+
+        if (!string.IsNullOrWhiteSpace(activeProfile.Database)
+            && !AvailableDatabases.Any(name => string.Equals(name, activeProfile.Database, StringComparison.OrdinalIgnoreCase)))
+        {
+            AvailableDatabases.Add(activeProfile.Database);
+            AvailableDatabaseCatalogs.Add(new DatabaseCatalogItem(activeProfile.Database, null));
         }
 
         string? nextDatabase = AvailableDatabases.Any(name =>
@@ -1152,7 +1620,32 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         RaisePropertyChanged(nameof(IsDatabaseSelectionVisible));
     }
 
-    private DbMetadata? ResolveCurrentMetadata() => _dbConnectionService.LoadedMetadata ?? Canvas?.DatabaseMetadata;
+    private DbMetadata? ResolveCurrentMetadata()
+    {
+        ConnectionProfile? activeProfile = Profiles.FirstOrDefault(p =>
+            string.Equals(p.Id, ActiveProfileId, StringComparison.OrdinalIgnoreCase));
+        if (activeProfile is null)
+            return null;
+
+        DbMetadata? serviceMetadata = _dbConnectionService.LoadedMetadata;
+        DbMetadata? canvasMetadata = Canvas?.DatabaseMetadata;
+
+        if (IsMetadataForActiveProfile(serviceMetadata, activeProfile))
+            return serviceMetadata;
+        if (IsMetadataForActiveProfile(canvasMetadata, activeProfile))
+            return canvasMetadata;
+
+        return serviceMetadata ?? canvasMetadata;
+    }
+
+    private static bool IsMetadataForActiveProfile(DbMetadata? metadata, ConnectionProfile profile)
+    {
+        if (metadata is null)
+            return false;
+
+        return metadata.Provider == profile.Provider
+            && string.Equals(metadata.DatabaseName, profile.Database, StringComparison.OrdinalIgnoreCase);
+    }
 
     private async Task SwitchDatabaseAsync(string databaseName)
     {
@@ -1166,23 +1659,42 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
 
             if (activeProfile is not null)
             {
-                activeProfile.Database = databaseName;
-                RaisePropertyChanged(nameof(ActiveConnectionLabel));
-                RaisePropertyChanged(nameof(ConnectionHealthTooltip));
+                ConnectionProfile runtimeProfile = CloneProfile(activeProfile);
+                runtimeProfile.Database = databaseName;
 
                 OperationResultDto<ConnectionDetailsDto> saveResult = await _connectionCatalogService.SaveAsync(
-                    ConnectionContractMapper.ToDetails(activeProfile),
+                    ConnectionContractMapper.ToDetails(runtimeProfile),
                     CancellationToken.None);
+
                 if (saveResult.Success && saveResult.Payload is not null)
+                {
+                    activeProfile.Database = databaseName;
+                    RaisePropertyChanged(nameof(ActiveConnectionLabel));
+                    RaisePropertyChanged(nameof(ConnectionHealthTooltip));
                     await ReloadProfilesFromCatalogAsync(saveResult.Payload.Id);
+                    ProfilesChanged?.Invoke();
+                }
+                else
+                {
+                    Canvas?.Diagnostics.AddWarning(
+                        area: L("diagnostics.area.connection", "Connection"),
+                        message: string.Format(
+                            L(
+                                "connection.warning.databaseSwitchNotPersisted",
+                                "A troca para o banco '{0}' foi aplicada na sessão, mas não pôde ser persistida no perfil."),
+                            databaseName),
+                        recommendation: L(
+                            "connection.warning.databaseSwitchNotPersistedRecommendation",
+                            "Revise permissões de gravação do catálogo e salve o perfil novamente."),
+                        openPanel: false);
+                }
 
-                ProfilesChanged?.Invoke();
-
-                CancellationToken token = _connectCts?.Token ?? CancellationToken.None;
+                CancellationToken token = ResolveConnectCancellationTokenSafely();
                 ConnectionProfile? updatedActiveProfile = Profiles.FirstOrDefault(p =>
                     string.Equals(p.Id, ActiveProfileId, StringComparison.OrdinalIgnoreCase));
-                if (updatedActiveProfile is not null)
-                    await LoadDatabaseTablesAsync(updatedActiveProfile, token);
+                ConnectionProfile profileForReload = updatedActiveProfile ?? runtimeProfile;
+                await LoadDatabaseTablesAsync(profileForReload, token);
+                await RefreshActiveLatencyAsync(profileForReload, token);
             }
 
             ActiveServerVersion = await _dbConnectionService.GetServerVersionAsync()
@@ -1200,6 +1712,38 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         {
             IsReloadingSchema = false;
         }
+    }
+
+    private CancellationToken ResolveConnectCancellationTokenSafely()
+    {
+        try
+        {
+            return _connectCts?.Token ?? CancellationToken.None;
+        }
+        catch (ObjectDisposedException)
+        {
+            return CancellationToken.None;
+        }
+    }
+
+    private static ConnectionProfile CloneProfile(ConnectionProfile profile)
+    {
+        return new ConnectionProfile
+        {
+            Id = profile.Id,
+            Name = profile.Name,
+            Provider = profile.Provider,
+            Host = profile.Host,
+            Port = profile.Port,
+            Database = profile.Database,
+            Username = profile.Username,
+            Password = profile.Password,
+            RememberPassword = profile.RememberPassword,
+            UseSsl = profile.UseSsl,
+            TrustServerCertificate = profile.TrustServerCertificate,
+            UseIntegratedSecurity = profile.UseIntegratedSecurity,
+            TimeoutSeconds = profile.TimeoutSeconds,
+        };
     }
 
     public async Task SwitchConnectionAsync(ConnectionProfile profile)
@@ -1433,9 +1977,20 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             Profiles.Add(profile);
         }
 
+        // Auto-select the first connection if available
+        if (Profiles.Count > 0)
+        {
+            SelectedProfile = Profiles[0];
+        }
+
+        ConnectionPickerSearchQuery = string.Empty;
         RaisePropertyChanged(nameof(SidebarSelectedConnection));
         RaisePropertyChanged(nameof(SidebarConnectionName));
         RaisePropertyChanged(nameof(SidebarConnectionSubtitle));
+        RaisePropertyChanged(nameof(HasProfiles));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoProfilesState));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoResultsState));
+        RebuildConnectionCards();
         ProfilesChanged?.Invoke();
     }
 
@@ -1460,13 +2015,84 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
         foreach (ConnectionProfile profile in loaded)
             Profiles.Add(profile);
 
-        SelectedProfile = string.IsNullOrWhiteSpace(selectedProfileId)
-            ? null
-            : Profiles.FirstOrDefault(p => string.Equals(p.Id, selectedProfileId, StringComparison.Ordinal));
+        // Auto-select the first connection if no specific profile was requested and profiles are available
+        if (string.IsNullOrWhiteSpace(selectedProfileId) && Profiles.Count > 0)
+        {
+            SelectedProfile = Profiles[0];
+        }
+        else
+        {
+            SelectedProfile = string.IsNullOrWhiteSpace(selectedProfileId)
+                ? null
+                : Profiles.FirstOrDefault(p => string.Equals(p.Id, selectedProfileId, StringComparison.Ordinal));
+        }
 
         RaisePropertyChanged(nameof(SidebarSelectedConnection));
         RaisePropertyChanged(nameof(SidebarConnectionName));
         RaisePropertyChanged(nameof(SidebarConnectionSubtitle));
+        RaisePropertyChanged(nameof(HasProfiles));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoProfilesState));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoResultsState));
+        RebuildConnectionCards();
+        BackToConnectionPickerCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnProfilesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        RebuildConnectionCards();
+        BackToConnectionPickerCommand.NotifyCanExecuteChanged();
+        RaisePropertyChanged(nameof(HasProfiles));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoProfilesState));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoResultsState));
+    }
+
+    private void RebuildConnectionCards()
+    {
+        ConnectionCards.Clear();
+        foreach (ConnectionProfile profile in Profiles)
+        {
+            string iconAssetUri = ResolveProviderIconPath(profile.Provider);
+            ConnectionCards.Add(new ConnectionProfileCardItem(profile, iconAssetUri));
+        }
+
+        RefreshFilteredConnectionCards();
+        RaisePropertyChanged(nameof(HasVisibleConnectionCards));
+        RaisePropertyChanged(nameof(ShowConnectionPickerNoResultsState));
+    }
+
+    private void RefreshFilteredConnectionCards()
+    {
+        FilteredConnectionCards.Clear();
+        foreach (ConnectionProfileCardItem card in ApplyConnectionCardFilter(ConnectionCards))
+            FilteredConnectionCards.Add(card);
+    }
+
+    private IEnumerable<ConnectionProfileCardItem> ApplyConnectionCardFilter(IEnumerable<ConnectionProfileCardItem> cards)
+    {
+        if (string.IsNullOrWhiteSpace(ConnectionPickerSearchQuery))
+            return cards;
+
+        string[] tokens = ConnectionPickerSearchQuery
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (tokens.Length == 0)
+            return cards;
+
+        return cards.Where(card =>
+            tokens.All(token =>
+                card.SearchText.Contains(token, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static string ResolveProviderIconPath(DatabaseProvider provider)
+    {
+        return provider switch
+        {
+            DatabaseProvider.Postgres => "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/PostgreSQL.svg",
+            DatabaseProvider.MySql => "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/MySQL.svg",
+            DatabaseProvider.SqlServer => "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/Microsoft_SQL_Server.svg",
+            DatabaseProvider.SQLite => "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/Sqlite.svg",
+            _ => "avares://AkkornStudio.UI/Assets/Images/Icons/Databases/PostgreSQL.svg",
+        };
     }
 
     private static string GetToken(IReadOnlyDictionary<string, string?> tokens, string key, string fallback)
@@ -1565,8 +2191,73 @@ public sealed class ConnectionManagerViewModel : ViewModelBase
             AdvancedOptions: new Dictionary<string, string?>());
     }
 
-    public readonly record struct ProviderOption(
-        DatabaseProvider Provider,
-        string DisplayName,
-        MaterialIconKind IconKind);
+    public sealed class ProviderOption(
+        DatabaseProvider provider,
+        string displayName,
+        MaterialIconKind iconKind,
+        string svgAssetUri) : ViewModelBase
+    {
+        private static SvgImage? CreateSvgImageSource(string assetUri)
+        {
+            try
+            {
+                return new SvgImage
+                {
+                    Source = SvgSource.Load(assetUri, baseUri: null),
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public DatabaseProvider Provider { get; } = provider;
+        public string DisplayName { get; } = displayName;
+        public MaterialIconKind IconKind { get; } = iconKind;
+        public string SvgAssetUri { get; } = svgAssetUri;
+        public SvgImage? SvgImageSource { get; } = CreateSvgImageSource(svgAssetUri);
+
+        private bool _isSelectedWizard;
+        public bool IsSelectedWizard
+        {
+            get => _isSelectedWizard;
+            set => Set(ref _isSelectedWizard, value);
+        }
+    }
+
+    public sealed class ConnectionProfileCardItem
+    {
+        public ConnectionProfileCardItem(ConnectionProfile profile, string providerIconAssetUri)
+        {
+            Profile = profile;
+            ProviderIconAssetUri = providerIconAssetUri;
+            ProviderIconSvgSource = CreateSvgImageSource(providerIconAssetUri);
+        }
+
+        public ConnectionProfile Profile { get; }
+        public string ProviderIconAssetUri { get; }
+        public SvgImage? ProviderIconSvgSource { get; }
+        public string ConnectionName => string.IsNullOrWhiteSpace(Profile.Name) ? "-" : Profile.Name;
+        public string DatabaseName => string.IsNullOrWhiteSpace(Profile.Database) ? "-" : Profile.Database;
+        public string HostName => string.IsNullOrWhiteSpace(Profile.Host) ? "-" : Profile.Host;
+        public string ProviderName => Profile.Provider.ToString();
+        public string SearchText =>
+            $"{ConnectionName} {DatabaseName} {ProviderName} {Profile.Host} {Profile.Username}".Trim();
+
+        private static SvgImage? CreateSvgImageSource(string assetUri)
+        {
+            try
+            {
+                return new SvgImage
+                {
+                    Source = SvgSource.Load(assetUri, baseUri: null),
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
 }

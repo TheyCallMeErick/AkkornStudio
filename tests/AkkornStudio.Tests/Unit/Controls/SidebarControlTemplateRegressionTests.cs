@@ -29,11 +29,22 @@ public class SidebarControlTemplateRegressionTests
     {
         string xaml = ReadSidebarXaml();
 
-        Assert.Contains("<ctrl:NodesListControl x:Name=\"NodesControl\"/>", xaml);
+        Assert.Contains("x:Name=\"NodesControl\"", xaml);
+        Assert.Contains("DataContext=\"{Binding NodesList}\"", xaml);
         Assert.Contains("<ctrl:ConnectionTabControl", xaml);
         Assert.Contains("x:Name=\"ConnectionControl\"", xaml);
+        Assert.Contains("DataContext=\"{Binding ConnectionManager}\"", xaml);
         Assert.Contains("IsVisible=\"{Binding ShowNodes}\"", xaml);
         Assert.Contains("IsVisible=\"{Binding ShowConnection}\"", xaml);
+    }
+
+    [Fact]
+    public void SidebarTemplate_UsesSidebarCommandsForTabSwitching()
+    {
+        string xaml = ReadSidebarXaml();
+
+        Assert.Contains("Command=\"{Binding SelectNodesCommand}\"", xaml);
+        Assert.Contains("Command=\"{Binding SelectConnectionCommand}\"", xaml);
     }
 
     [Fact]
@@ -50,8 +61,8 @@ public class SidebarControlTemplateRegressionTests
     {
         string xaml = ReadSidebarXaml();
 
-        Assert.Contains("AccentPrimaryBrush", xaml);
-        Assert.Contains("tab-button.active", xaml);
+        Assert.Contains("Classes.active=\"{Binding ShowNodes}\"", xaml);
+        Assert.Contains("Classes.active=\"{Binding ShowConnection}\"", xaml);
     }
 
     private static string ReadSidebarXaml()

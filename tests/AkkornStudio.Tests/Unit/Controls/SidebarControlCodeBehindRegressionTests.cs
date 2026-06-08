@@ -6,32 +6,27 @@ namespace AkkornStudio.Tests.Unit.Controls;
 public class SidebarControlCodeBehindRegressionTests
 {
     [Fact]
-    public void SidebarCodeBehind_WiresButtonsToActiveTab()
+    public void SidebarCodeBehind_DoesNotManuallyWireTabButtonsOrChildDataContexts()
     {
         string source = ReadSidebarCodeBehind();
 
-        Assert.Contains("if (_buttonsWired || DataContext is not SidebarViewModel vm)", source);
-        Assert.Contains("nodesButton.Click += (_, _) => vm.ActiveTab = ESidebarTab.Nodes;", source);
-        Assert.Contains("connectionButton.Click += (_, _) => vm.ActiveTab = ESidebarTab.Connection;", source);
-        Assert.Contains("schemaButton.Click += (_, _) => vm.ActiveTab = ESidebarTab.Schema;", source);
-        Assert.DoesNotContain("DiagnosticsTabButton", source);
+        Assert.DoesNotContain("_buttonsWired", source);
+        Assert.DoesNotContain("nodesButton.Click +=", source);
+        Assert.DoesNotContain("connectionButton.Click +=", source);
+        Assert.DoesNotContain("nodesControl.DataContext =", source);
+        Assert.DoesNotContain("connectionControl.DataContext =", source);
+        Assert.DoesNotContain("AnimateActiveTabAsync", source);
     }
 
     [Fact]
-    public void SidebarCodeBehind_AssignsChildDataContexts_AndRewiresOnDataContextChange()
+    public void SidebarCodeBehind_AttachesAndDetachesAddNodeSubscriptionSafely()
     {
         string source = ReadSidebarCodeBehind();
 
-        Assert.Contains("nodesControl.DataContext = vm.NodesList;", source);
-        Assert.Contains("connectionControl.DataContext = vm.ConnectionManager;", source);
-        Assert.Contains("schemaControl.DataContext = vm.Schema;", source);
-        Assert.DoesNotContain("diagnosticsControl", source);
-
-        Assert.Contains("_buttonsWired = false;", source);
-        Assert.Contains("WireUpButtons();", source);
-        Assert.Contains("_ = AnimateActiveTabAsync(vm.ActiveTab);", source);
+        Assert.Contains("AttachVmSubscriptions(DataContext as SidebarViewModel);", source);
+        Assert.Contains("_subscribedVm.AddNodeRequested += OnAddNodeRequested;", source);
+        Assert.Contains("_subscribedVm.AddNodeRequested -= OnAddNodeRequested;", source);
         Assert.Contains("search?.Focus();", source);
-        Assert.Contains("OnSidebarPropertyChanged", source);
     }
 
     private static string ReadSidebarCodeBehind()

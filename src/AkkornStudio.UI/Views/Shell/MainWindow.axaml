@@ -5,12 +5,14 @@
   xmlns:start="using:AkkornStudio.UI.Controls.Start"
         xmlns:shell="using:AkkornStudio.UI.Controls.Shell"
         xmlns:sqled="using:AkkornStudio.UI.Controls.SqlEditor"
+        xmlns:er="using:AkkornStudio.UI.Controls.ErDiagram"
   xmlns:loc="using:AkkornStudio.UI.Services.Localization"
         xmlns:mi="using:Material.Icons.Avalonia"
         x:Class="AkkornStudio.UI.MainWindow"
           x:Name="RootWindow"
   x:DataType="vm:ShellViewModel"
         Title="{Binding [app.windowTitle], Source={x:Static loc:LocalizationService.Instance}}"
+        Icon="/Assets/Images/Icons/logo.ico"
         Width="1440" Height="900"
         MinWidth="960" MinHeight="620"
         Background="{StaticResource Bg0Brush}"
@@ -26,32 +28,6 @@
     </Style>
     <Style Selector="GridSplitter:pointerover">
       <Setter Property="Background" Value="{StaticResource AccentPrimaryHoverBrush}"/>
-    </Style>
-    <Style Selector="Button.tb">
-      <Setter Property="Background"      Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Foreground"      Value="{StaticResource TextSecondaryBrush}"/>
-      <Setter Property="Padding"         Value="7,5"/>
-      <Setter Property="CornerRadius"    Value="6"/>
-      <Setter Property="FontSize"        Value="{StaticResource FontSizeBody}"/>
-      <Setter Property="Cursor"          Value="Hand"/>
-      <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
-      <Setter Property="Transitions">
-        <Transitions>
-          <BrushTransition Property="Background" Duration="0:0:0.12"/>
-          <BrushTransition Property="Foreground" Duration="0:0:0.12"/>
-          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12"/>
-        </Transitions>
-      </Setter>
-    </Style>
-    <Style Selector="Button.tb:pointerover">
-      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
-      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-      <Setter Property="RenderTransform" Value="scale(1.03)"/>
-    </Style>
-    <Style Selector="Button.tb.danger:pointerover">
-      <Setter Property="Background" Value="{StaticResource BtnDangerBgBrush}"/>
-      <Setter Property="Foreground" Value="{StaticResource BtnDangerFgBrush}"/>
     </Style>
     <Style Selector="Border.undo-redo-host">
       <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
@@ -260,30 +236,77 @@
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
-    <Style Selector="Button.settings-nav">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
-      <Setter Property="HorizontalContentAlignment" Value="Left"/>
-      <Setter Property="Padding" Value="8,6"/>
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
-      <Setter Property="FontSize" Value="{StaticResource FontSizeBody}"/>
-      <Setter Property="Cursor" Value="Hand"/>
+
+    <!-- Workspace tab strip -->
+    <Style Selector="Border.ws-tab">
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusMD}"/>
+      <Setter Property="Padding" Value="2,1"/>
+      <Setter Property="Height" Value="30"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
       <Setter Property="Transitions">
         <Transitions>
           <BrushTransition Property="Background" Duration="0:0:0.12"/>
-          <BrushTransition Property="Foreground" Duration="0:0:0.12"/>
+          <BrushTransition Property="BorderBrush" Duration="0:0:0.12"/>
         </Transitions>
       </Setter>
     </Style>
-    <Style Selector="Button.settings-nav:pointerover">
-      <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
-      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-    </Style>
-    <Style Selector="Button.settings-nav.active">
+    <Style Selector="Border.ws-tab:pointerover">
       <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+    </Style>
+    <Style Selector="Border.ws-tab.active">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+    </Style>
+    <!-- Active tab gets an accent-tinted icon + brighter label -->
+    <Style Selector="Border.ws-tab.active mi|MaterialIcon">
+      <Setter Property="Foreground" Value="{StaticResource AccentPrimaryBrush}"/>
+    </Style>
+    <Style Selector="Border.ws-tab.active Button.ws-tab-main TextBlock">
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="FontWeight" Value="{StaticResource FontWeightTitle}"/>
+    </Style>
+    <Style Selector="Button.ws-tab-main">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="9,4"/>
+      <Setter Property="MaxWidth" Value="200"/>
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.ws-tab-close">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="3"/>
+      <Setter Property="Margin" Value="0,0,3,0"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.ws-tab-close:pointerover">
+      <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
+      <Setter Property="Foreground" Value="{StaticResource StatusErrorBrush}"/>
+    </Style>
+    <Style Selector="Button.new-tab-btn">
+      <Setter Property="Width" Value="28"/>
+      <Setter Property="Height" Value="28"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.new-tab-btn:pointerover">
+      <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
     </Style>
   </Window.Styles>
 
@@ -338,26 +361,93 @@
                   Classes="mode-switch-host"
                   Margin="0,0,8,0"
                   VerticalAlignment="Center">
-            <StackPanel Orientation="Horizontal" Spacing="4">
+            <StackPanel Orientation="Horizontal" Spacing="2">
               <Button Classes="mode-switch-btn"
                       Name="QueryModeBtn"
-                      Content="{Binding [mode.query], Source={x:Static loc:LocalizationService.Instance}}"
+                      Classes.active="{ReflectionBinding DataContext.IsQueryModeActive, ElementName=RootWindow}"
                       Click="QueryModeBtn_Click"
-                      ToolTip.Tip="{Binding [tooltip.switchToQueryMode], Source={x:Static loc:LocalizationService.Instance}}"/>
+                      ToolTip.Tip="{Binding [tooltip.switchToQueryMode], Source={x:Static loc:LocalizationService.Instance}}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="VectorPolyline" Width="14" Height="14"/>
+                  <TextBlock Text="{Binding [mode.query], Source={x:Static loc:LocalizationService.Instance}}"/>
+                </StackPanel>
+              </Button>
               <Button Classes="mode-switch-btn"
                       Name="DdlModeBtn"
-                      Content="{Binding [mode.ddl], Source={x:Static loc:LocalizationService.Instance}}"
+                      Classes.active="{ReflectionBinding DataContext.IsDdlModeActive, ElementName=RootWindow}"
                       Click="DdlModeBtn_Click"
-                      ToolTip.Tip="{Binding [tooltip.switchToDdlMode], Source={x:Static loc:LocalizationService.Instance}}"/>
+                      ToolTip.Tip="{Binding [tooltip.switchToDdlMode], Source={x:Static loc:LocalizationService.Instance}}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="TableCog" Width="14" Height="14"/>
+                  <TextBlock Text="{Binding [mode.ddl], Source={x:Static loc:LocalizationService.Instance}}"/>
+                </StackPanel>
+              </Button>
               <Button Classes="mode-switch-btn"
                       Name="SqlEditorModeBtn"
-                      Content="{Binding [mode.sql], Source={x:Static loc:LocalizationService.Instance}}"
+                      Classes.active="{ReflectionBinding DataContext.IsSqlEditorModeActive, ElementName=RootWindow}"
                       Click="SqlEditorModeBtn_Click"
-                      ToolTip.Tip="{Binding [tooltip.switchToSqlMode], Source={x:Static loc:LocalizationService.Instance}}"/>
+                      ToolTip.Tip="Editor de SQL desta aba">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="ConsoleLine" Width="14" Height="14"/>
+                  <TextBlock Text="SQL"/>
+                </StackPanel>
+              </Button>
+              <Button Classes="mode-switch-btn"
+                      Name="ErDiagramModeBtn"
+                      Classes.active="{ReflectionBinding DataContext.IsErDiagramModeActive, ElementName=RootWindow}"
+                      Click="ErDiagramModeBtn_Click"
+                      ToolTip.Tip="Abrir diagrama ER do schema ativo">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="Sitemap" Width="14" Height="14"/>
+                  <TextBlock Text="ER"/>
+                </StackPanel>
+              </Button>
             </StackPanel>
           </Border>
 
-          <Grid Grid.Column="2"/>
+          <ScrollViewer Grid.Column="2" Margin="8,0,0,0"
+                        HorizontalScrollBarVisibility="Hidden"
+                        VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+              <ItemsControl ItemsSource="{ReflectionBinding DataContext.Tabs, ElementName=RootWindow}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="4"/>
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:WorkspaceTabViewModel">
+                    <Border Classes="ws-tab" Classes.active="{Binding IsActive}">
+                      <StackPanel Orientation="Horizontal">
+                        <Button Classes="ws-tab-main"
+                                Command="{ReflectionBinding DataContext.ActivateTabCommand, ElementName=RootWindow}"
+                                CommandParameter="{Binding}"
+                                ToolTip.Tip="{Binding DisplayTitle}">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <mi:MaterialIcon Kind="{Binding CurrentModeIcon}" Width="13" Height="13"/>
+                            <TextBlock Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                          </StackPanel>
+                        </Button>
+                        <Button Classes="ws-tab-close"
+                                Command="{ReflectionBinding DataContext.CloseTabCommand, ElementName=RootWindow}"
+                                CommandParameter="{Binding}"
+                                IsVisible="{ReflectionBinding DataContext.CanCloseActiveTab, ElementName=RootWindow}"
+                                ToolTip.Tip="Fechar aba">
+                          <mi:MaterialIcon Kind="Close" Width="12" Height="12"/>
+                        </Button>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Button Classes="new-tab-btn"
+                      Margin="4,0,0,0"
+                      Command="{ReflectionBinding DataContext.NewTabCommand, ElementName=RootWindow}"
+                      ToolTip.Tip="Nova aba (escolher modo)">
+                <mi:MaterialIcon Kind="Plus" Width="15" Height="15"/>
+              </Button>
+            </StackPanel>
+          </ScrollViewer>
         </Grid>
       </shell:AppHeaderBar.CenterContent>
 
@@ -417,12 +507,12 @@
                   Height="14"
                   Background="{StaticResource BorderSubtleBrush}"
                   Margin="2,0"
-                  IsVisible="{Binding HasTwoSelectedTableSources}"/>
+                  IsVisible="{Binding CanRunAutoJoin}"/>
 
           <Button Classes="tb"
                   FontSize="{StaticResource FontSizeCaption}"
                   Command="{Binding RunSelectedAutoJoinCommand}"
-                  IsVisible="{Binding HasTwoSelectedTableSources}"
+                  IsVisible="{Binding CanRunAutoJoin}"
                   ToolTip.Tip="{Binding [tooltip.autoJoinSelected], Source={x:Static loc:LocalizationService.Instance}}"
                   AutomationProperties.Name="{Binding [autoJoin.runSelected], Source={x:Static loc:LocalizationService.Instance}}">
             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -534,6 +624,26 @@
                               Margin="8"
                               DataContext="{ReflectionBinding DataContext.ActiveSqlEditorDocument, ElementName=RootWindow}"
                               IsVisible="{ReflectionBinding DataContext.ActivePageContract.ShowsSqlEditorPage, ElementName=RootWindow}"/>
+
+      <sqled:SqlResultPageControl Grid.Column="2"
+                                  Margin="8"
+                                  DataContext="{ReflectionBinding DataContext.ActiveSqlResultDocument, ElementName=RootWindow}"
+                                  IsVisible="{ReflectionBinding DataContext.IsSqlResultDocumentPageActive, ElementName=RootWindow}"/>
+
+      <er:ErCanvasControl Grid.Column="2"
+                          Margin="8"
+                          DataContext="{ReflectionBinding DataContext.ActiveErDiagramDocument, ElementName=RootWindow}"
+                          IsVisible="{ReflectionBinding DataContext.IsErDiagramDocumentPageActive, ElementName=RootWindow}"/>
+
+      <shell:DdlSchemaCompareWorkspaceControl Grid.Column="2"
+                                              Margin="8"
+                                              DataContext="{ReflectionBinding DataContext.ActiveDdlSchemaCompareDocument, ElementName=RootWindow}"
+                                              IsVisible="{ReflectionBinding DataContext.ActivePageContract.ShowsSchemaComparePage, ElementName=RootWindow}"/>
+
+      <shell:DdlSchemaAnalysisWorkspaceControl Grid.Column="2"
+                                               Margin="8"
+                                               DataContext="{ReflectionBinding DataContext.ActiveDdlSchemaAnalysisDocument, ElementName=RootWindow}"
+                                               IsVisible="{ReflectionBinding DataContext.ActivePageContract.ShowsSchemaAnalysisPage, ElementName=RootWindow}"/>
 
       <!-- ╠═ LEFT: Mode-aware Sidebar (floating in Query, docked in SQL) ═════╣ -->
       <Border x:Name="LeftSidebarHost"
@@ -714,6 +824,23 @@
             </StackPanel>
           </Button>
 
+          <Button Name="PreviewDockQuickBtn"
+                  Classes="preview-dock-btn"
+                  Click="PreviewDockQuickBtn_Click"
+                  ToolTip.Tip="Preview rapido de dados">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Border Classes="preview-dock-icon-chip">
+                <mi:MaterialIcon Kind="TableSearch"
+                                 Width="12"
+                                 Height="12"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"/>
+              </Border>
+              <TextBlock Text="Quick"
+                         VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+
           <Button Name="PreviewDockDiagnosticsBtn"
                   Classes="preview-dock-btn alert"
                   Click="PreviewDockDiagnosticsBtn_Click"
@@ -849,12 +976,18 @@
            VerticalAlignment="Center"
            ZIndex="50"
           IsVisible="{Binding IsConnectionManagerOverlayVisible}">
-      <ctrl:ConnectionManagerControl DataContext="{Binding ActiveConnectionManager}"
+      <ctrl:ConnectionManagerControl DataContext="{Binding ConnectionManagerOverlay}"
                                      Name="ConnectionManagerOverlay"/>
     </Panel>
 
     <shell:OutputPreviewModalControl DataContext="{Binding OutputPreview}"
                                      IsVisible="{ReflectionBinding DataContext.IsOutputPreviewModalVisible, ElementName=RootWindow}"/>
+    <shell:QuickDataPreviewModalControl DataContext="{Binding QuickDataPreview}"
+                                        IsVisible="{ReflectionBinding DataContext.IsQuickDataPreviewModalVisible, ElementName=RootWindow}"/>
+
+    <shell:NewTabModeModalControl DataContext="{Binding NewTabModal}"
+                                  ZIndex="90"
+                                  IsVisible="{ReflectionBinding DataContext.IsNewTabModalVisible, ElementName=RootWindow}"/>
 
     <Border IsVisible="{Binding IsSettingsVisible}"
             Background="{StaticResource MacroScrimBrush}"
@@ -867,19 +1000,13 @@
               MaxWidth="1180"
               MinWidth="900"
               MinHeight="620"
-              Background="{StaticResource Bg1Brush}"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="1"
-              CornerRadius="{StaticResource RadiusXL}"
+              Classes="surface-floating"
               Padding="0"
-              BoxShadow="{StaticResource PanelShadow}"
               ClipToBounds="True"
               PointerPressed="SettingsDialog_PointerPressed">
         <Grid ColumnDefinitions="280,*">
           <Border Grid.Column="0"
-                  Background="{StaticResource Bg2Brush}"
-                  BorderBrush="{StaticResource BorderSubtleBrush}"
-                  BorderThickness="0,0,1,0"
+                  Classes="surface-card"
                   Padding="18">
             <StackPanel Spacing="12">
               <TextBlock Text="{Binding [settings.section.default.title], Source={x:Static loc:LocalizationService.Instance}}"
@@ -887,10 +1014,7 @@
                          FontWeight="{StaticResource FontWeightDisplay}"
                          Foreground="{StaticResource TextPrimaryBrush}"/>
 
-              <Border Background="{StaticResource Bg3Brush}"
-                      BorderBrush="{StaticResource BorderSubtleBrush}"
-                      BorderThickness="1"
-                      CornerRadius="{StaticResource RadiusMD}"
+              <Border Classes="surface-card"
                       Padding="10,8">
                 <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
                   <mi:MaterialIcon Grid.Column="0" Kind="CogOutline" Width="14" Height="14" Foreground="{StaticResource AccentPrimaryHoverBrush}"/>
@@ -916,6 +1040,11 @@
                   Tag="Editor"
                   Content="Editor"/>
                 <Button Classes="settings-nav"
+                  Classes.active="{Binding IsProjectSectionSelected}"
+                  Click="SettingsNavBtn_Click"
+                  Tag="Project"
+                  Content="Project"/>
+                <Button Classes="settings-nav"
                   Classes.active="{Binding IsKeyboardShortcutsSectionSelected}"
                   Click="SettingsNavBtn_Click"
                   Tag="KeyboardShortcuts"
@@ -924,9 +1053,12 @@
             </StackPanel>
           </Border>
 
-          <Border Grid.Column="1" Padding="18">
+          <Border Grid.Column="1" Classes="surface-floating" Padding="18">
           <Grid RowDefinitions="Auto,*">
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+            <Grid Grid.Row="0"
+                  Classes="surface-floating-header"
+                  ColumnDefinitions="*,Auto"
+                  Margin="0,0,0,8">
               <StackPanel Grid.Column="0" Spacing="2">
                 <TextBlock Text="{Binding SettingsSectionTitle}"
                            FontSize="{StaticResource FontSizeHeading}"
@@ -942,12 +1074,10 @@
                            Foreground="{StaticResource TextMutedBrush}"
                            VerticalAlignment="Center"/>
                 <Button Name="SettingsCloseBtn"
-                        Click="SettingsCloseBtn_Click"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        Foreground="{StaticResource TextSecondaryBrush}"
-                        Padding="4"
-                        Content="✕"/>
+                        Classes="icon-ghost"
+                        Click="SettingsCloseBtn_Click">
+                  <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                </Button>
               </StackPanel>
             </Grid>
 
@@ -960,31 +1090,27 @@
                              FontWeight="{StaticResource FontWeightTitle}"
                              Foreground="{StaticResource TextPrimaryBrush}"/>
                   <Grid ColumnDefinitions="*,*,*">
-                    <Border Grid.Column="0" Background="{StaticResource Bg3Brush}" BorderBrush="{StaticResource BorderFocusBrush}" BorderThickness="1" CornerRadius="{StaticResource RadiusLG}" Padding="10">
+                    <Border Grid.Column="0" Classes="surface-card accented" Padding="10">
                       <StackPanel Spacing="8">
                         <Border Height="64" CornerRadius="{StaticResource RadiusSM}" Background="{StaticResource BtnPrimaryFgBrush}"/>
                         <Button Content="{Binding [settings.theme.light], Source={x:Static loc:LocalizationService.Instance}}"
-                                Classes="secondary"
+                                Classes="secondary compact"
                                 Click="SettingsThemeLightBtn_Click"
-                                HorizontalAlignment="Stretch"
-                                Padding="10,6"
-                                CornerRadius="{StaticResource RadiusSM}"/>
+                                HorizontalAlignment="Stretch"/>
                       </StackPanel>
                     </Border>
 
-                    <Border Grid.Column="1" Margin="10,0,0,0" Background="{StaticResource Bg1Brush}" BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="{StaticResource RadiusLG}" Padding="10">
+                    <Border Grid.Column="1" Margin="10,0,0,0" Classes="surface-card" Padding="10">
                       <StackPanel Spacing="8">
                         <Border Height="64" CornerRadius="{StaticResource RadiusSM}" Background="{StaticResource Bg2Brush}"/>
                         <Button Content="{Binding [settings.theme.dark], Source={x:Static loc:LocalizationService.Instance}}"
-                                Classes="secondary"
+                                Classes="secondary compact"
                                 Click="SettingsThemeDarkBtn_Click"
-                                HorizontalAlignment="Stretch"
-                                Padding="10,6"
-                                CornerRadius="{StaticResource RadiusSM}"/>
+                                HorizontalAlignment="Stretch"/>
                       </StackPanel>
                     </Border>
 
-                    <Border Grid.Column="2" Margin="10,0,0,0" Background="{StaticResource Bg1Brush}" BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="{StaticResource RadiusLG}" Padding="10">
+                    <Border Grid.Column="2" Margin="10,0,0,0" Classes="surface-card" Padding="10">
                       <StackPanel Spacing="8">
                         <Border Height="64" CornerRadius="{StaticResource RadiusSM}" Background="{StaticResource Bg3Brush}"/>
                         <TextBlock Text="{Binding [settings.theme.system], Source={x:Static loc:LocalizationService.Instance}}"
@@ -1010,11 +1136,9 @@
                                  Foreground="{StaticResource TextSecondaryBrush}"/>
                     </StackPanel>
                     <Button Grid.Column="1"
-                            Classes="secondary"
+                            Classes="secondary compact"
                             Click="SettingsToggleSnapBtn_Click"
-                            ToolTip.Tip="{Binding [tooltip.snapToGrid], Source={x:Static loc:LocalizationService.Instance}}"
-                            Padding="10,6"
-                            CornerRadius="{StaticResource RadiusSM}">
+                            ToolTip.Tip="{Binding [tooltip.snapToGrid], Source={x:Static loc:LocalizationService.Instance}}">
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <mi:MaterialIcon Kind="GridLarge" Width="14" Height="14"/>
                         <TextBlock Text="{Binding Canvas.SnapToGridLabel, FallbackValue=Snap OFF}"/>
@@ -1026,18 +1150,15 @@
                 <Border Height="1" Background="{StaticResource BorderSubtleBrush}" IsVisible="{Binding IsAppearanceSectionSelected}"/>
 
                 <StackPanel Spacing="12" IsVisible="{Binding IsEditorSectionSelected}">
-                  <Border Background="{StaticResource Bg2Brush}"
-                          BorderBrush="{StaticResource BorderSubtleBrush}"
-                          BorderThickness="1"
-                          CornerRadius="{StaticResource RadiusMD}"
+                  <Border Classes="surface-card"
                           Padding="12">
                     <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
                       <StackPanel Grid.Column="0" Spacing="2">
-                        <TextBlock Text="Limitar SELECT sem WHERE em TOP 1000"
+                        <TextBlock Text="Limitar consultas em 1000 linhas"
                                    FontSize="{StaticResource FontSizeTitle}"
                                    FontWeight="{StaticResource FontWeightTitle}"
                                    Foreground="{StaticResource TextPrimaryBrush}"/>
-                        <TextBlock Text="Quando ativo, consultas sem filtro WHERE executam com limite de 1000 linhas para reduzir risco de carga pesada."
+                        <TextBlock Text="Quando ativo, consultas de leitura no editor usam limite padrao de 1000 linhas. Quando inativo, executam sem esse teto padrao."
                                    FontSize="{StaticResource FontSizeCaption}"
                                    Foreground="{StaticResource TextSecondaryBrush}"
                                    TextWrapping="Wrap"/>
@@ -1050,10 +1171,7 @@
                     </Grid>
                   </Border>
 
-                  <Border Background="{StaticResource Bg2Brush}"
-                          BorderBrush="{StaticResource BorderSubtleBrush}"
-                          BorderThickness="1"
-                          CornerRadius="{StaticResource RadiusMD}"
+                  <Border Classes="surface-card"
                           Padding="12">
                     <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
                       <StackPanel Grid.Column="0" Spacing="2">
@@ -1073,9 +1191,160 @@
                                 IsCheckedChanged="SettingsEditorMutationGuardToggle_Changed"/>
                     </Grid>
                   </Border>
+
+                  <Border Classes="surface-card"
+                          Padding="12">
+                    <StackPanel Spacing="10">
+                      <TextBlock Text="Resultados do editor - formato de data/hora"
+                                 FontSize="{StaticResource FontSizeTitle}"
+                                 FontWeight="{StaticResource FontWeightTitle}"
+                                 Foreground="{StaticResource TextPrimaryBrush}"/>
+                      <TextBlock Text="Defina como valores datetime aparecem na grade e no detalhe da linha."
+                                 FontSize="{StaticResource FontSizeCaption}"
+                                 Foreground="{StaticResource TextSecondaryBrush}"
+                                 TextWrapping="Wrap"/>
+
+                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center">
+                        <TextBlock Grid.Column="0"
+                                   Text="Ordem:"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <ComboBox Grid.Column="1"
+                                  x:Name="SettingsEditorResultDateOrderCombo"
+                                  Classes="field"
+                                  SelectionChanged="SettingsEditorResultDateTime_Changed">
+                          <ComboBoxItem Tag="YMD" Content="yyyy MM dd"/>
+                          <ComboBoxItem Tag="DMY" Content="dd MM yyyy"/>
+                          <ComboBoxItem Tag="MDY" Content="MM dd yyyy"/>
+                        </ComboBox>
+                      </Grid>
+
+                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center">
+                        <TextBlock Grid.Column="0"
+                                   Text="Separador:"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <ComboBox Grid.Column="1"
+                                  x:Name="SettingsEditorResultDateSeparatorCombo"
+                                  Classes="field"
+                                  SelectionChanged="SettingsEditorResultDateTime_Changed">
+                          <ComboBoxItem Tag="-" Content="-"/>
+                          <ComboBoxItem Tag="/" Content="/"/>
+                        </ComboBox>
+                      </Grid>
+
+                      <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                        <TextBlock Grid.Column="0"
+                                   Text="Exibir valor raw (ISO 8601) ao inves de formatado"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
+                        <CheckBox Grid.Column="1"
+                                  x:Name="SettingsEditorResultPreferRawToggle"
+                                  Margin="10,0,0,0"
+                                  VerticalAlignment="Center"
+                                  IsCheckedChanged="SettingsEditorResultDateTime_Changed"/>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
                 </StackPanel>
 
                 <Border Height="1" Background="{StaticResource BorderSubtleBrush}" IsVisible="{Binding IsEditorSectionSelected}"/>
+
+                <StackPanel Spacing="12" IsVisible="{Binding IsProjectSectionSelected}">
+                  <Border Classes="surface-card"
+                          Padding="12">
+                    <StackPanel Spacing="8">
+                      <TextBlock Text="Convenção de aliases"
+                                 FontSize="{StaticResource FontSizeTitle}"
+                                 FontWeight="{StaticResource FontWeightTitle}"
+                                 Foreground="{StaticResource TextPrimaryBrush}"/>
+                      <ComboBox x:Name="SettingsProjectNamingConventionCombo"
+                                Classes="field"
+                                SelectionChanged="SettingsProjectNamingConventionCombo_Changed">
+                        <ComboBoxItem Tag="snake_case" Content="snake_case"/>
+                        <ComboBoxItem Tag="camelCase" Content="camelCase"/>
+                        <ComboBoxItem Tag="PascalCase" Content="PascalCase"/>
+                        <ComboBoxItem Tag="SCREAMING_SNAKE_CASE" Content="SCREAMING_SNAKE_CASE"/>
+                      </ComboBox>
+                    </StackPanel>
+                  </Border>
+
+                  <Border Classes="surface-card"
+                          Padding="12">
+                    <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                      <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock Text="Aplicar convenção de aliases"
+                                   FontSize="{StaticResource FontSizeTitle}"
+                                   FontWeight="{StaticResource FontWeightTitle}"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBlock Text="Quando ativo, validação e auto-fix seguem a convenção configurada."
+                                   FontSize="{StaticResource FontSizeCaption}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
+                      </StackPanel>
+                      <CheckBox Grid.Column="1"
+                                x:Name="SettingsProjectEnforceAliasToggle"
+                                Margin="10,0,0,0"
+                                VerticalAlignment="Center"
+                                IsCheckedChanged="SettingsProjectEnforceAliasToggle_Changed"/>
+                    </Grid>
+                  </Border>
+
+                  <Border Classes="surface-card"
+                          Padding="12">
+                    <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                      <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock Text="Avisar palavras reservadas"
+                                   FontSize="{StaticResource FontSizeTitle}"
+                                   FontWeight="{StaticResource FontWeightTitle}"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBlock Text="Mantém esta opção persistida para validações de nomenclatura."
+                                   FontSize="{StaticResource FontSizeCaption}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
+                      </StackPanel>
+                      <CheckBox Grid.Column="1"
+                                x:Name="SettingsProjectWarnReservedToggle"
+                                Margin="10,0,0,0"
+                                VerticalAlignment="Center"
+                                IsCheckedChanged="SettingsProjectWarnReservedToggle_Changed"/>
+                    </Grid>
+                  </Border>
+
+                  <Border Classes="surface-card"
+                          Padding="12">
+                    <StackPanel Spacing="8">
+                      <TextBlock Text="Tamanho máximo de alias"
+                                 FontSize="{StaticResource FontSizeTitle}"
+                                 FontWeight="{StaticResource FontWeightTitle}"
+                                 Foreground="{StaticResource TextPrimaryBrush}"/>
+                      <TextBox x:Name="SettingsProjectMaxAliasLengthTextBox"
+                               Classes="field"
+                               Width="140"
+                               TextChanged="SettingsProjectMaxAliasLengthTextBox_Changed"/>
+                    </StackPanel>
+                  </Border>
+
+                  <Border Classes="surface-card"
+                          Padding="12">
+                    <StackPanel Spacing="8">
+                      <TextBlock Text="Estilo padrão de wire"
+                                 FontSize="{StaticResource FontSizeTitle}"
+                                 FontWeight="{StaticResource FontWeightTitle}"
+                                 Foreground="{StaticResource TextPrimaryBrush}"/>
+                      <ComboBox x:Name="SettingsProjectWireCurveModeCombo"
+                                Classes="field"
+                                Width="220"
+                                SelectionChanged="SettingsProjectWireCurveModeCombo_Changed">
+                        <ComboBoxItem Tag="Bezier" Content="Bezier"/>
+                        <ComboBoxItem Tag="Straight" Content="Straight"/>
+                        <ComboBoxItem Tag="Orthogonal" Content="Orthogonal"/>
+                      </ComboBox>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+
+                <Border Height="1" Background="{StaticResource BorderSubtleBrush}" IsVisible="{Binding IsProjectSectionSelected}"/>
 
                 <StackPanel Spacing="8" IsVisible="{Binding IsLanguageRegionSectionSelected}">
                   <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
@@ -1090,7 +1359,7 @@
                     </StackPanel>
                     <ComboBox Grid.Column="1"
                               x:Name="SettingsLanguageCombo"
-                              Classes="param-combo"
+                              Classes="field"
                               Width="220"
                               SelectionChanged="SettingsLanguageCombo_SelectionChanged">
                       <ComboBoxItem Tag="pt-BR" Content="{Binding [settings.language.option.ptBR], Source={x:Static loc:LocalizationService.Instance}}"/>
@@ -1115,6 +1384,7 @@
                              Foreground="{StaticResource TextSecondaryBrush}"/>
 
                   <TextBox x:Name="SettingsThemeJsonTextBox"
+                           Classes="field"
                            AcceptsReturn="True"
                            TextWrapping="Wrap"
                            FontFamily="{StaticResource MonoFont}"
@@ -1125,17 +1395,13 @@
                   <Grid ColumnDefinitions="Auto,Auto,*,Auto" VerticalAlignment="Center">
                     <Button Grid.Column="0"
                             Content="{Binding [settings.themeJson.apply], Source={x:Static loc:LocalizationService.Instance}}"
-                            Classes="info"
-                            Click="SettingsApplyThemeJsonBtn_Click"
-                            Padding="10,6"
-                            CornerRadius="{StaticResource RadiusSM}"/>
+                            Classes="info compact"
+                            Click="SettingsApplyThemeJsonBtn_Click"/>
                     <Button Grid.Column="1"
                             Margin="8,0,0,0"
                             Content="{Binding [settings.themeJson.restoreDefault], Source={x:Static loc:LocalizationService.Instance}}"
-                            Classes="secondary"
-                            Click="SettingsRestoreDefaultThemeBtn_Click"
-                            Padding="10,6"
-                            CornerRadius="{StaticResource RadiusSM}"/>
+                            Classes="secondary compact"
+                            Click="SettingsRestoreDefaultThemeBtn_Click"/>
                     <TextBlock Grid.Column="2"
                                x:Name="SettingsThemeStatusText"
                                Margin="8,0,0,0"
@@ -1146,10 +1412,8 @@
                     <Button Grid.Column="3"
                             Margin="8,0,0,0"
                             Content="{Binding [common.close], Source={x:Static loc:LocalizationService.Instance}}"
-                            Classes="secondary"
-                            Click="SettingsCloseBtn_Click"
-                            Padding="10,6"
-                            CornerRadius="{StaticResource RadiusSM}"/>
+                            Classes="secondary compact"
+                            Click="SettingsCloseBtn_Click"/>
                   </Grid>
                 </StackPanel>
 
@@ -1169,10 +1433,7 @@
                   <TextBlock Text="{Binding [settings.section.keyboard.subtitle], Source={x:Static loc:LocalizationService.Instance}, FallbackValue=Customize keyboard shortcuts used by command palette and canvas execution.}"
                              FontSize="{StaticResource FontSizeCaption}"
                              Foreground="{StaticResource TextSecondaryBrush}"/>
-                  <Border Background="{StaticResource Bg2Brush}"
-                          BorderBrush="{StaticResource BorderSubtleBrush}"
-                          BorderThickness="1"
-                          CornerRadius="{StaticResource RadiusMD}"
+                  <Border Classes="surface-card"
                           Padding="10"
                           MinHeight="280">
                     <ContentControl x:Name="SettingsKeyboardShortcutsHost"/>

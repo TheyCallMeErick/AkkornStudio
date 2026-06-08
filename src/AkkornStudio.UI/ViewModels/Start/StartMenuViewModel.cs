@@ -23,6 +23,9 @@ public sealed class StartMenuViewModel : ViewModelBase
         CreateNewDiagramCommand = new RelayCommand(() => CreateNewDiagramRequested?.Invoke());
         OpenConnectionsCommand = new RelayCommand(() => OpenConnectionsRequested?.Invoke());
         OpenFromDiskCommand = new RelayCommand(() => OpenFromDiskRequested?.Invoke());
+        OpenSchemaCompareCommand = new RelayCommand(() => OpenSchemaCompareRequested?.Invoke());
+        OpenStructureAnalysisCommand = new RelayCommand(() => OpenStructureAnalysisRequested?.Invoke());
+        OpenSqlEditorCommand = new RelayCommand(() => OpenSqlEditorRequested?.Invoke());
         OpenSavedConnectionCommand = new RelayCommand<StartSavedConnectionItem>(item =>
         {
             if (item is null)
@@ -68,8 +71,8 @@ public sealed class StartMenuViewModel : ViewModelBase
         RecentProjects = [];
         SavedConnections = [];
 
-        TemplateCatalog = QueryTemplateLibrary.All
-            .Select(t => new StartTemplateItem(t.Name, t.Category, t.Description))
+        TemplateCatalog = QueryTemplateCatalog.LoadAll()
+            .Select(t => new StartTemplateItem(t.Name, t.Category, t.Description, t.Id))
             .ToObservableCollection();
 
         foreach (StartTemplateItem template in TemplateCatalog)
@@ -108,6 +111,12 @@ public sealed class StartMenuViewModel : ViewModelBase
 
     public RelayCommand OpenFromDiskCommand { get; }
 
+    public RelayCommand OpenSchemaCompareCommand { get; }
+
+    public RelayCommand OpenStructureAnalysisCommand { get; }
+
+    public RelayCommand OpenSqlEditorCommand { get; }
+
     public RelayCommand<StartSavedConnectionItem> OpenSavedConnectionCommand { get; }
 
     public RelayCommand<StartRecentProjectItem> OpenRecentProjectCommand { get; }
@@ -123,6 +132,12 @@ public sealed class StartMenuViewModel : ViewModelBase
     public event Action? OpenConnectionsRequested;
 
     public event Action? OpenFromDiskRequested;
+
+    public event Action? OpenSchemaCompareRequested;
+
+    public event Action? OpenStructureAnalysisRequested;
+
+    public event Action? OpenSqlEditorRequested;
 
     public event Action<StartSavedConnectionItem>? OpenSavedConnectionRequested;
 

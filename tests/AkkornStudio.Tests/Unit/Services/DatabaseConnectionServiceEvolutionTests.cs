@@ -5,6 +5,30 @@ namespace AkkornStudio.Tests.Unit.Services;
 
 public sealed class DatabaseConnectionServiceEvolutionTests
 {
+    private static void DeleteFileWithRetry(string path, int attempts = 5, int delayMs = 50)
+    {
+        for (int attempt = 1; attempt <= attempts; attempt++)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+                return;
+            }
+            catch (IOException)
+            {
+                if (attempt < attempts)
+                    Thread.Sleep(delayMs);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                if (attempt < attempts)
+                    Thread.Sleep(delayMs);
+            }
+        }
+        // Best-effort cleanup only.
+    }
+
     [Fact]
     public async Task ListDatabasesAsync_ReturnsEmpty_WhenNoActiveConnection()
     {
@@ -54,8 +78,7 @@ public sealed class DatabaseConnectionServiceEvolutionTests
         }
         finally
         {
-            if (File.Exists(dbPath))
-                File.Delete(dbPath);
+            DeleteFileWithRetry(dbPath);
         }
     }
 

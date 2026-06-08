@@ -23,18 +23,13 @@
   <!-- ══ Overlay panel ══════════════════════════════════════════════════════ -->
   <Border MaxWidth="380"
         MaxHeight="520"
-          Background="{StaticResource Bg0Brush}"
-          BorderBrush="{StaticResource BorderSubtleBrush}"
-          BorderThickness="1"
-          CornerRadius="{StaticResource RadiusLG}"
-          BoxShadow="{StaticResource ShadowXL}">
+          Classes="surface-floating">
 
       <Grid RowDefinitions="Auto,*,Auto">
 
       <!-- ── Header ───────────────────────────────────────────────────────── -->
     <Border Grid.Row="0"
-        Background="{StaticResource Bg1Brush}"
-              CornerRadius="{StaticResource RadiusLGTop}"
+        Classes="surface-floating-header"
               Padding="12,10">
 
       <Grid ColumnDefinitions="Auto,*,Auto">
@@ -92,7 +87,7 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:JoinSuggestionCardViewModel">
 
-              <Border Classes="join-card"
+              <Border Classes="join-card surface-card"
                       IsVisible="{Binding IsVisible}">
 
                 <Grid RowDefinitions="Auto,Auto,Auto">
@@ -102,10 +97,7 @@
 
                     <!-- JOIN type badge -->
                     <Border Grid.Column="0"
-                            Background="{StaticResource Bg2Brush}"
-                            BorderBrush="{StaticResource BorderFocusBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource RadiusXS}"
+                            Classes="badge info"
                             Padding="5,2"
                             Margin="0,0,8,0">
                       <TextBlock Text="{Binding JoinType}"
@@ -138,10 +130,7 @@
 
                     <!-- Score percentage -->
                     <Border Grid.Column="3"
-                            Background="{StaticResource Bg0Brush}"
-                            BorderBrush="{StaticResource BorderSubtleBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource RadiusXS}"
+                            Classes="badge"
                             Padding="5,2">
                       <TextBlock Text="{Binding ScoreLabel}"
                                  FontSize="{StaticResource FontSizeCaption}"
@@ -226,10 +215,7 @@
       </Border>
 
       <Border Grid.Row="2"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="0,1,0,0"
-              Background="{StaticResource Bg1Brush}"
-              CornerRadius="{StaticResource RadiusLGBottom}"
+              Classes="surface-floating-footer"
               Padding="10,8">
         <Grid ColumnDefinitions="*,Auto,Auto">
           <TextBlock Grid.Column="0"

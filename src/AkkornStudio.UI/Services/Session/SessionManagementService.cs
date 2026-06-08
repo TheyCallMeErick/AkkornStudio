@@ -23,7 +23,8 @@ public class SessionManagementService(
     Func<IReadOnlyList<OpenWorkspaceDocument>>? workspaceDocumentsResolver = null,
     Func<Guid?>? activeWorkspaceDocumentIdResolver = null,
     Action<SavedWorkspaceDocumentsCanvas>? applyWorkspaceDocumentsSnapshot = null,
-    Action? invalidateActiveCanvasWires = null)
+    Action? invalidateActiveCanvasWires = null,
+    Func<WorkspaceTabsSaveSnapshot?>? workspaceTabsSnapshotResolver = null)
 {
     private readonly Window _window = window;
     private readonly CanvasViewModel _vm = vm;
@@ -35,6 +36,7 @@ public class SessionManagementService(
     private readonly Func<Guid?>? _activeWorkspaceDocumentIdResolver = activeWorkspaceDocumentIdResolver;
     private readonly Action<SavedWorkspaceDocumentsCanvas>? _applyWorkspaceDocumentsSnapshot = applyWorkspaceDocumentsSnapshot;
     private readonly Action? _invalidateActiveCanvasWires = invalidateActiveCanvasWires;
+    private readonly Func<WorkspaceTabsSaveSnapshot?>? _workspaceTabsSnapshotResolver = workspaceTabsSnapshotResolver;
     private readonly object _autoSaveLock = new();  // Synchronization for _autoSaveCts
     private CancellationTokenSource? _autoSaveCts;
 
@@ -119,9 +121,13 @@ public class SessionManagementService(
                 IReadOnlyList<OpenWorkspaceDocument> workspaceDocuments = _workspaceDocumentsResolver.Invoke();
                 if (workspaceDocuments.Count > 0)
                 {
+                    WorkspaceTabsSaveSnapshot? tabsSnapshot = _workspaceTabsSnapshotResolver?.Invoke();
                     json = CanvasSerializer.SerializeWorkspaceDocuments(
                         workspaceDocuments,
-                        _activeWorkspaceDocumentIdResolver?.Invoke());
+                        _activeWorkspaceDocumentIdResolver?.Invoke(),
+                        documentTabs: tabsSnapshot?.DocumentTabs,
+                        tabs: tabsSnapshot?.Tabs,
+                        activeTabId: tabsSnapshot?.ActiveTabId);
                 }
             }
             await File.WriteAllTextAsync(SessionTmp, json);

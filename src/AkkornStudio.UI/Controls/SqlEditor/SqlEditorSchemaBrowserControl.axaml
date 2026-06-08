@@ -8,22 +8,17 @@
   <Grid RowDefinitions="Auto,*">
     <Border Grid.Row="0"
             Margin="0,0,0,8"
-            Background="{StaticResource Bg1Brush}"
-            BorderBrush="{StaticResource BorderSubtleBrush}"
-            BorderThickness="1"
-            CornerRadius="{StaticResource RadiusLG}"
+            Classes="surface-panel"
             Padding="10">
       <Grid ColumnDefinitions="*,Auto">
         <TextBox Grid.Column="0"
+                 Classes="field"
                  Text="{Binding SchemaSearchText}"
                  Watermark="{Binding [sqlEditor.sidebar.schema.searchWatermark], Source={x:Static loc:LocalizationService.Instance}}"
-                 FontSize="{StaticResource FontSizeCaption}"
-                 Background="{StaticResource Bg2Brush}"
-                 Foreground="{StaticResource TextPrimaryBrush}"
-                 BorderBrush="{StaticResource BorderSubtleBrush}"/>
+                 FontSize="{StaticResource FontSizeCaption}"/>
         <Button Grid.Column="1"
                 Margin="8,0,0,0"
-                Padding="10,2"
+                Classes="secondary compact"
                 MinHeight="24"
                 Click="ClearSchemaFilterButton_Click"
                 Content="{Binding [common.clear], Source={x:Static loc:LocalizationService.Instance}}"/>
@@ -42,7 +37,7 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:SqlEditorSchemaTableItem">
-            <Expander Margin="0,0,0,6">
+            <Expander Classes="app-accordion" Margin="0,0,0,6">
                 <Expander.Header>
                   <Grid ColumnDefinitions="*,Auto" Margin="0,0,4,0">
                     <StackPanel Grid.Column="0" Spacing="2">
@@ -56,17 +51,17 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                      <Border Background="#2252C6A8" CornerRadius="10" Padding="6,2">
+                      <Border Classes="badge info">
                         <TextBlock Text="{Binding PrimaryKeyCount, StringFormat='PK {0}'}"
                                    FontSize="{StaticResource FontSizeCaption}"
                                    Foreground="{StaticResource TextPrimaryBrush}"/>
                       </Border>
-                      <Border Background="#224E7FFF" CornerRadius="10" Padding="6,2">
+                      <Border Classes="badge">
                         <TextBlock Text="{Binding ForeignKeyCount, StringFormat='FK {0}'}"
                                    FontSize="{StaticResource FontSizeCaption}"
                                    Foreground="{StaticResource TextPrimaryBrush}"/>
                       </Border>
-                      <Button Padding="8,2"
+                      <Button Classes="secondary compact"
                               MinHeight="22"
                               Tag="{Binding FullName}"
                               Click="InsertTableButton_Click">
@@ -81,8 +76,7 @@
                   <DataTemplate x:DataType="vm:SqlEditorSchemaColumnItem">
                     <Border Margin="0,3,0,0"
                             Padding="8,6"
-                            CornerRadius="{StaticResource RadiusSM}"
-                            Background="{StaticResource Bg1Brush}">
+                            Classes="surface-card">
                       <Grid ColumnDefinitions="Auto,*,Auto">
                         <mi:MaterialIcon Grid.Column="0"
                                          Kind="{Binding TypeIcon}"
@@ -128,7 +122,7 @@
                                            Height="13"
                                            IsVisible="{Binding IsUnique}"
                                            Foreground="#D6B5FF"/>
-                          <Button Padding="6,2"
+                          <Button Classes="secondary compact"
                                   MinHeight="20"
                                   Tag="{Binding Name}"
                                   Click="InsertColumnButton_Click">

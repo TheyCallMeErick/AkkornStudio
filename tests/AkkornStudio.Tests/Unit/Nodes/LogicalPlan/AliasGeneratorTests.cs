@@ -27,4 +27,54 @@ public class AliasGeneratorTests
 
         Assert.Equal("ds", alias);
     }
+
+    [Fact]
+    public void GenerateFor_WhenAliasCountExceedsThousand_ContinuesGenerating()
+    {
+        var sut = new AliasGenerator();
+
+        for (int i = 0; i <= 1000; i++)
+            _ = sut.GenerateFor("orders");
+
+        string alias = sut.GenerateFor("orders");
+
+        Assert.Equal("orders_1001", alias);
+    }
+
+    [Fact]
+    public void Reset_ClearsPreviouslyUsedAliases()
+    {
+        var sut = new AliasGenerator();
+        _ = sut.GenerateFor("orders");
+        _ = sut.GenerateFor("orders");
+
+        sut.Reset();
+
+        string alias = sut.GenerateFor("orders");
+        Assert.Equal("orders", alias);
+    }
+
+    [Fact]
+    public void GenerateFor_WhenSuggestionOnlyDiffersByCase_UsesUniqueSuffix()
+    {
+        var sut = new AliasGenerator();
+
+        string first = sut.GenerateFor("Orders");
+        string second = sut.GenerateFor("orders");
+
+        Assert.Equal("Orders", first);
+        Assert.Equal("orders_1", second);
+    }
+
+    [Fact]
+    public void GenerateFor_WhenSuggestedAliasAlreadyHasSuffix_AvoidsDuplicateInSession()
+    {
+        var sut = new AliasGenerator();
+        _ = sut.GenerateFor("orders");
+        _ = sut.GenerateFor("orders");
+
+        string alias = sut.GenerateFor("orders_1");
+
+        Assert.Equal("orders_1_1", alias);
+    }
 }

@@ -6,6 +6,7 @@ using AkkornStudio.UI.Services.Localization;
 using AkkornStudio.UI.Services.Search;
 using AkkornStudio.UI.Services.Settings;
 using AkkornStudio.UI.Services.SqlEditor;
+using AkkornStudio.UI.Services.SqlEditor.Results;
 using AkkornStudio.UI.ViewModels;
 using System.Diagnostics;
 using System.Data;
@@ -42,6 +43,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private readonly SqlEditorResultStateService _resultStateService;
     private readonly SqlEditorTabCloseWorkflowService _tabCloseWorkflowService;
     private readonly SqlResultEligibilityDetector _resultEligibilityDetector;
+    private readonly SqlQueryParameterProcessor _queryParameterProcessor;
     private readonly ISqlEditorSessionDraftStore _sessionDraftStore;
     private readonly ILocalizationService _localization;
     private readonly Func<ConnectionConfig?> _connectionConfigResolver;
@@ -78,6 +80,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private int _activeExecutionStatementEndLine;
     private int _cursorLine = 1;
     private int _cursorColumn = 1;
+    private int _editorFocusRequestVersion;
     private string _signatureHelpText = string.Empty;
     private string _hoverDocumentationText = string.Empty;
     private bool _top1000WithoutWhereEnabled;
@@ -96,12 +99,23 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private bool _hasPendingDraftAutoSave;
     private bool _draftAutoSaveTimersStarted;
     private string? _sidebarSelectedConnectionProfileId;
+    private bool _isConnectionSwitcherOpen;
+    private string? _connectionSwitcherSelectedProfileId;
+    private string? _connectionSwitcherSelectedDatabase;
+    private Action? _backNavigationAction;
+    private string _backNavigationLabel = "Voltar";
     private DbMetadata? _cachedSchemaMetadata;
+    private string? _cachedSchemaSelection;
     private IReadOnlyList<SqlEditorSchemaTableItem> _schemaTablesCache = [];
     private IReadOnlyList<SqlEditorSchemaTableItem> _filteredSchemaTablesCache = [];
     private string _filteredSchemaNeedleCache = string.Empty;
     private bool _isSchemaTablesCacheValid;
     private bool _isFilteredSchemaTablesCacheValid;
+    private string? _pendingQueryParameterSql;
+    private int _pendingQueryParameterMaxRows = 1000;
+    private bool _pendingQueryParameterEnforceMutationGuard = true;
+    private List<SqlQueryParameterPromptItemViewModel> _pendingQueryParameters = [];
+    private SqlEditorExecutionConnectionContext _lastObservedConnectionExecutionContext;
 
     public SqlEditorViewModel(
         DatabaseProvider initialProvider = DatabaseProvider.Postgres,
@@ -121,7 +135,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
         SqlEditorExplainService? sqlEditorExplainService = null,
         SqlEditorBenchmarkService? sqlEditorBenchmarkService = null,
         SqlEditorCompletionController? completionController = null,
-        SqlEditorExecutionController? executionController = null)
+        SqlEditorExecutionController? executionController = null,
+        SqlQueryParameterProcessor? queryParameterProcessor = null)
     {
         _localization = localization ?? LocalizationService.Instance;
         _selectionExtractor = selectionExtractor ?? new SqlSelectionExtractor();
@@ -141,6 +156,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
         _propertyChangePublisher = new SqlEditorPropertyChangePublisher();
         _tabCloseWorkflowService = new SqlEditorTabCloseWorkflowService(_localization);
         _resultEligibilityDetector = new SqlResultEligibilityDetector();
+        _queryParameterProcessor = queryParameterProcessor ?? new SqlQueryParameterProcessor();
         _sessionDraftStore = sessionDraftStore ?? new SqlEditorSessionDraftStore();
         _connectionConfigResolver = connectionConfigResolver ?? (() => null);
         _connectionConfigByProfileIdResolver = connectionConfigByProfileIdResolver ?? (_ => _connectionConfigResolver());
@@ -182,9 +198,21 @@ public sealed class SqlEditorViewModel : ViewModelBase
         CancelPendingMutationCommand = new RelayCommand(
             CancelPendingMutation,
             () => HasPendingMutationConfirmation && !IsExecuting);
+        ConfirmPendingQueryParametersCommand = new RelayCommand(
+            () => _ = ConfirmPendingQueryParametersAsync(),
+            () => HasPendingQueryParameterPrompt && !IsExecuting);
+        CancelPendingQueryParametersCommand = new RelayCommand(
+            CancelPendingQueryParameters,
+            () => HasPendingQueryParameterPrompt && !IsExecuting);
         OpenConnectionSwitcherCommand = new RelayCommand(
             OpenConnectionSwitcher,
             () => AvailableConnectionProfiles.Count > 0);
+        CloseConnectionSwitcherCommand = new RelayCommand(
+            CloseConnectionSwitcher,
+            () => IsConnectionSwitcherOpen);
+        ApplyConnectionSwitcherCommand = new RelayCommand(
+            ApplyConnectionSwitcher,
+            () => IsConnectionSwitcherOpen);
         ApplySidebarConnectionToTabCommand = new RelayCommand(
             ApplySidebarConnectionToTab,
             () => SidebarSelectedConnectionProfile is not null);
@@ -209,8 +237,12 @@ public sealed class SqlEditorViewModel : ViewModelBase
         ReopenResultsSheetCommand = new RelayCommand(
             OpenResultsSheet,
             () => CanReopenResultsSheet);
+        NavigateBackCommand = new RelayCommand(
+            NavigateBack,
+            () => _backNavigationAction is not null);
         _sidebarSelectedConnectionProfileId = ActiveTab.ConnectionProfileId;
         SyncTabCommands();
+        _lastObservedConnectionExecutionContext = CaptureConnectionExecutionContext();
     }
 
     public SqlEditorTabManagerViewModel Tabs { get; }
@@ -233,7 +265,11 @@ public sealed class SqlEditorViewModel : ViewModelBase
     public ICommand CancelPendingCloseTabCommand { get; }
     public ICommand ConfirmPendingMutationCommand { get; }
     public ICommand CancelPendingMutationCommand { get; }
+    public ICommand ConfirmPendingQueryParametersCommand { get; }
+    public ICommand CancelPendingQueryParametersCommand { get; }
     public ICommand OpenConnectionSwitcherCommand { get; }
+    public ICommand CloseConnectionSwitcherCommand { get; }
+    public ICommand ApplyConnectionSwitcherCommand { get; }
     public ICommand ApplySidebarConnectionToTabCommand { get; }
     public ICommand ApplySidebarConnectionToApplicationCommand { get; }
     public ICommand ExecuteHistoryEntryCommand { get; }
@@ -242,7 +278,10 @@ public sealed class SqlEditorViewModel : ViewModelBase
     public ICommand CancelBenchmarkCommand { get; }
     public ICommand CloseResultsSheetCommand { get; }
     public ICommand ReopenResultsSheetCommand { get; }
+    public ICommand NavigateBackCommand { get; }
     public IReadOnlyList<DatabaseProvider> AvailableProviders { get; } = Enum.GetValues<DatabaseProvider>();
+
+    public event EventHandler<SqlResultPageRequestedEventArgs>? SqlResultPageRequested;
 
     public bool Top1000WithoutWhereEnabled
     {
@@ -310,10 +349,18 @@ public sealed class SqlEditorViewModel : ViewModelBase
             HistorySearchText = string.Empty;
             TryHydrateExecutionHistoryForTab(ActiveTab, force: true);
             SyncSidebarConnectionSelectionToActiveTab();
+            if (IsConnectionSwitcherOpen)
+            {
+                ConnectionSwitcherSelectedProfileId = ActiveTab.ConnectionProfileId;
+                ConnectionSwitcherSelectedDatabase = SharedConnectionManager?.SelectedDatabase
+                    ?? ResolveConnectionConfigForActiveTab()?.Database;
+            }
             RaiseSqlPanelPropertiesChanged();
         }
     }
     public bool HasConnectionProfiles => AvailableConnectionProfiles.Count > 0;
+    public bool HasBackNavigationContext => _backNavigationAction is not null;
+    public string BackNavigationLabel => _backNavigationLabel;
     public SqlEditorConnectionProfileOption? SidebarSelectedConnectionProfile
     {
         get
@@ -374,6 +421,116 @@ public sealed class SqlEditorViewModel : ViewModelBase
             return $"{config.Provider}  •  {config.Username}";
         }
     }
+    public bool IsConnectionSwitcherOpen
+    {
+        get => _isConnectionSwitcherOpen;
+        private set
+        {
+            if (!Set(ref _isConnectionSwitcherOpen, value))
+                return;
+
+            RaisePropertyChanged(nameof(ConnectionSwitcherProfiles));
+            RaisePropertyChanged(nameof(ConnectionSwitcherDatabases));
+            RaisePropertyChanged(nameof(CurrentConnectionProfileLabel));
+            RaisePropertyChanged(nameof(CurrentConnectionProviderLabel));
+            RaisePropertyChanged(nameof(CurrentConnectionDatabaseLabel));
+            RaisePropertyChanged(nameof(CurrentConnectionHostLabel));
+            RaisePropertyChanged(nameof(CurrentConnectionUserLabel));
+            RaisePropertyChanged(nameof(CurrentConnectionUrlLabel));
+            NotifyCommands();
+        }
+    }
+    public IReadOnlyList<SqlEditorConnectionProfileOption> ConnectionSwitcherProfiles => AvailableConnectionProfiles;
+    public string? ConnectionSwitcherSelectedProfileId
+    {
+        get => _connectionSwitcherSelectedProfileId;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value)
+                && !AvailableConnectionProfiles.Any(profile => string.Equals(profile.Id, value, StringComparison.Ordinal)))
+            {
+                value = null;
+            }
+
+            if (!Set(ref _connectionSwitcherSelectedProfileId, value))
+                return;
+
+            RaisePropertyChanged(nameof(ConnectionSwitcherSelectedProfile));
+            RaisePropertyChanged(nameof(CurrentConnectionProfileLabel));
+            RaisePropertyChanged(nameof(CurrentConnectionProviderLabel));
+            RaisePropertyChanged(nameof(CurrentConnectionDatabaseLabel));
+            RaisePropertyChanged(nameof(CurrentConnectionHostLabel));
+            RaisePropertyChanged(nameof(CurrentConnectionUserLabel));
+            RaisePropertyChanged(nameof(CurrentConnectionUrlLabel));
+        }
+    }
+    public SqlEditorConnectionProfileOption? ConnectionSwitcherSelectedProfile
+    {
+        get => AvailableConnectionProfiles.FirstOrDefault(profile =>
+            string.Equals(profile.Id, ConnectionSwitcherSelectedProfileId, StringComparison.Ordinal));
+        set => ConnectionSwitcherSelectedProfileId = value?.Id;
+    }
+    public string? ConnectionSwitcherSelectedDatabase
+    {
+        get => _connectionSwitcherSelectedDatabase;
+        set => Set(ref _connectionSwitcherSelectedDatabase, value);
+    }
+    public IReadOnlyList<string> ConnectionSwitcherDatabases =>
+        SharedConnectionManager?.AvailableDatabases.ToList() ?? [];
+    public bool CanChangeDatabaseInSwitcher =>
+        SharedConnectionManager?.IsDatabaseSelectionVisible == true;
+    public string CurrentConnectionProfileLabel =>
+        ConnectionSwitcherSelectedProfile?.DisplayName
+        ?? ActiveConnectionDisplayName;
+    public string CurrentConnectionProviderLabel
+    {
+        get
+        {
+            ConnectionConfig? config = ResolveConnectionConfigForProfile(ConnectionSwitcherSelectedProfileId)
+                ?? ResolveConnectionConfigForActiveTab();
+            return config is null ? "-" : GetProviderDisplayName(config.Provider);
+        }
+    }
+    public string CurrentConnectionDatabaseLabel
+    {
+        get
+        {
+            ConnectionConfig? config = ResolveConnectionConfigForProfile(ConnectionSwitcherSelectedProfileId)
+                ?? ResolveConnectionConfigForActiveTab();
+            return config?.Database ?? "-";
+        }
+    }
+    public string CurrentConnectionHostLabel
+    {
+        get
+        {
+            ConnectionConfig? config = ResolveConnectionConfigForProfile(ConnectionSwitcherSelectedProfileId)
+                ?? ResolveConnectionConfigForActiveTab();
+            return config is null ? "-" : $"{config.Host}:{config.Port}";
+        }
+    }
+    public string CurrentConnectionUserLabel
+    {
+        get
+        {
+            ConnectionConfig? config = ResolveConnectionConfigForProfile(ConnectionSwitcherSelectedProfileId)
+                ?? ResolveConnectionConfigForActiveTab();
+            return config?.Username ?? "-";
+        }
+    }
+    public string CurrentConnectionUrlLabel
+    {
+        get
+        {
+            ConnectionConfig? config = ResolveConnectionConfigForProfile(ConnectionSwitcherSelectedProfileId)
+                ?? ResolveConnectionConfigForActiveTab();
+            if (config is null)
+                return "-";
+
+            string provider = config.Provider.ToString().ToLowerInvariant();
+            return $"{provider}://{config.Host}:{config.Port}/{config.Database}";
+        }
+    }
     public bool ShowDialectSelector => !HasResolvedConnection;
     public DatabaseProvider FallbackDialect
     {
@@ -404,8 +561,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
     public bool ShouldShowResultsSheet =>
         IsResultsSheetOpen
         && CurrentResult is not null;
-    public bool CanReopenResultsSheet => !IsResultsSheetOpen && CurrentResult is not null;
-    public string RestoreResultsButtonText => L("sqlEditor.results.restore", "Abrir resultados");
+    public bool CanReopenResultsSheet => CurrentResult is not null;
+    public string RestoreResultsButtonText => L("sqlEditor.results.restore", "Exibir resultados");
 
     public double ResultsSheetHeight
     {
@@ -786,7 +943,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     public string ExecutionTelemetryErrorsText =>
         ExecutionTelemetry.ErrorMessages.Count == 0
             ? L("sqlEditor.telemetry.errors.none", "Sem erros agregados.")
-            : string.Join(Environment.NewLine, ExecutionTelemetry.ErrorMessages);
+            : BuildExecutionTelemetryErrorsText();
     public MutationGuardResult? PendingMutationGuard
     {
         get => _pendingMutationGuard;
@@ -839,10 +996,30 @@ public sealed class SqlEditorViewModel : ViewModelBase
         PendingMutationGuard is null
             ? L("sqlEditor.mutation.pending.none", "Sem confirmacao de mutacao pendente.")
             : L("sqlEditor.mutation.pending.required", "A mutacao exige confirmacao antes da execucao.");
+    public bool HasPendingQueryParameterPrompt => _pendingQueryParameterSql is not null && _pendingQueryParameters.Count > 0;
+    public IReadOnlyList<SqlQueryParameterPromptItemViewModel> PendingQueryParameters => _pendingQueryParameters;
+    public string PendingQueryParameterPromptMessage =>
+        !HasPendingQueryParameterPrompt
+            ? L("sqlEditor.parameters.none", "Sem parametros pendentes.")
+            : L("sqlEditor.parameters.required", "Informe os valores dos parametros antes da execucao.");
     public string LastExecutionMessage =>
         CurrentResult is null
             ? L("sqlEditor.message.empty", "Execute uma instrucao para ver mensagens.")
             : CurrentResult.ErrorMessage ?? L("sqlEditor.message.success", "Execucao concluida com sucesso.");
+    private string BuildExecutionTelemetryErrorsText()
+    {
+        string errors = string.Join(Environment.NewLine, ExecutionTelemetry.ErrorMessages);
+        if (ExecutionTelemetry.FailureByCategory.Count == 0)
+            return errors;
+
+        string categorySummary = string.Join(
+            ", ",
+            ExecutionTelemetry.FailureByCategory
+                .OrderByDescending(pair => pair.Value)
+                .Select(pair => $"{pair.Key}:{pair.Value}"));
+
+        return $"{errors}{Environment.NewLine}{L("sqlEditor.telemetry.errors.categories", "Categorias")}: {categorySummary}";
+    }
     public bool CanExportReport => CurrentResult is not null;
     public string ResultSummaryText
     {
@@ -1012,10 +1189,15 @@ public sealed class SqlEditorViewModel : ViewModelBase
             if (config is null)
                 return L("sqlEditor.connection.none", "Sem conexao ativa.");
 
-            string provider = GetProviderDisplayName(config.Provider);
-            string profile = ActiveTabConnectionProfile?.DisplayName ?? config.Database;
-            string schema = SharedConnectionManager?.SelectedSchema ?? "default";
-            return $"[{provider}] {profile}/{schema}";
+            string? connectionName = ActiveTabConnectionProfile?.DisplayName;
+            if (!string.IsNullOrWhiteSpace(connectionName))
+                return connectionName;
+
+            ConnectionManagerViewModel? manager = SharedConnectionManager;
+            if (manager is not null && !string.IsNullOrWhiteSpace(manager.ActiveProfileId))
+                return manager.SidebarConnectionName;
+
+            return config.Database;
         }
     }
 
@@ -1045,6 +1227,11 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     public string CursorPositionText => $"Ln {CursorLine}, Col {CursorColumn}";
     public string IndentationStatusText => L("sqlEditor.status.indentation", "Espacos: 2");
+    public int EditorFocusRequestVersion
+    {
+        get => _editorFocusRequestVersion;
+        private set => Set(ref _editorFocusRequestVersion, value);
+    }
     public string SignatureHelpText
     {
         get => _signatureHelpText;
@@ -1298,13 +1485,24 @@ public sealed class SqlEditorViewModel : ViewModelBase
         {
             string? sql = GetSqlForExecution(selectionStart, selectionLength, caretOffset);
             UpdateActiveExecutionStatementRange(ResolveStatementLineRangeForCaret(caretOffset));
+            if (string.IsNullOrWhiteSpace(sql) && IsCommentOnlyScript(ActiveTab.SqlText))
+            {
+                SqlEditorResultSet commentOnly = BuildCommentOnlyNoOpResult();
+                StoreResult(commentOnly);
+                ShowResultInPreferredSurface(commentOnly);
+                UpdateExecutionTelemetry([commentOnly]);
+                UpdateExecutionFeedback(commentOnly);
+                RaiseSqlPanelPropertiesChanged();
+                return commentOnly;
+            }
+
             SqlEditorResultSet result = await ExecuteSqlAsync(sql, maxRows, enforceMutationGuard: true);
 
-            if (!result.Success && string.Equals(result.ErrorMessage, MutationConfirmationRequiredError(), StringComparison.Ordinal))
+            if (IsExecutionDeferredResult(result))
                 return result;
 
             StoreResult(result);
-            OpenResultsSheet();
+            ShowResultInPreferredSurface(result);
             UpdateExecutionTelemetry([result]);
             UpdateExecutionFeedback(result);
             RaiseSqlPanelPropertiesChanged();
@@ -1316,6 +1514,26 @@ public sealed class SqlEditorViewModel : ViewModelBase
             IsExecuting = false;
             NotifyCommands();
         }
+    }
+
+    private bool IsCommentOnlyScript(string? sqlText)
+    {
+        if (string.IsNullOrWhiteSpace(sqlText))
+            return false;
+
+        return _statementSplitter.Split(sqlText).Count == 0;
+    }
+
+    private static SqlEditorResultSet BuildCommentOnlyNoOpResult()
+    {
+        return new SqlEditorResultSet
+        {
+            StatementSql = string.Empty,
+            Success = true,
+            RowsAffected = 0,
+            ExecutionTime = TimeSpan.Zero,
+            ExecutedAt = DateTimeOffset.UtcNow,
+        };
     }
 
     public void UpdateCursorPosition(int line, int column)
@@ -1378,9 +1596,21 @@ public sealed class SqlEditorViewModel : ViewModelBase
             BeginExecutionProgress(totalStatements: Math.Max(1, statements.Count));
             if (statements.Count == 0)
             {
+                if (IsCommentOnlyScript(ActiveTab.SqlText))
+                {
+                    SqlEditorResultSet commentOnly = BuildCommentOnlyNoOpResult();
+                    StoreResult(commentOnly);
+                    ShowResultInPreferredSurface(commentOnly);
+                    UpdateExecutionTelemetry([commentOnly]);
+                    UpdateExecutionFeedback(commentOnly);
+                    RaiseSqlPanelPropertiesChanged();
+                    results.Add(commentOnly);
+                    return results;
+                }
+
                 SqlEditorResultSet empty = await ExecuteSqlAsync(null, maxRows, enforceMutationGuard: true);
                 StoreResult(empty);
-                OpenResultsSheet();
+                ShowResultInPreferredSurface(empty);
                 UpdateExecutionTelemetry([empty]);
                 UpdateExecutionFeedback(empty);
                 RaiseSqlPanelPropertiesChanged();
@@ -1400,11 +1630,11 @@ public sealed class SqlEditorViewModel : ViewModelBase
                 SqlEditorResultSet result = await ExecuteSqlAsync(statement.Sql, maxRows, enforceMutationGuard: true);
                 results.Add(result);
 
-                if (!result.Success && string.Equals(result.ErrorMessage, MutationConfirmationRequiredError(), StringComparison.Ordinal))
+                if (IsExecutionDeferredResult(result))
                     break;
 
                 StoreResult(result);
-                OpenResultsSheet();
+                ShowResultInPreferredSurface(result);
                 UpdateExecutionFeedback(result);
                 RaiseSqlPanelPropertiesChanged();
 
@@ -1612,11 +1842,11 @@ public sealed class SqlEditorViewModel : ViewModelBase
             ResetActiveExecutionStatementRange();
             SqlEditorResultSet result = await ExecuteSqlAsync(entry.Sql, maxRows, enforceMutationGuard: true);
 
-            if (!result.Success && string.Equals(result.ErrorMessage, MutationConfirmationRequiredError(), StringComparison.Ordinal))
+            if (IsExecutionDeferredResult(result))
                 return result;
 
             StoreResult(result);
-            OpenResultsSheet();
+            ShowResultInPreferredSurface(result);
             UpdateExecutionTelemetry([result]);
             UpdateExecutionFeedback(result);
             RaiseSqlPanelPropertiesChanged();
@@ -1656,6 +1886,35 @@ public sealed class SqlEditorViewModel : ViewModelBase
         ActiveTab.IsDirty = true;
         NotifyActiveTabEdited();
         RaiseTabStateChanged();
+        RequestEditorFocus();
+    }
+
+    public void ReplaceTextInEditor(string text, bool markAsDirty = true)
+    {
+        ActiveTab.SqlText = text ?? string.Empty;
+        ActiveTab.IsDirty = markAsDirty;
+        NotifyActiveTabEdited();
+        RaiseTabStateChanged();
+        RequestEditorFocus();
+    }
+
+    public void ConfigureBackNavigation(Action? backNavigationAction, string? label = null)
+    {
+        _backNavigationAction = backNavigationAction;
+        _backNavigationLabel = string.IsNullOrWhiteSpace(label) ? "Voltar" : label.Trim();
+        RaisePropertyChanged(nameof(HasBackNavigationContext));
+        RaisePropertyChanged(nameof(BackNavigationLabel));
+        (NavigateBackCommand as RelayCommand)?.NotifyCanExecuteChanged();
+    }
+
+    private void NavigateBack()
+    {
+        _backNavigationAction?.Invoke();
+    }
+
+    public void RequestEditorFocus()
+    {
+        EditorFocusRequestVersion++;
     }
 
     public bool RequestClearExecutionHistory()
@@ -1712,7 +1971,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
             SqlEditorResultSet result = await ExecuteSqlAsync(sql, maxRows, enforceMutationGuard: false);
 
             StoreResult(result);
-            OpenResultsSheet();
+            ShowResultInPreferredSurface(result);
             UpdateExecutionTelemetry([result]);
             UpdateExecutionFeedback(result);
             RaiseSqlPanelPropertiesChanged();
@@ -1737,6 +1996,77 @@ public sealed class SqlEditorViewModel : ViewModelBase
         HasExecutionError = false;
     }
 
+    public async Task<SqlEditorResultSet?> ConfirmPendingQueryParametersAsync()
+    {
+        if (!HasPendingQueryParameterPrompt || string.IsNullOrWhiteSpace(_pendingQueryParameterSql))
+            return null;
+
+        List<string> missing = _pendingQueryParameters
+            .Where(item => string.IsNullOrWhiteSpace(item.InputValue))
+            .Select(item => item.Name)
+            .ToList();
+        if (missing.Count > 0)
+        {
+            ExecutionStatusText = L("sqlEditor.status.parameterMissing", "Parametro obrigatorio ausente.");
+            ExecutionDetailText = string.Format(
+                L("sqlEditor.detail.parameterMissing", "Informe valores para: {0}."),
+                string.Join(", ", missing));
+            HasExecutionError = true;
+            return null;
+        }
+
+        foreach (SqlQueryParameterPromptItemViewModel item in _pendingQueryParameters)
+            ActiveTab.QueryParameterLastValues[item.Name] = item.InputValue.Trim();
+
+        string sqlTemplate = _pendingQueryParameterSql;
+        int maxRows = _pendingQueryParameterMaxRows;
+        bool enforceMutationGuard = _pendingQueryParameterEnforceMutationGuard;
+        ClearPendingQueryParameterPrompt();
+
+        _executionCts?.Cancel();
+        _executionCts?.Dispose();
+        _executionCts = new CancellationTokenSource();
+        IsExecuting = true;
+        IsCancellationPending = false;
+        NotifyCommands();
+        HasExecutionError = false;
+        ExecutionStatusText = L("sqlEditor.status.executingWithParameters", "Executando SQL com parametros...");
+        ExecutionDetailText = null;
+        BeginExecutionProgress(totalStatements: 1);
+
+        try
+        {
+            ResetActiveExecutionStatementRange();
+            SqlEditorResultSet result = await ExecuteSqlAsync(sqlTemplate, maxRows, enforceMutationGuard);
+            if (IsExecutionDeferredResult(result))
+                return result;
+
+            StoreResult(result);
+            ShowResultInPreferredSurface(result);
+            UpdateExecutionTelemetry([result]);
+            UpdateExecutionFeedback(result);
+            RaiseSqlPanelPropertiesChanged();
+            return result;
+        }
+        finally
+        {
+            EndExecutionProgress();
+            IsExecuting = false;
+            NotifyCommands();
+        }
+    }
+
+    public void CancelPendingQueryParameters()
+    {
+        if (!HasPendingQueryParameterPrompt)
+            return;
+
+        ClearPendingQueryParameterPrompt();
+        ExecutionStatusText = L("sqlEditor.status.parameterPromptCanceled", "Execucao cancelada: parametros nao informados.");
+        ExecutionDetailText = L("sqlEditor.detail.statementNotExecuted", "A instrucao nao foi executada.");
+        HasExecutionError = false;
+    }
+
     private void UpdateExecutionFeedback(SqlEditorResultSet result)
     {
         SqlEditorExecutionFeedback feedback = _executionFeedbackService.Build(result);
@@ -1747,15 +2077,18 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     private async Task<SqlEditorResultSet> ExecuteSqlAsync(string? sql, int maxRows, bool enforceMutationGuard)
     {
+        if (!TryResolveSqlParametersForExecution(sql, maxRows, enforceMutationGuard, out string resolvedSql, out SqlEditorResultSet? parameterResult))
+            return parameterResult!;
+
         ConnectionConfig? config = ResolveConnectionConfigForActiveTab();
-        int effectiveMaxRows = ResolveEffectiveMaxRows(sql, maxRows);
+        int effectiveMaxRows = ResolveEffectiveMaxRows(resolvedSql, maxRows);
         bool shouldEnforceMutationGuard = enforceMutationGuard && ProtectMutationWithoutWhereEnabled;
         SqlEditorMutationExecutionOutcome outcome = await _mutationExecutionOrchestrator.ExecuteAsync(
-            sql,
+            resolvedSql,
             config,
             effectiveMaxRows,
             shouldEnforceMutationGuard,
-            BuildEstimateCacheKey(sql),
+            BuildEstimateCacheKey(resolvedSql),
             _executionCts?.Token ?? CancellationToken.None);
 
         if (!outcome.RequiresConfirmation || outcome.ConfirmationState is null)
@@ -1780,6 +2113,102 @@ public sealed class SqlEditorViewModel : ViewModelBase
         _pendingMutationEstimatedRows = null;
     }
 
+    private bool TryResolveSqlParametersForExecution(
+        string? sql,
+        int maxRows,
+        bool enforceMutationGuard,
+        out string resolvedSql,
+        out SqlEditorResultSet? parameterResult)
+    {
+        resolvedSql = sql ?? string.Empty;
+        parameterResult = null;
+
+        IReadOnlyList<string> names = _queryParameterProcessor.DetectNames(sql);
+        if (names.Count == 0)
+        {
+            ClearPendingQueryParameterPrompt();
+            return true;
+        }
+
+        if (!_queryParameterProcessor.TryApply(
+            sql,
+            ActiveTab.QueryParameterLastValues,
+            ActiveTabProvider,
+            out string materializedSql,
+            out IReadOnlyList<string> missingParameters,
+            out string? conversionError))
+        {
+            if (missingParameters.Count > 0)
+            {
+                PreparePendingQueryParameterPrompt(sql!, names, maxRows, enforceMutationGuard);
+                parameterResult = new SqlEditorResultSet
+                {
+                    StatementSql = sql?.Trim() ?? string.Empty,
+                    Success = false,
+                    ErrorMessage = QueryParameterPromptRequiredError(),
+                    ErrorCategory = SqlExecutionErrorCategory.Validation,
+                    ExecutedAt = DateTimeOffset.UtcNow,
+                };
+                ExecutionStatusText = L("sqlEditor.status.parametersRequired", "Parametros obrigatorios para executar a consulta.");
+                ExecutionDetailText = string.Format(
+                    L("sqlEditor.detail.parametersMissing", "Informe valores para: {0}."),
+                    string.Join(", ", missingParameters));
+                HasExecutionError = false;
+                RaiseSqlPanelPropertiesChanged();
+                return false;
+            }
+
+            parameterResult = new SqlEditorResultSet
+            {
+                StatementSql = sql?.Trim() ?? string.Empty,
+                Success = false,
+                ErrorMessage = conversionError ?? L("sqlEditor.error.parameterConversion", "Falha ao converter parametro."),
+                ErrorCategory = SqlExecutionErrorCategory.Validation,
+                ExecutedAt = DateTimeOffset.UtcNow,
+            };
+            ExecutionStatusText = L("sqlEditor.status.parameterError", "Falha na validacao de parametros.");
+            ExecutionDetailText = conversionError ?? L("sqlEditor.detail.parameterConversion", "Revise os valores informados para os parametros.");
+            HasExecutionError = true;
+            return false;
+        }
+
+        ClearPendingQueryParameterPrompt();
+        resolvedSql = materializedSql;
+        return true;
+    }
+
+    private void PreparePendingQueryParameterPrompt(
+        string sql,
+        IReadOnlyList<string> parameterNames,
+        int maxRows,
+        bool enforceMutationGuard)
+    {
+        _pendingQueryParameterSql = sql;
+        _pendingQueryParameterMaxRows = maxRows;
+        _pendingQueryParameterEnforceMutationGuard = enforceMutationGuard;
+        _pendingQueryParameters = parameterNames
+            .Select(name =>
+            {
+                ActiveTab.QueryParameterLastValues.TryGetValue(name, out string? existingValue);
+                return new SqlQueryParameterPromptItemViewModel(name, existingValue ?? string.Empty);
+            })
+            .ToList();
+        RaisePropertyChanged(nameof(HasPendingQueryParameterPrompt));
+        RaisePropertyChanged(nameof(PendingQueryParameters));
+        RaisePropertyChanged(nameof(PendingQueryParameterPromptMessage));
+        NotifyCommands();
+    }
+
+    private void ClearPendingQueryParameterPrompt()
+    {
+        _pendingQueryParameterSql = null;
+        _pendingQueryParameters = [];
+        RaisePropertyChanged(nameof(HasPendingQueryParameterPrompt));
+        RaisePropertyChanged(nameof(PendingQueryParameters));
+        RaisePropertyChanged(nameof(PendingQueryParameterPromptMessage));
+        NotifyCommands();
+    }
+
     public void SetExecutionSafetyOptions(bool top1000WithoutWhereEnabled, bool protectMutationWithoutWhereEnabled)
     {
         Top1000WithoutWhereEnabled = top1000WithoutWhereEnabled;
@@ -1789,8 +2218,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private int ResolveEffectiveMaxRows(string? sql, int requestedMaxRows)
     {
         int normalizedRequestedMaxRows = requestedMaxRows > 0 ? requestedMaxRows : 1000;
-        if (!Top1000WithoutWhereEnabled && IsSelectWithoutWhere(sql))
-            return int.MaxValue;
+        if (!Top1000WithoutWhereEnabled && IsSelectLikeQuery(sql))
+            return PreviewExecutionOptions.NoLimit;
 
         if (Top1000WithoutWhereEnabled && IsSelectWithoutWhere(sql))
             return Math.Min(normalizedRequestedMaxRows, 1000);
@@ -1798,16 +2227,53 @@ public sealed class SqlEditorViewModel : ViewModelBase
         return normalizedRequestedMaxRows;
     }
 
-    private static bool IsSelectWithoutWhere(string? sql)
+    private static bool IsSelectLikeQuery(string? sql)
     {
         if (string.IsNullOrWhiteSpace(sql))
             return false;
 
-        string statement = sql.TrimStart();
-        if (!Regex.IsMatch(statement, @"^(SELECT|WITH)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        string statement = RemoveLeadingSqlComments(sql);
+        if (string.IsNullOrWhiteSpace(statement))
             return false;
 
-        return !Regex.IsMatch(statement, @"\bWHERE\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return Regex.IsMatch(statement, @"^(SELECT|WITH)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private static bool IsSelectWithoutWhere(string? sql)
+    {
+        if (!IsSelectLikeQuery(sql))
+            return false;
+
+        return !Regex.IsMatch(sql!, @"\bWHERE\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private static string RemoveLeadingSqlComments(string sql)
+    {
+        string current = sql.TrimStart();
+        while (true)
+        {
+            if (current.StartsWith("--", StringComparison.Ordinal))
+            {
+                int newLineIndex = current.IndexOf('\n');
+                if (newLineIndex < 0)
+                    return string.Empty;
+
+                current = current[(newLineIndex + 1)..].TrimStart();
+                continue;
+            }
+
+            if (current.StartsWith("/*", StringComparison.Ordinal))
+            {
+                int endIndex = current.IndexOf("*/", StringComparison.Ordinal);
+                if (endIndex < 0)
+                    return string.Empty;
+
+                current = current[(endIndex + 2)..].TrimStart();
+                continue;
+            }
+
+            return current;
+        }
     }
 
     private void NotifyMutationCommands()
@@ -1841,12 +2307,16 @@ public sealed class SqlEditorViewModel : ViewModelBase
         (CloseResultsSheetCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ReopenResultsSheetCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (OpenConnectionSwitcherCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (CloseConnectionSwitcherCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ApplyConnectionSwitcherCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ApplySidebarConnectionToTabCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ApplySidebarConnectionToApplicationCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ExecuteHistoryEntryCommand as RelayCommand<SqlEditorHistoryEntry>)?.NotifyCanExecuteChanged();
         (ExplainCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
         (BenchmarkCommand as RelayCommand<string>)?.NotifyCanExecuteChanged();
         (CancelBenchmarkCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ConfirmPendingQueryParametersCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (CancelPendingQueryParametersCommand as RelayCommand)?.NotifyCanExecuteChanged();
     }
 
     private void RaiseSqlPanelPropertiesChanged()
@@ -1857,13 +2327,82 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     public void NotifyConnectionContextChanged()
     {
+        SqlEditorExecutionConnectionContext previousContext = _lastObservedConnectionExecutionContext;
+        ConnectionManagerViewModel? manager = SharedConnectionManager;
+        if (manager is not null)
+        {
+            string? managerActiveProfileId = string.IsNullOrWhiteSpace(manager.ActiveProfileId)
+                ? null
+                : manager.ActiveProfileId;
+
+            if (string.IsNullOrWhiteSpace(managerActiveProfileId))
+            {
+                if (!string.IsNullOrWhiteSpace(ActiveTabConnectionProfileId))
+                    ActiveTabConnectionProfileId = null;
+            }
+            else if (!string.Equals(ActiveTabConnectionProfileId, managerActiveProfileId, StringComparison.Ordinal))
+            {
+                bool knownProfile = AvailableConnectionProfiles.Any(profile =>
+                    string.Equals(profile.Id, managerActiveProfileId, StringComparison.Ordinal));
+                if (knownProfile)
+                    ActiveTabConnectionProfileId = managerActiveProfileId;
+            }
+        }
+
         RaisePropertyChanged(nameof(SharedConnectionManager));
         RaisePropertyChanged(nameof(HasSharedConnectionManager));
+        RaisePropertyChanged(nameof(ConnectionSwitcherDatabases));
+        RaisePropertyChanged(nameof(CanChangeDatabaseInSwitcher));
         InvalidateSchemaTableCaches();
         SyncSidebarConnectionSelectionToActiveTab();
+        if (IsConnectionSwitcherOpen)
+        {
+            ConnectionSwitcherSelectedDatabase = SharedConnectionManager?.SelectedDatabase
+                ?? ResolveConnectionConfigForActiveTab()?.Database;
+        }
+        SqlEditorExecutionConnectionContext currentContext = CaptureConnectionExecutionContext();
+        if (!previousContext.Equals(currentContext))
+            CancelInFlightOperationsForConnectionContextChange();
+        _lastObservedConnectionExecutionContext = currentContext;
+
         RaiseSqlPanelPropertiesChanged();
         RaiseSchemaPropertiesChanged();
     }
+
+    private void CancelInFlightOperationsForConnectionContextChange()
+    {
+        if (IsExecuting)
+            CancelExecution();
+
+        _explainCts?.Cancel();
+        _benchmarkCts?.Cancel();
+    }
+
+    private SqlEditorExecutionConnectionContext CaptureConnectionExecutionContext()
+    {
+        ConnectionConfig? config = ResolveConnectionConfigForActiveTab();
+        return new SqlEditorExecutionConnectionContext(
+            NormalizeConnectionContextPart(ActiveTabConnectionProfileId),
+            config?.Provider,
+            NormalizeConnectionContextPart(config?.Host),
+            config?.Port,
+            NormalizeConnectionContextPart(config?.Database));
+    }
+
+    private static string? NormalizeConnectionContextPart(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return value.Trim();
+    }
+
+    private readonly record struct SqlEditorExecutionConnectionContext(
+        string? ProfileId,
+        DatabaseProvider? Provider,
+        string? Host,
+        int? Port,
+        string? Database);
 
     private void RaiseSchemaPropertiesChanged()
     {
@@ -1873,6 +2412,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private void InvalidateSchemaTableCaches()
     {
         _cachedSchemaMetadata = null;
+        _cachedSchemaSelection = null;
         _schemaTablesCache = [];
         _filteredSchemaTablesCache = [];
         _filteredSchemaNeedleCache = string.Empty;
@@ -1883,6 +2423,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private void EnsureSchemaTablesCache()
     {
         DbMetadata? metadata = _metadataResolver();
+        string? selectedSchema = ResolveSchemaSelection();
         if (metadata is null)
         {
             if (_isSchemaTablesCacheValid && _schemaTablesCache.Count == 0)
@@ -1893,15 +2434,27 @@ public sealed class SqlEditorViewModel : ViewModelBase
             return;
         }
 
-        if (_isSchemaTablesCacheValid && ReferenceEquals(_cachedSchemaMetadata, metadata))
-            return;
+        if (_isSchemaTablesCacheValid
+            && ReferenceEquals(_cachedSchemaMetadata, metadata)
+            && string.Equals(_cachedSchemaSelection, selectedSchema, StringComparison.OrdinalIgnoreCase))
+        return;
 
-        _schemaTablesCache = BuildSchemaTables(metadata);
+        _schemaTablesCache = BuildSchemaTables(metadata, selectedSchema);
         _cachedSchemaMetadata = metadata;
+        _cachedSchemaSelection = selectedSchema;
         _filteredSchemaTablesCache = [];
         _filteredSchemaNeedleCache = string.Empty;
         _isSchemaTablesCacheValid = true;
         _isFilteredSchemaTablesCacheValid = false;
+    }
+
+    private string? ResolveSchemaSelection()
+    {
+        string? selected = SharedConnectionManager?.SelectedSchema;
+        if (string.IsNullOrWhiteSpace(selected))
+            return null;
+
+        return selected.Trim();
     }
 
     public bool TryBuildReportExportContext(out SqlEditorReportExportContext? context)
@@ -1942,6 +2495,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
         context = new SqlEditorReportExportContext(
             Sql: result.StatementSql,
             SchemaColumns: columns,
+            SchemaDetails: BuildReportSchemaDetails(columns, resultRows),
             ResultRows: resultRows,
             ExecutionResult: new SqlEditorReportExecutionResult(
                 RowCount: rowCount,
@@ -1953,6 +2507,64 @@ public sealed class SqlEditorViewModel : ViewModelBase
             TabTitle: ActiveTab.FallbackTitle);
 
         return true;
+    }
+
+    private static IReadOnlyList<SqlEditorReportSchemaDetail> BuildReportSchemaDetails(
+        IReadOnlyList<string> columns,
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows)
+    {
+        var details = new List<SqlEditorReportSchemaDetail>(columns.Count);
+
+        foreach (string column in columns)
+        {
+            long nullCount = 0;
+            var distinct = new HashSet<string>(StringComparer.Ordinal);
+            string? example = null;
+            string? minValue = null;
+            string? maxValue = null;
+            string kind = "null";
+
+            foreach (IReadOnlyDictionary<string, object?> row in rows)
+            {
+                row.TryGetValue(column, out object? value);
+                if (value is null)
+                {
+                    nullCount += 1;
+                    continue;
+                }
+
+                string text = value.ToString() ?? string.Empty;
+                distinct.Add(text);
+                example ??= text;
+
+                if (minValue is null || string.CompareOrdinal(text, minValue) < 0)
+                    minValue = text;
+
+                if (maxValue is null || string.CompareOrdinal(text, maxValue) > 0)
+                    maxValue = text;
+
+                string detectedKind = DetectReportValueKind(value);
+                if (kind is "null" or "text")
+                {
+                    kind = detectedKind;
+                }
+                else if (!string.Equals(kind, detectedKind, StringComparison.Ordinal))
+                {
+                    kind = "text";
+                }
+            }
+
+            details.Add(new SqlEditorReportSchemaDetail(
+                Name: column,
+                Kind: kind,
+                NullCount: nullCount,
+                DistinctCount: distinct.Count,
+                Example: example,
+                MinValue: minValue,
+                MaxValue: maxValue));
+        }
+
+        return details;
     }
 
     private static object? NormalizeReportCellValue(object? value)
@@ -1968,6 +2580,17 @@ public sealed class SqlEditorViewModel : ViewModelBase
             Guid guid => guid.ToString("D"),
             byte[] bytes => Convert.ToBase64String(bytes),
             _ => value,
+        };
+    }
+
+    private static string DetectReportValueKind(object value)
+    {
+        return value switch
+        {
+            bool => "bool",
+            byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal => "number",
+            DateTime or DateTimeOffset => "date",
+            _ => "text",
         };
     }
 
@@ -2111,6 +2734,8 @@ public sealed class SqlEditorViewModel : ViewModelBase
     private void RaiseTabStateChanged()
     {
         _isHistoryClearConfirmationPending = false;
+        ClearPendingMutation();
+        ClearPendingQueryParameterPrompt();
         SyncSidebarConnectionSelectionToActiveTab();
         TryHydrateResultFilterForTab(ActiveTab);
         TryHydrateExecutionHistoryForTab(ActiveTab);
@@ -2145,6 +2770,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     public void NotifyActiveTabEdited()
     {
+        ClearPendingQueryParameterPrompt();
         _hasPendingDraftAutoSave = true;
         EnsureDraftAutoSaveTimersStarted();
         _draftAutoSaveDebounceTimer?.Change(DraftAutoSaveDebounce, Timeout.InfiniteTimeSpan);
@@ -2176,23 +2802,87 @@ public sealed class SqlEditorViewModel : ViewModelBase
         return profileConfig ?? _connectionConfigResolver();
     }
 
+    private ConnectionConfig? ResolveConnectionConfigForProfile(string? profileId)
+    {
+        if (string.IsNullOrWhiteSpace(profileId))
+            return null;
+
+        return _connectionConfigByProfileIdResolver(profileId);
+    }
+
     private void OpenConnectionSwitcher()
     {
         IReadOnlyList<SqlEditorConnectionProfileOption> profiles = AvailableConnectionProfiles;
         if (profiles.Count == 0)
             return;
 
-        int currentIndex = profiles
-            .Select((profile, index) => new { profile, index })
-            .FirstOrDefault(x => string.Equals(x.profile.Id, ActiveTabConnectionProfileId, StringComparison.Ordinal))
-            ?.index ?? -1;
+        ConnectionManagerViewModel? manager = SharedConnectionManager;
+        string? activeProfileId = ActiveTabConnectionProfileId;
+        if (string.IsNullOrWhiteSpace(activeProfileId))
+            activeProfileId = manager?.ActiveProfileId;
 
-        int nextIndex = (currentIndex + 1) % profiles.Count;
-        SqlEditorConnectionProfileOption next = profiles[nextIndex];
-        if (string.IsNullOrWhiteSpace(next.Id))
+        ConnectionSwitcherSelectedProfileId = activeProfileId;
+
+        string? selectedDatabase = manager?.SelectedDatabase;
+        if (string.IsNullOrWhiteSpace(selectedDatabase))
+            selectedDatabase = ResolveConnectionConfigForActiveTab()?.Database;
+        ConnectionSwitcherSelectedDatabase = selectedDatabase;
+
+        IsConnectionSwitcherOpen = true;
+    }
+
+    private void CloseConnectionSwitcher()
+    {
+        if (!IsConnectionSwitcherOpen)
             return;
 
-        ActiveTabConnectionProfileId = next.Id;
+        IsConnectionSwitcherOpen = false;
+    }
+
+    private void ApplyConnectionSwitcher()
+    {
+        try
+        {
+            ConnectionManagerViewModel? manager = SharedConnectionManager;
+            string? selectedProfileId = ConnectionSwitcherSelectedProfileId;
+            bool switchedConnection = false;
+
+            if (!string.IsNullOrWhiteSpace(selectedProfileId))
+            {
+                ActiveTabConnectionProfileId = selectedProfileId;
+
+                if (manager is not null)
+                {
+                    ConnectionProfile? target = manager.Profiles
+                        .FirstOrDefault(profile => string.Equals(profile.Id, selectedProfileId, StringComparison.Ordinal));
+                    if (target is not null && manager.SwitchConnectionCommand.CanExecute(target))
+                    {
+                        manager.SwitchConnectionCommand.Execute(target);
+                        switchedConnection = true;
+                    }
+                }
+            }
+
+            if (manager is not null
+                && !string.IsNullOrWhiteSpace(ConnectionSwitcherSelectedDatabase)
+                && !string.Equals(ConnectionSwitcherSelectedDatabase, manager.SelectedDatabase, StringComparison.OrdinalIgnoreCase)
+                && manager.SwitchDatabaseCommand.CanExecute(ConnectionSwitcherSelectedDatabase))
+            {
+                manager.SwitchDatabaseCommand.Execute(ConnectionSwitcherSelectedDatabase);
+            }
+
+            if (!switchedConnection
+                && !string.IsNullOrWhiteSpace(selectedProfileId)
+                && string.IsNullOrWhiteSpace(ActiveTabConnectionProfileId))
+            {
+                ActiveTabConnectionProfileId = selectedProfileId;
+            }
+        }
+        finally
+        {
+            CloseConnectionSwitcher();
+            NotifyConnectionContextChanged();
+        }
     }
 
     private void ApplySidebarConnectionToTab()
@@ -2202,6 +2892,15 @@ public sealed class SqlEditorViewModel : ViewModelBase
             return;
 
         ActiveTabConnectionProfileId = selected.Id;
+        ConnectionManagerViewModel? manager = SharedConnectionManager;
+        if (manager is not null)
+        {
+            ConnectionProfile? profile = manager.Profiles
+                .FirstOrDefault(candidate => string.Equals(candidate.Id, selected.Id, StringComparison.Ordinal));
+            if (profile is not null && manager.SwitchConnectionCommand.CanExecute(profile))
+                manager.SwitchConnectionCommand.Execute(profile);
+        }
+
         PublishStatus(
             string.Format(
                 L("sqlEditor.connection.sidebar.tabApplied", "Conexao aplicada para a aba atual: {0}."),
@@ -2256,7 +2955,20 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     private void OpenResultsSheet()
     {
-        IsResultsSheetOpen = true;
+        SqlEditorResultSet? result = CurrentResult;
+        if (result is null)
+            return;
+
+        if (!TryRequestResultPage(result))
+        {
+            PublishStatus(
+                L("sqlEditor.results.open.unsupported", "A nova tela de resultados suporta consultas SELECT com dados."),
+                null,
+                hasError: false);
+            return;
+        }
+
+        IsResultsSheetOpen = false;
         NotifyCommands();
     }
 
@@ -2264,6 +2976,49 @@ public sealed class SqlEditorViewModel : ViewModelBase
     {
         IsResultsSheetOpen = false;
         NotifyCommands();
+    }
+
+    private void ShowResultInPreferredSurface(SqlEditorResultSet result)
+    {
+        _ = TryRequestResultPage(result);
+        IsResultsSheetOpen = false;
+    }
+
+    private bool TryRequestResultPage(SqlEditorResultSet result)
+    {
+        if (SqlResultPageRequested is null)
+            return false;
+
+        if (!result.Success || result.Data is null)
+            return false;
+
+        string statement = result.StatementSql?.TrimStart() ?? string.Empty;
+        if (!statement.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        ConnectionConfig? config = ResolveConnectionConfigForActiveTab();
+        DbMetadata? metadata = _metadataResolver();
+        SqlInlineEditEligibility inlineEditEligibility = _resultEligibilityDetector.Evaluate(
+            result.StatementSql,
+            result.Data,
+            metadata,
+            config);
+
+        string connectionId = ActiveTabConnectionProfileId
+            ?? config?.Database
+            ?? "unknown-connection";
+
+        var request = new SqlResultSessionCreateRequest(
+            SqlText: result.StatementSql ?? string.Empty,
+            ConnectionId: connectionId,
+            DatabaseName: config?.Database,
+            SchemaName: null,
+            ResultSet: result,
+            Provider: config?.Provider ?? ActiveTabProvider,
+            InlineEditEligibility: inlineEditEligibility);
+
+        SqlResultPageRequested.Invoke(this, new SqlResultPageRequestedEventArgs(request));
+        return true;
     }
 
     public void ClearOutputMessages()
@@ -2517,11 +3272,17 @@ public sealed class SqlEditorViewModel : ViewModelBase
             .ToList();
     }
 
-    private IReadOnlyList<SqlEditorSchemaTableItem> BuildSchemaTables(DbMetadata metadata)
+    private IReadOnlyList<SqlEditorSchemaTableItem> BuildSchemaTables(DbMetadata metadata, string? selectedSchema)
     {
         IReadOnlyDictionary<string, string> relationshipIndex = BuildColumnRelationshipIndex(metadata);
+        IEnumerable<SchemaMetadata> schemas = metadata.Schemas;
+        if (!string.IsNullOrWhiteSpace(selectedSchema))
+        {
+            schemas = schemas.Where(schema =>
+                string.Equals(schema.Name, selectedSchema, StringComparison.OrdinalIgnoreCase));
+        }
 
-        return metadata.Schemas
+        return schemas
             .SelectMany(schema => schema.Tables.Select(table =>
             {
                 IReadOnlyList<SqlEditorSchemaColumnItem> columns = BuildSchemaColumns(table, relationshipIndex);
@@ -2672,6 +3433,18 @@ public sealed class SqlEditorViewModel : ViewModelBase
 
     private string MutationConfirmationRequiredError() =>
         L("sqlEditor.error.mutationConfirmationRequired", "Confirmacao de mutacao necessaria.");
+
+    private string QueryParameterPromptRequiredError() =>
+        L("sqlEditor.error.queryParametersRequired", "Parametros obrigatorios para execucao.");
+
+    private bool IsExecutionDeferredResult(SqlEditorResultSet result)
+    {
+        if (result.Success)
+            return false;
+
+        return string.Equals(result.ErrorMessage, MutationConfirmationRequiredError(), StringComparison.Ordinal)
+            || string.Equals(result.ErrorMessage, QueryParameterPromptRequiredError(), StringComparison.Ordinal);
+    }
 
     private string BuildEstimateCacheKey(string? sql)
     {
@@ -2849,6 +3622,9 @@ public sealed class SqlEditorViewModel : ViewModelBase
                 tab.FallbackTitle = draft.FallbackTitle;
             tab.Provider = draft.Provider;
             tab.ConnectionProfileId = draft.ConnectionProfileId;
+            tab.QueryParameterLastValues = draft.QueryParameterLastValues is { Count: > 0 }
+                ? new Dictionary<string, string>(draft.QueryParameterLastValues, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             tab.IsDirty = true;
 
             if (draft.IsActive)
@@ -2922,6 +3698,7 @@ public sealed class SqlEditorViewModel : ViewModelBase
                 FilePath = item.tab.FilePath,
                 Provider = item.tab.Provider,
                 ConnectionProfileId = item.tab.ConnectionProfileId,
+                QueryParameterLastValues = new Dictionary<string, string>(item.tab.QueryParameterLastValues, StringComparer.OrdinalIgnoreCase),
                 TabOrder = item.index,
                 IsActive = item.index == Tabs.ActiveTabIndex,
                 SavedAtUtc = DateTimeOffset.UtcNow,

@@ -23,9 +23,13 @@ public sealed class UndoRedoStack(CanvasViewModel canvas) : ViewModelBase
 
     private List<ICanvasCommand>? _txBuffer;
     private string _txLabel = string.Empty;
+    private int _commandExecutionDepth;
+
+    public event Action? CommandExecutionCompleted;
 
     /// <summary>True while a transaction is open (commands are buffered).</summary>
     public bool InTransaction => _txBuffer is not null;
+    public bool IsCommandExecutionInProgress => _commandExecutionDepth > 0;
 
     // ── State ─────────────────────────────────────────────────────────────────
 
@@ -98,12 +102,15 @@ public sealed class UndoRedoStack(CanvasViewModel canvas) : ViewModelBase
 
         if (_txBuffer is not null)
         {
-            // Revert already executed side-effects in reverse order
-            // so rollback truly restores pre-transaction canvas state.
-            foreach (ICanvasCommand command in _txBuffer.AsEnumerable().Reverse())
+            using (BeginCommandExecutionScope())
             {
-                command.Undo(_canvas);
-                revertedCommands++;
+                // Revert already executed side-effects in reverse order
+                // so rollback truly restores pre-transaction canvas state.
+                foreach (ICanvasCommand command in _txBuffer.AsEnumerable().Reverse())
+                {
+                    command.Undo(_canvas);
+                    revertedCommands++;
+                }
             }
         }
 
@@ -167,13 +174,18 @@ public sealed class UndoRedoStack(CanvasViewModel canvas) : ViewModelBase
     /// </summary>
     public void Execute(ICanvasCommand command)
     {
-        command.Execute(_canvas);
-
         if (_txBuffer is not null)
         {
+            // Buffer first so rollback can compensate even when Execute throws
+            // after partially applying side-effects.
             _txBuffer.Add(command);
+            using (BeginCommandExecutionScope())
+                command.Execute(_canvas);
             return;
         }
+
+        using (BeginCommandExecutionScope())
+            command.Execute(_canvas);
 
         // Attempt to coalesce with the top-of-stack command
         if (_undoStack.Last is not null && _undoStack.Last.Value.TryMerge(command) is ICanvasCommand merged)
@@ -196,7 +208,19 @@ public sealed class UndoRedoStack(CanvasViewModel canvas) : ViewModelBase
             return;
         ICanvasCommand command = _undoStack.Last!.Value;
         _undoStack.RemoveLast();
-        command.Undo(_canvas);
+        try
+        {
+            using (BeginCommandExecutionScope())
+                command.Undo(_canvas);
+        }
+        catch
+        {
+            // Preserve stack integrity if Undo fails.
+            _undoStack.AddLast(command);
+            Notify();
+            throw;
+        }
+
         _redoStack.AddLast(command);
         Notify();
     }
@@ -207,7 +231,19 @@ public sealed class UndoRedoStack(CanvasViewModel canvas) : ViewModelBase
             return;
         ICanvasCommand command = _redoStack.Last!.Value;
         _redoStack.RemoveLast();
-        command.Execute(_canvas);
+        try
+        {
+            using (BeginCommandExecutionScope())
+                command.Execute(_canvas);
+        }
+        catch
+        {
+            // Preserve stack integrity if Redo fails.
+            _redoStack.AddLast(command);
+            Notify();
+            throw;
+        }
+
         _undoStack.AddLast(command);
         Notify();
     }
@@ -231,11 +267,22 @@ public sealed class UndoRedoStack(CanvasViewModel canvas) : ViewModelBase
         // Keep the most recent MaxHistory commands (newest are at the end).
         if (_undoStack.Count > MaxHistory)
         {
+            int droppedCount = _undoStack.Count - MaxHistory;
             ICanvasCommand[] arr = [.. _undoStack];
             _undoStack.Clear();
             // TakeLast preserves order; only keep the newest commands
             foreach (ICanvasCommand c in arr.TakeLast(MaxHistory))
                 _undoStack.AddLast(c);
+
+            _canvas.Diagnostics.AddWarning(
+                area: L("diagnostics.area.undoRedoHistory", "Undo/Redo History"),
+                message: string.Format(
+                    L("undoRedo.historyTrimmed", "Undo history reached limit ({0}). Oldest {1} operation(s) were discarded."),
+                    MaxHistory,
+                    droppedCount),
+                recommendation: L("undoRedo.historyTrimRecommendation", "Undo recent operations first or checkpoint work before large bulk edits."),
+                openPanel: false
+            );
         }
     }
 
@@ -253,6 +300,30 @@ public sealed class UndoRedoStack(CanvasViewModel canvas) : ViewModelBase
     {
         string value = _loc[key];
         return string.Equals(value, key, StringComparison.Ordinal) ? fallback : value;
+    }
+
+    private CommandExecutionScope BeginCommandExecutionScope()
+    {
+        _commandExecutionDepth++;
+        return new CommandExecutionScope(this);
+    }
+
+    private sealed class CommandExecutionScope(UndoRedoStack owner) : IDisposable
+    {
+        private UndoRedoStack? _owner = owner;
+
+        public void Dispose()
+        {
+            if (_owner is null)
+                return;
+
+            UndoRedoStack owner = _owner;
+            _owner = null;
+
+            owner._commandExecutionDepth--;
+            if (owner._commandExecutionDepth == 0)
+                owner.CommandExecutionCompleted?.Invoke();
+        }
     }
 
 }

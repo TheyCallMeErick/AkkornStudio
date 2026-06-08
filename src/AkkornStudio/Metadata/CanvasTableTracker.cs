@@ -3,7 +3,7 @@ namespace AkkornStudio.Metadata;
 public interface ICanvasTableTracker
 {
     void Add(string fullTableName);
-    void Remove(string fullTableName);
+    bool Remove(string fullTableName);
     bool Contains(string fullTableName);
     IReadOnlyList<string> Snapshot();
     int Count { get; }
@@ -16,20 +16,37 @@ public sealed class CanvasTableTracker : ICanvasTableTracker
 
     public void Add(string fullTableName)
     {
+        string normalized = Normalize(fullTableName);
         lock (_gate)
-            _tables.Add(fullTableName);
+            _tables.Add(normalized);
     }
 
-    public void Remove(string fullTableName)
+    public bool Remove(string fullTableName)
     {
+        string normalized = Normalize(fullTableName);
         lock (_gate)
-            _tables.Remove(fullTableName);
+        {
+            if (_tables.Remove(normalized))
+                return true;
+
+            string[] matches = ResolveEquivalentMatches(normalized);
+            if (matches.Length != 1)
+                return false;
+
+            return _tables.Remove(matches[0]);
+        }
     }
 
     public bool Contains(string fullTableName)
     {
+        string normalized = Normalize(fullTableName);
         lock (_gate)
-            return _tables.Contains(fullTableName);
+        {
+            if (_tables.Contains(normalized))
+                return true;
+
+            return ResolveEquivalentMatches(normalized).Length > 0;
+        }
     }
 
     public IReadOnlyList<string> Snapshot()
@@ -45,5 +62,45 @@ public sealed class CanvasTableTracker : ICanvasTableTracker
             lock (_gate)
                 return _tables.Count;
         }
+    }
+
+    private static string Normalize(string fullTableName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fullTableName);
+        return fullTableName.Trim();
+    }
+
+    private string[] ResolveEquivalentMatches(string normalized)
+    {
+        if (_tables.Count == 0)
+            return [];
+
+        bool isQualified = normalized.Contains('.', StringComparison.Ordinal);
+        string tableOnly = ExtractTableName(normalized);
+
+        if (!isQualified)
+        {
+            string suffix = "." + normalized;
+            return _tables
+                .Where(table =>
+                    table.Equals(normalized, StringComparison.OrdinalIgnoreCase)
+                    || table.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        return _tables
+            .Where(table =>
+                table.Equals(normalized, StringComparison.OrdinalIgnoreCase)
+                || (!table.Contains('.', StringComparison.Ordinal)
+                    && table.Equals(tableOnly, StringComparison.OrdinalIgnoreCase)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static string ExtractTableName(string fullTableName)
+    {
+        int lastDot = fullTableName.LastIndexOf('.');
+        return lastDot < 0 ? fullTableName : fullTableName[(lastDot + 1)..];
     }
 }

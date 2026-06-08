@@ -150,6 +150,15 @@ public sealed class Nf1HintMultiValuedRule : ISchemaAnalysisRule
             evidence.Add(SchemaEvidenceFactory.PolicyRequirement("semiStructuredPayloadAllowlist", "matched", 0.75));
         }
 
+        IReadOnlyList<ColumnMetadata> primaryKeyColumns = table.PrimaryKeyColumns;
+        if (primaryKeyColumns.Count == 1)
+        {
+            ColumnMetadata primaryKeyColumn = primaryKeyColumns[0];
+            evidence.Add(SchemaEvidenceFactory.MetadataFact("primaryKeyColumn", primaryKeyColumn.Name, 0.85));
+            evidence.Add(SchemaEvidenceFactory.MetadataFact("primaryKeyNativeType", primaryKeyColumn.NativeType, 0.85));
+            evidence.Add(SchemaEvidenceFactory.MetadataFact("columnNativeType", column.NativeType, 0.85));
+        }
+
         return new SchemaIssue(
             IssueId: ComputeIssueId(table, column, title, message, score),
             RuleCode: SchemaRuleCode.NF1_HINT_MULTI_VALUED,

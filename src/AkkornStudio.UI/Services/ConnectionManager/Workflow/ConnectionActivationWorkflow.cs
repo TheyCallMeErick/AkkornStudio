@@ -25,20 +25,23 @@ public sealed class ConnectionActivationWorkflow : IConnectionActivationWorkflow
         try
         {
             DbMetadata? metadata = await loadMetadataAsync(config, searchMenu, ct);
-            if (canvas is not null && metadata is not null)
+            if (metadata is null)
+            {
+                return new ConnectionActivationResult(
+                    Outcome: ConnectionActivationOutcome.MetadataUnavailable,
+                    Config: config);
+            }
+
+            if (canvas is not null)
             {
                 canvas.SetDatabaseContext(metadata, config);
-
-                return new ConnectionActivationResult(
-                    Outcome: ConnectionActivationOutcome.Connected,
-                    Config: config,
-                    Metadata: metadata,
-                    ShouldOpenClearCanvasPrompt: !canvas.IsCanvasEmpty);
             }
 
             return new ConnectionActivationResult(
-                Outcome: ConnectionActivationOutcome.MetadataUnavailable,
-                Config: config);
+                Outcome: ConnectionActivationOutcome.Connected,
+                Config: config,
+                Metadata: metadata,
+                ShouldOpenClearCanvasPrompt: canvas is not null && !canvas.IsCanvasEmpty);
         }
         catch (OperationCanceledException)
         {

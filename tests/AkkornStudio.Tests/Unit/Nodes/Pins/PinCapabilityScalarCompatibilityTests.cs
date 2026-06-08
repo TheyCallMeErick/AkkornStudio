@@ -29,6 +29,20 @@ public sealed class PinCapabilityScalarCompatibilityTests
         Assert.Equal(PinConnectionReasonCode.ScalarTypeMismatch, decision.ReasonCode);
     }
 
+    [Theory]
+    [InlineData(PinDataType.Decimal)]
+    [InlineData(PinDataType.Number)]
+    public void DecimalOrNumberToInteger_IsRejectedAsScalarMismatch(PinDataType sourceType)
+    {
+        PinModel source = CreatePin("source", PinDirection.Output, sourceType, NodeType.ValueNumber);
+        PinModel destination = CreatePin("destination", PinDirection.Input, PinDataType.Integer, NodeType.Sum);
+
+        PinConnectionDecision decision = destination.CanConnect(source, PinConnectionContext.ValidationOnly());
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(PinConnectionReasonCode.ScalarTypeMismatch, decision.ReasonCode);
+    }
+
     private static PinModel CreatePin(string pinName, PinDirection direction, PinDataType dataType, NodeType nodeType)
     {
         string nodeId = $"{nodeType}:{Guid.NewGuid():N}";

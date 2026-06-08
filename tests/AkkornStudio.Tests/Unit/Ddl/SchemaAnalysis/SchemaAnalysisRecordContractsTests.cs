@@ -1,5 +1,6 @@
 using AkkornStudio.Ddl.SchemaAnalysis.Domain.Contracts;
 using AkkornStudio.Ddl.SchemaAnalysis.Domain.Enums;
+using AkkornStudio.Ddl.SchemaAnalysis.Application.Processing;
 
 namespace AkkornStudio.Tests.Unit.Ddl.SchemaAnalysis;
 
@@ -60,8 +61,12 @@ public sealed class SchemaAnalysisRecordContractsTests
             InfoCount: 0,
             WarningCount: 1,
             CriticalCount: 0,
+            QuickWinCount: 0,
+            OverallScore: 0d,
             PerRuleCount: new Dictionary<SchemaRuleCode, int> { [SchemaRuleCode.MISSING_FK] = 1 },
-            PerTableCount: new Dictionary<string, int> { ["public.orders"] = 1 }
+            PerTableCount: new Dictionary<string, int> { ["public.orders"] = 1 },
+            AreaScores: new Dictionary<string, double>(),
+            ObservedPatterns: new SchemaObservedPatterns(NamingConvention.MixedAllowed, null, null)
         );
 
         SchemaAnalysisPartialState partialState = new(

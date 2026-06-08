@@ -6,7 +6,6 @@ namespace AkkornStudio.UI.ViewModels;
 public sealed class SidebarViewModel : ViewModelBase
 {
     private SidebarTab _activeTab = SidebarTab.Nodes;
-    private ConnectionManagerViewModel? _connectionManagerOverride;
 
     public RelayCommand SelectNodesCommand { get; }
     public RelayCommand SelectConnectionCommand { get; }
@@ -30,7 +29,6 @@ public sealed class SidebarViewModel : ViewModelBase
             {
                 RaisePropertyChanged(nameof(ShowNodes));
                 RaisePropertyChanged(nameof(ShowConnection));
-                RaisePropertyChanged(nameof(ShowSchema));
             }
         }
     }
@@ -46,11 +44,6 @@ public sealed class SidebarViewModel : ViewModelBase
     public bool ShowConnection => ActiveTab == SidebarTab.Connection;
 
     /// <summary>
-    /// Returns true when Schema tab is active.
-    /// </summary>
-    public bool ShowSchema => ActiveTab == SidebarTab.Schema;
-
-    /// <summary>
     /// ViewModel for the Nodes list tab.
     /// </summary>
     public NodesListViewModel NodesList { get; }
@@ -59,22 +52,6 @@ public sealed class SidebarViewModel : ViewModelBase
     /// ViewModel for the Connection status tab.
     /// </summary>
     public ConnectionManagerViewModel ConnectionManager { get; }
-
-    public ConnectionManagerViewModel? ConnectionManagerOverride
-    {
-        get => _connectionManagerOverride;
-        set
-        {
-            if (!Set(ref _connectionManagerOverride, value))
-                return;
-
-            RaisePropertyChanged(nameof(EffectiveConnectionManager));
-        }
-    }
-
-    public ConnectionManagerViewModel EffectiveConnectionManager => ConnectionManagerOverride ?? ConnectionManager;
-
-    public SchemaViewModel? Schema => EffectiveConnectionManager.Canvas?.Schema;
 
     /// <summary>
     /// ViewModel for diagnostics tab.

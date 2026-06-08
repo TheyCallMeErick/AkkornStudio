@@ -28,6 +28,18 @@ public record ColumnMetadata(
     string? Comment = null
 )
 {
+    /// <summary>True when the column is an identity / auto-increment column.</summary>
+    public bool IsAutoIncrement { get; init; }
+
+    /// <summary>The generation expression for a computed/generated column, or null.</summary>
+    public string? GeneratedExpression { get; init; }
+
+    /// <summary>True when the column is a generated/computed column.</summary>
+    public bool IsGenerated => !string.IsNullOrWhiteSpace(GeneratedExpression);
+
+    /// <summary>Explicit column collation, or null when it inherits the default.</summary>
+    public string? Collation { get; init; }
+
     /// <summary>Semantic category inferred from type name — used for TreeView icons.</summary>
     public ColumnSemanticType SemanticType => InferSemanticType(NativeType);
 
@@ -101,6 +113,9 @@ public enum ColumnSemanticType
     Other,
 }
 
+/// <summary>Best-effort extra column attributes fetched separately from the main column query.</summary>
+public readonly record struct ColumnAttributes(bool IsAutoIncrement, string? GeneratedExpression, string? Collation);
+
 // ═════════════════════════════════════════════════════════════════════════════
 // FOREIGN KEY RELATION  (bidirectional, provider-agnostic)
 // ═════════════════════════════════════════════════════════════════════════════
@@ -139,13 +154,16 @@ public record ForeignKeyRelation(
     /// in either direction.
     /// </summary>
     public bool Involves(string tableA, string tableB) =>
+        Involves(tableA, tableB, StringComparison.OrdinalIgnoreCase);
+
+    public bool Involves(string tableA, string tableB, StringComparison comparison) =>
         (
-            ChildFullTable.Equals(tableA, StringComparison.OrdinalIgnoreCase)
-            && ParentFullTable.Equals(tableB, StringComparison.OrdinalIgnoreCase)
+            ChildFullTable.Equals(tableA, comparison)
+            && ParentFullTable.Equals(tableB, comparison)
         )
         || (
-            ChildFullTable.Equals(tableB, StringComparison.OrdinalIgnoreCase)
-            && ParentFullTable.Equals(tableA, StringComparison.OrdinalIgnoreCase)
+            ChildFullTable.Equals(tableB, comparison)
+            && ParentFullTable.Equals(tableA, comparison)
         );
 
     /// <summary>
@@ -178,6 +196,13 @@ public record IndexMetadata(
 );
 
 // ═════════════════════════════════════════════════════════════════════════════
+// CHECK CONSTRAINT METADATA
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// <summary>A table-level CHECK constraint (name + boolean expression).</summary>
+public record CheckConstraintMetadata(string Name, string Expression);
+
+// ═════════════════════════════════════════════════════════════════════════════
 // TABLE METADATA
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -199,6 +224,9 @@ public record TableMetadata(
     string? Comment = null
 )
 {
+    /// <summary>Table-level CHECK constraints. Empty when the provider has none or doesn't report them.</summary>
+    public IReadOnlyList<CheckConstraintMetadata> CheckConstraints { get; init; } = [];
+
     public string FullName => string.IsNullOrEmpty(Schema) ? Name : $"{Schema}.{Name}";
 
     public IReadOnlyList<ColumnMetadata> PrimaryKeyColumns =>
@@ -273,19 +301,27 @@ public record DbMetadata(
 {
     // ── Flat accessors (useful for the canvas and auto-join engine) ────────────
 
+    private StringComparison IdentifierComparison =>
+        Provider == DatabaseProvider.Postgres
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+
+    private StringComparer IdentifierComparer =>
+        Provider == DatabaseProvider.Postgres
+            ? StringComparer.Ordinal
+            : StringComparer.OrdinalIgnoreCase;
+
     public IEnumerable<TableMetadata> AllTables => Schemas.SelectMany(s => s.Tables);
 
     public TableMetadata? FindTable(string fullName) =>
-        AllTables.FirstOrDefault(t =>
-            t.FullName.Equals(fullName, StringComparison.OrdinalIgnoreCase)
-        );
+        AllTables.FirstOrDefault(t => t.FullName.Equals(fullName, IdentifierComparison));
 
     public IEnumerable<SequenceMetadata> AllSequences => Sequences ?? [];
 
     public TableMetadata? FindTable(string schema, string name) =>
         AllTables.FirstOrDefault(t =>
-            t.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase)
-            && t.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+            t.Schema.Equals(schema, IdentifierComparison)
+            && t.Name.Equals(name, IdentifierComparison)
         );
 
     /// <summary>
@@ -293,7 +329,7 @@ public record DbMetadata(
     /// and <paramref name="tableB"/> in either direction.
     /// </summary>
     public IReadOnlyList<ForeignKeyRelation> GetRelationsBetween(string tableA, string tableB) =>
-        AllForeignKeys.Where(r => r.Involves(tableA, tableB)).ToList();
+        AllForeignKeys.Where(r => r.Involves(tableA, tableB, IdentifierComparison)).ToList();
 
     /// <summary>
     /// Returns all FK relations that connect <paramref name="table"/> to any of
@@ -304,16 +340,16 @@ public record DbMetadata(
         IEnumerable<string> canvasTables
     )
     {
-        var set = new HashSet<string>(canvasTables, StringComparer.OrdinalIgnoreCase);
+        var set = new HashSet<string>(canvasTables, IdentifierComparer);
 
         return AllForeignKeys
             .Where(r =>
                 (
-                    r.ChildFullTable.Equals(table, StringComparison.OrdinalIgnoreCase)
+                    r.ChildFullTable.Equals(table, IdentifierComparison)
                     && set.Contains(r.ParentFullTable)
                 )
                 || (
-                    r.ParentFullTable.Equals(table, StringComparison.OrdinalIgnoreCase)
+                    r.ParentFullTable.Equals(table, IdentifierComparison)
                     && set.Contains(r.ChildFullTable)
                 )
             )

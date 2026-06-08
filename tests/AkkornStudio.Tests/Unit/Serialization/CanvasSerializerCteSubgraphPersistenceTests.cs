@@ -97,6 +97,47 @@ public class CanvasSerializerCteSubgraphPersistenceTests
         Assert.True(cte.Parameters.ContainsKey(CanvasSerializer.CteSubgraphParameterKey));
     }
 
+    [Fact]
+    public void Deserialize_CteDefinition_WithNestedSubgraphDepthAboveLimit_RemovesPayloadAndWarns()
+    {
+        var vm = new CanvasViewModel();
+        SavedCteSubgraph nested = BuildNestedCteSubgraph(CanvasSerializer.MaxCteSubgraphDepth + 1);
+
+        var saved = new SavedCanvas(
+            Version: CanvasSerializer.CurrentCanvasSchemaVersion,
+            DatabaseProvider: "Postgres",
+            ConnectionName: "test",
+            Zoom: 1,
+            PanX: 0,
+            PanY: 0,
+            Nodes:
+            [
+                new SavedNode(
+                    NodeId: "cte_root",
+                    NodeType: nameof(NodeType.CteDefinition),
+                    X: 100,
+                    Y: 120,
+                    ZOrder: null,
+                    Alias: null,
+                    TableFullName: null,
+                    Parameters: new Dictionary<string, string>(),
+                    PinLiterals: new Dictionary<string, string>(),
+                    CteSubgraph: nested)
+            ],
+            Connections: [],
+            SelectBindings: [],
+            WhereBindings: []);
+
+        string json = JsonSerializer.Serialize(saved);
+        CanvasLoadResult result = CanvasSerializer.Deserialize(json, vm);
+
+        Assert.True(result.Success, result.Error);
+        NodeViewModel cte = Assert.Single(vm.Nodes);
+        Assert.False(cte.Parameters.ContainsKey(CanvasSerializer.CteSubgraphParameterKey));
+        Assert.Contains(result.Warnings ?? [], warning =>
+            warning.Contains("depth", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static void Connect(
         CanvasViewModel canvas,
         NodeViewModel fromNode,
@@ -111,5 +152,45 @@ public class CanvasSerializerCteSubgraphPersistenceTests
         {
             ToPin = to,
         });
+    }
+
+    private static SavedCteSubgraph BuildNestedCteSubgraph(int depth)
+    {
+        SavedCteSubgraph? current = null;
+        for (int level = depth; level >= 1; level--)
+        {
+            string cteNodeId = $"cte_level_{level}";
+            string resultNodeId = $"result_level_{level}";
+
+            var resultNode = new SavedNode(
+                NodeId: resultNodeId,
+                NodeType: nameof(NodeType.ResultOutput),
+                X: level * 10,
+                Y: level * 10,
+                ZOrder: null,
+                Alias: null,
+                TableFullName: null,
+                Parameters: new Dictionary<string, string>(),
+                PinLiterals: new Dictionary<string, string>());
+
+            var cteNode = new SavedNode(
+                NodeId: cteNodeId,
+                NodeType: nameof(NodeType.CteDefinition),
+                X: level * 10 + 1,
+                Y: level * 10 + 1,
+                ZOrder: null,
+                Alias: null,
+                TableFullName: null,
+                Parameters: new Dictionary<string, string>(),
+                PinLiterals: new Dictionary<string, string>(),
+                CteSubgraph: current);
+
+            current = new SavedCteSubgraph(
+                Nodes: [cteNode, resultNode],
+                Connections: [],
+                ResultOutputNodeId: resultNodeId);
+        }
+
+        return current ?? new SavedCteSubgraph([], [], null);
     }
 }

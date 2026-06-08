@@ -21,13 +21,48 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
     private const string IgnoreTablePlaceholderFallback = "schema.tabela";
 
     private readonly Action<string>? _copySql;
-    private readonly Action<SqlFixCandidate>? _applyToCanvas;
+    private readonly Action<SchemaIssue, SchemaSuggestion?, SqlFixCandidate?>? _applyToCanvas;
     private static readonly TextSearchService TextSearch = new();
 
     private readonly List<SchemaIssue> _rawIssues = [];
     private readonly List<SchemaRuleExecutionDiagnostic> _diagnostics = [];
     private readonly HashSet<SchemaIssueSeverity> _severityFilter = [];
     private readonly HashSet<SchemaRuleCode> _ruleFilter = [];
+
+    private double _overallScore;
+    public double OverallScore
+    {
+        get => _overallScore;
+        private set => Set(ref _overallScore, value);
+    }
+
+    private int _quickWinCount;
+    public int QuickWinCount
+    {
+        get => _quickWinCount;
+        private set => Set(ref _quickWinCount, value);
+    }
+
+    private string _dominantNamingConvention = string.Empty;
+    public string DominantNamingConvention
+    {
+        get => _dominantNamingConvention;
+        private set => Set(ref _dominantNamingConvention, value);
+    }
+
+    private string _dominantPkPattern = string.Empty;
+    public string DominantPkPattern
+    {
+        get => _dominantPkPattern;
+        private set => Set(ref _dominantPkPattern, value);
+    }
+
+    private string _dominantFkPattern = string.Empty;
+    public string DominantFkPattern
+    {
+        get => _dominantFkPattern;
+        private set => Set(ref _dominantFkPattern, value);
+    }
 
     private SchemaAnalysisViewState _state;
     private string _stateMessage = L("preview.schemaAnalysis.state.metadataUnavailable", MetadataUnavailableMessageFallback);
@@ -47,14 +82,23 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
     private bool _includeNf1HintMultiValued = true;
     private bool _includeNf2HintPartialDependency = true;
     private bool _includeNf3HintTransitiveDependency = true;
+    private bool _quickWinsOnly;
     private bool _ignoreViews;
     private string _ignoredTableInput = string.Empty;
     private string? _selectedIgnoredTable;
     private SchemaIssueGroupViewModel? _selectedGroup;
+    private IssueSortMode _sortMode = IssueSortMode.Severity;
+    private IssueGroupMode _groupMode = IssueGroupMode.Severity;
+    private bool _isCompact = true;
+    private bool _hideReviewed;
+    private int _resolutionTabIndex;
+    private int _savedViewSeq;
+    private readonly HashSet<string> _reviewedIssueIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<SchemaRuleCode, int> _ruleFrequency = [];
 
     public SchemaAnalysisPanelViewModel(
         Action<string>? copySql = null,
-        Action<SqlFixCandidate>? applyToCanvas = null
+        Action<SchemaIssue, SchemaSuggestion?, SqlFixCandidate?>? applyToCanvas = null
     )
     {
         _copySql = copySql;
@@ -64,7 +108,10 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
             () =>
             {
                 if (SelectedSqlCandidate is not null)
+                {
                     _copySql?.Invoke(SelectedSqlCandidate.Sql);
+                    CopySqlRequested?.Invoke(SelectedSqlCandidate.Sql);
+                }
             },
             () => CanCopySql
         );
@@ -72,8 +119,8 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
         ApplyToCanvasCommand = new RelayCommand(
             () =>
             {
-                if (SelectedSqlCandidate is not null)
-                    _applyToCanvas?.Invoke(SelectedSqlCandidate);
+                if (SelectedIssue is not null)
+                    _applyToCanvas?.Invoke(SelectedIssue, SelectedSuggestion, SelectedSqlCandidate);
             },
             () => CanApplyToCanvas
         );
@@ -88,6 +135,19 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
         );
         SelectNextIssueCommand = new RelayCommand(SelectNextIssue, () => CanSelectNextIssue);
         SelectPreviousIssueCommand = new RelayCommand(SelectPreviousIssue, () => CanSelectPreviousIssue);
+        ShowIssueDetailsCommand = new RelayCommand<SchemaIssue>(issue =>
+        {
+            if (issue is not null)
+                SelectedIssue = issue;
+        });
+        PreviewSqlCommand = new RelayCommand(() => ResolutionTabIndex = 0, () => HasSelectedIssue);
+        MarkSelectedReviewedCommand = new RelayCommand(ToggleSelectedReviewed, () => HasSelectedIssue);
+        IgnoreSelectedRuleCommand = new RelayCommand(IgnoreSelectedRule, () => HasSelectedIssue);
+        MarkAllVisibleReviewedCommand = new RelayCommand(MarkAllVisibleReviewed, () => VisibleIssues.Count > 0);
+        IgnoreVisibleTablesCommand = new RelayCommand(IgnoreVisibleTables, () => VisibleIssues.Count > 0);
+        SaveCurrentViewCommand = new RelayCommand(SaveCurrentView);
+        ApplyViewCommand = new RelayCommand<SchemaSavedView>(ApplyView, view => view is not null);
+        RemoveViewCommand = new RelayCommand<SchemaSavedView>(RemoveView, view => view is not null);
     }
 
     public ObservableCollection<SchemaIssue> VisibleIssues { get; } = [];
@@ -95,6 +155,8 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
     public ObservableCollection<SchemaIssueGroupViewModel> GroupedIssues { get; } = [];
 
     public ObservableCollection<string> IgnoredTables { get; } = [];
+
+    public event Action<string>? CopySqlRequested;
 
     public SchemaAnalysisViewState State
     {
@@ -128,8 +190,13 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
             RaisePropertyChanged(nameof(HasSelectedIssue));
             RaisePropertyChanged(nameof(SelectedIssuePath));
             RaisePropertyChanged(nameof(SelectedIssueConfidencePercent));
+            RaisePropertyChanged(nameof(SelectedIssueIsReviewed));
+            RaisePropertyChanged(nameof(MarkReviewedLabel));
             SelectNextIssueCommand.NotifyCanExecuteChanged();
             SelectPreviousIssueCommand.NotifyCanExecuteChanged();
+            PreviewSqlCommand.NotifyCanExecuteChanged();
+            MarkSelectedReviewedCommand.NotifyCanExecuteChanged();
+            IgnoreSelectedRuleCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -234,13 +301,22 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
         && SelectedSqlCandidate.Visibility is CandidateVisibility.VisibleReadOnly or CandidateVisibility.VisibleActionable;
 
     public bool CanApplyToCanvas =>
-        SelectedSqlCandidate is not null
-        && SelectedSqlCandidate.Visibility == CandidateVisibility.VisibleActionable;
+        SelectedIssue is not null
+        && (
+            SelectedSqlCandidate?.Visibility == CandidateVisibility.VisibleActionable
+            || IsCanvasAutoApplicableIssue(SelectedIssue)
+        );
 
     public string ActionBlockedTooltip =>
         CanCopySql || CanApplyToCanvas
             ? string.Empty
             : L("preview.schemaAnalysis.actionBlockedTooltip", ActionBlockedTooltipFallback);
+
+    private static bool IsCanvasAutoApplicableIssue(SchemaIssue issue)
+    {
+        return issue.RuleCode is SchemaRuleCode.NAMING_CONVENTION_VIOLATION
+            or SchemaRuleCode.MISSING_REQUIRED_COMMENT;
+    }
 
     public RelayCommand CopySqlCommand { get; }
 
@@ -260,6 +336,104 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
 
     public RelayCommand SelectPreviousIssueCommand { get; }
 
+    public RelayCommand<SchemaIssue> ShowIssueDetailsCommand { get; }
+
+    public RelayCommand PreviewSqlCommand { get; }
+
+    public RelayCommand MarkSelectedReviewedCommand { get; }
+
+    public RelayCommand IgnoreSelectedRuleCommand { get; }
+
+    public RelayCommand MarkAllVisibleReviewedCommand { get; }
+
+    public RelayCommand IgnoreVisibleTablesCommand { get; }
+
+    public RelayCommand SaveCurrentViewCommand { get; }
+
+    public RelayCommand<SchemaSavedView> ApplyViewCommand { get; }
+
+    public RelayCommand<SchemaSavedView> RemoveViewCommand { get; }
+
+    public ObservableCollection<SchemaSavedView> SavedViews { get; } = [];
+
+    public bool HasSavedViews => SavedViews.Count > 0;
+
+    public IReadOnlyList<IssueSortMode> SortModes { get; } =
+    [
+        IssueSortMode.Severity,
+        IssueSortMode.Confidence,
+        IssueSortMode.Frequency,
+        IssueSortMode.Table,
+    ];
+
+    public IReadOnlyList<IssueGroupMode> GroupModes { get; } =
+    [
+        IssueGroupMode.Severity,
+        IssueGroupMode.Table,
+        IssueGroupMode.Type,
+        IssueGroupMode.Schema,
+    ];
+
+    public IssueSortMode SortMode
+    {
+        get => _sortMode;
+        set
+        {
+            if (!Set(ref _sortMode, value))
+                return;
+
+            ApplyFilters();
+        }
+    }
+
+    public IssueGroupMode GroupMode
+    {
+        get => _groupMode;
+        set
+        {
+            if (!Set(ref _groupMode, value))
+                return;
+
+            ApplyFilters();
+        }
+    }
+
+    public bool IsCompact
+    {
+        get => _isCompact;
+        set => Set(ref _isCompact, value);
+    }
+
+    public bool HideReviewed
+    {
+        get => _hideReviewed;
+        set
+        {
+            if (!Set(ref _hideReviewed, value))
+                return;
+
+            ApplyFilters();
+        }
+    }
+
+    public int ResolutionTabIndex
+    {
+        get => _resolutionTabIndex;
+        set => Set(ref _resolutionTabIndex, value);
+    }
+
+    public int ReviewedCount => _reviewedIssueIds.Count;
+
+    public bool HasReviewedIssues => _reviewedIssueIds.Count > 0;
+
+    public bool SelectedIssueIsReviewed =>
+        SelectedIssue is not null && _reviewedIssueIds.Contains(SelectedIssue.IssueId);
+
+    public string MarkReviewedLabel => SelectedIssueIsReviewed ? "Reabrir" : "Mark Reviewed";
+
+    public bool IsIssueReviewed(SchemaIssue? issue) =>
+        issue is not null && _reviewedIssueIds.Contains(issue.IssueId);
+
     public int RawTotalIssues => _rawIssues.Count;
 
     public int RawInfoCount => _rawIssues.Count(static i => i.Severity == SchemaIssueSeverity.Info);
@@ -270,15 +444,45 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
 
     public int FilteredTotalIssues => VisibleIssues.Count;
 
+    public bool HasNoVisibleIssues => VisibleIssues.Count == 0;
+
     public int FilteredInfoCount => VisibleIssues.Count(static i => i.Severity == SchemaIssueSeverity.Info);
 
     public int FilteredWarningCount => VisibleIssues.Count(static i => i.Severity == SchemaIssueSeverity.Warning);
 
     public int FilteredCriticalCount => VisibleIssues.Count(static i => i.Severity == SchemaIssueSeverity.Critical);
 
+    public int FilteredAffectedTablesCount => VisibleIssues
+        .Select(static issue =>
+        {
+            string schema = issue.SchemaName ?? string.Empty;
+            string table = issue.TableName ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(schema) && string.IsNullOrWhiteSpace(table))
+                return string.Empty;
+
+            return string.IsNullOrWhiteSpace(schema) ? table : $"{schema}.{table}";
+        })
+        .Where(static value => !string.IsNullOrWhiteSpace(value))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Count();
+
+    public int FilteredQuickWinIssuesCount => VisibleIssues.Count(IsQuickWinIssue);
+
     public bool CanSelectNextIssue => TryGetSelectionIndex(out int index) && index < VisibleIssues.Count - 1;
 
     public bool CanSelectPreviousIssue => TryGetSelectionIndex(out int index) && index > 0;
+
+    public bool QuickWinsOnly
+    {
+        get => _quickWinsOnly;
+        set
+        {
+            if (!Set(ref _quickWinsOnly, value))
+                return;
+
+            ApplyFilters();
+        }
+    }
 
     public bool IgnoreViews
     {
@@ -551,6 +755,13 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
         _tableTextFilter = string.Empty;
         RaisePropertyChanged(nameof(MinConfidenceFilter));
         RaisePropertyChanged(nameof(TableTextFilter));
+        _hideReviewed = false;
+        _sortMode = IssueSortMode.Severity;
+        _groupMode = IssueGroupMode.Severity;
+        RaisePropertyChanged(nameof(HideReviewed));
+        RaisePropertyChanged(nameof(SortMode));
+        RaisePropertyChanged(nameof(GroupMode));
+        QuickWinsOnly = false;
         IgnoreViews = false;
         ClearIgnoredTables();
         RebuildSeverityFilterFromFlags(applyFilters: false);
@@ -562,6 +773,9 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
     {
         _rawIssues.Clear();
         _diagnostics.Clear();
+        _reviewedIssueIds.Clear();
+        _ruleFrequency.Clear();
+        RaiseReviewedStateChanged();
         VisibleIssues.Clear();
         GroupedIssues.Clear();
         SelectedGroup = null;
@@ -588,9 +802,21 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
         _rawIssues.Clear();
         _rawIssues.AddRange(result.Issues);
 
+        _reviewedIssueIds.Clear();
+        _ruleFrequency.Clear();
+        foreach (IGrouping<SchemaRuleCode, SchemaIssue> group in _rawIssues.GroupBy(static i => i.RuleCode))
+            _ruleFrequency[group.Key] = group.Count();
+        RaiseReviewedStateChanged();
+
         _diagnostics.Clear();
         _diagnostics.AddRange(result.Diagnostics);
         RaisePropertyChanged(nameof(Diagnostics));
+
+        OverallScore = result.Summary.OverallScore;
+        QuickWinCount = result.Summary.QuickWinCount;
+        DominantNamingConvention = result.Summary.ObservedPatterns.DominantNamingConvention.ToString();
+        DominantPkPattern = result.Summary.ObservedPatterns.DominantPkPattern ?? "-";
+        DominantFkPattern = result.Summary.ObservedPatterns.DominantFkPattern ?? "-";
 
         ApplyFilters();
 
@@ -640,7 +866,11 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
             .Where(i => i.Confidence >= MinConfidenceFilter)
             .Where(i => MatchesTableFilter(i, TableTextFilter))
             .Where(i => !IsBlacklistedTable(i.SchemaName, i.TableName))
+            .Where(i => !_quickWinsOnly || i.Suggestions.Count > 0)
+            .Where(i => !_hideReviewed || !_reviewedIssueIds.Contains(i.IssueId))
             .ToList();
+
+        filtered = SortIssues(filtered);
 
         VisibleIssues.Clear();
         foreach (SchemaIssue issue in filtered)
@@ -680,20 +910,57 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
         SelectPreviousIssueCommand.NotifyCanExecuteChanged();
     }
 
+    private List<SchemaIssue> SortIssues(List<SchemaIssue> issues)
+    {
+        return _sortMode switch
+        {
+            IssueSortMode.Confidence => issues
+                .OrderByDescending(static i => i.Confidence)
+                .ThenBy(i => GetSeverityOrder(i.Severity))
+                .ThenBy(static i => i.IssueId, StringComparer.Ordinal)
+                .ToList(),
+            IssueSortMode.Frequency => issues
+                .OrderByDescending(i => _ruleFrequency.GetValueOrDefault(i.RuleCode))
+                .ThenBy(i => GetSeverityOrder(i.Severity))
+                .ThenByDescending(static i => i.Confidence)
+                .ThenBy(static i => i.IssueId, StringComparer.Ordinal)
+                .ToList(),
+            IssueSortMode.Table => issues
+                .OrderBy(GetTableKey, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(i => GetSeverityOrder(i.Severity))
+                .ThenBy(static i => i.IssueId, StringComparer.Ordinal)
+                .ToList(),
+            _ => issues
+                .OrderBy(i => GetSeverityOrder(i.Severity))
+                .ThenByDescending(static i => i.Confidence)
+                .ThenBy(static i => i.IssueId, StringComparer.Ordinal)
+                .ToList(),
+        };
+    }
+
     private void RebuildGroups()
     {
         GroupedIssues.Clear();
 
-        foreach (IGrouping<SchemaIssueSeverity, SchemaIssue> group in VisibleIssues
-                     .GroupBy(static issue => issue.Severity)
-                     .OrderBy(group => GetSeverityOrder(group.Key)))
+        IEnumerable<IGrouping<string, SchemaIssue>> groups = _groupMode switch
         {
-            string title = group.Key switch
-            {
-                SchemaIssueSeverity.Critical => L("preview.schemaAnalysis.severity.critical", "Critical"),
-                SchemaIssueSeverity.Warning => L("preview.schemaAnalysis.severity.warning", "Warning"),
-                _ => L("preview.schemaAnalysis.severity.info", "Info")
-            };
+            IssueGroupMode.Table => VisibleIssues.GroupBy(GetTableKey),
+            IssueGroupMode.Type => VisibleIssues.GroupBy(static issue => issue.TargetType.ToString()),
+            IssueGroupMode.Schema => VisibleIssues.GroupBy(static issue =>
+                string.IsNullOrWhiteSpace(issue.SchemaName) ? "(sem schema)" : issue.SchemaName!),
+            _ => VisibleIssues.GroupBy(static issue => issue.Severity.ToString()),
+        };
+
+        if (_groupMode == IssueGroupMode.Severity)
+            groups = groups.OrderBy(group => GetSeverityOrder(ParseSeverity(group.Key)));
+        else
+            groups = groups.OrderBy(static group => group.Key, StringComparer.OrdinalIgnoreCase);
+
+        foreach (IGrouping<string, SchemaIssue> group in groups)
+        {
+            string title = _groupMode == IssueGroupMode.Severity
+                ? LocalizeSeverity(ParseSeverity(group.Key))
+                : group.Key;
 
             GroupedIssues.Add(new SchemaIssueGroupViewModel(group.Key, title, group.ToArray()));
         }
@@ -703,6 +970,26 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
         else
             SelectedGroup = GroupedIssues.FirstOrDefault();
     }
+
+    private static string GetTableKey(SchemaIssue issue)
+    {
+        string schema = issue.SchemaName ?? string.Empty;
+        string table = issue.TableName ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(schema) && string.IsNullOrWhiteSpace(table))
+            return "(sem tabela)";
+
+        return string.IsNullOrWhiteSpace(schema) ? table : $"{schema}.{table}";
+    }
+
+    private static SchemaIssueSeverity ParseSeverity(string key) =>
+        Enum.TryParse(key, out SchemaIssueSeverity severity) ? severity : SchemaIssueSeverity.Info;
+
+    private static string LocalizeSeverity(SchemaIssueSeverity severity) => severity switch
+    {
+        SchemaIssueSeverity.Critical => L("preview.schemaAnalysis.severity.critical", "Critical"),
+        SchemaIssueSeverity.Warning => L("preview.schemaAnalysis.severity.warning", "Warning"),
+        _ => L("preview.schemaAnalysis.severity.info", "Info"),
+    };
 
     private static int GetSeverityOrder(SchemaIssueSeverity severity)
     {
@@ -744,6 +1031,194 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
             SelectedIssue = VisibleIssues[index - 1];
     }
 
+    private void SaveCurrentView()
+    {
+        var view = new SchemaSavedView
+        {
+            Name = $"Visão {++_savedViewSeq}",
+            IncludeInfo = IncludeInfo,
+            IncludeWarning = IncludeWarning,
+            IncludeCritical = IncludeCritical,
+            IncludeFkCatalogInconsistent = IncludeFkCatalogInconsistent,
+            IncludeMissingFk = IncludeMissingFk,
+            IncludeNamingConventionViolation = IncludeNamingConventionViolation,
+            IncludeLowSemanticName = IncludeLowSemanticName,
+            IncludeMissingRequiredComment = IncludeMissingRequiredComment,
+            IncludeNf1HintMultiValued = IncludeNf1HintMultiValued,
+            IncludeNf2HintPartialDependency = IncludeNf2HintPartialDependency,
+            IncludeNf3HintTransitiveDependency = IncludeNf3HintTransitiveDependency,
+            MinConfidenceFilter = MinConfidenceFilter,
+            TableTextFilter = TableTextFilter,
+            QuickWinsOnly = QuickWinsOnly,
+            HideReviewed = HideReviewed,
+            SortMode = SortMode,
+            GroupMode = GroupMode,
+        };
+
+        SavedViews.Add(view);
+        RaisePropertyChanged(nameof(HasSavedViews));
+    }
+
+    private void ApplyView(SchemaSavedView? view)
+    {
+        if (view is null)
+            return;
+
+        _includeInfo = view.IncludeInfo;
+        _includeWarning = view.IncludeWarning;
+        _includeCritical = view.IncludeCritical;
+        _includeFkCatalogInconsistent = view.IncludeFkCatalogInconsistent;
+        _includeMissingFk = view.IncludeMissingFk;
+        _includeNamingConventionViolation = view.IncludeNamingConventionViolation;
+        _includeLowSemanticName = view.IncludeLowSemanticName;
+        _includeMissingRequiredComment = view.IncludeMissingRequiredComment;
+        _includeNf1HintMultiValued = view.IncludeNf1HintMultiValued;
+        _includeNf2HintPartialDependency = view.IncludeNf2HintPartialDependency;
+        _includeNf3HintTransitiveDependency = view.IncludeNf3HintTransitiveDependency;
+        _minConfidenceFilter = view.MinConfidenceFilter;
+        _tableTextFilter = view.TableTextFilter;
+        _quickWinsOnly = view.QuickWinsOnly;
+        _hideReviewed = view.HideReviewed;
+        _sortMode = view.SortMode;
+        _groupMode = view.GroupMode;
+
+        RaisePropertyChanged(nameof(IncludeInfo));
+        RaisePropertyChanged(nameof(IncludeWarning));
+        RaisePropertyChanged(nameof(IncludeCritical));
+        RaisePropertyChanged(nameof(IncludeFkCatalogInconsistent));
+        RaisePropertyChanged(nameof(IncludeMissingFk));
+        RaisePropertyChanged(nameof(IncludeNamingConventionViolation));
+        RaisePropertyChanged(nameof(IncludeLowSemanticName));
+        RaisePropertyChanged(nameof(IncludeMissingRequiredComment));
+        RaisePropertyChanged(nameof(IncludeNf1HintMultiValued));
+        RaisePropertyChanged(nameof(IncludeNf2HintPartialDependency));
+        RaisePropertyChanged(nameof(IncludeNf3HintTransitiveDependency));
+        RaisePropertyChanged(nameof(MinConfidenceFilter));
+        RaisePropertyChanged(nameof(TableTextFilter));
+        RaisePropertyChanged(nameof(QuickWinsOnly));
+        RaisePropertyChanged(nameof(HideReviewed));
+        RaisePropertyChanged(nameof(SortMode));
+        RaisePropertyChanged(nameof(GroupMode));
+
+        RebuildSeverityFilterFromFlags(applyFilters: false);
+        RebuildRuleFilterFromFlags(applyFilters: false);
+        ApplyFilters();
+    }
+
+    private void RemoveView(SchemaSavedView? view)
+    {
+        if (view is null)
+            return;
+
+        SavedViews.Remove(view);
+        RaisePropertyChanged(nameof(HasSavedViews));
+    }
+
+    private void ToggleSelectedReviewed()
+    {
+        if (SelectedIssue is null)
+            return;
+
+        if (!_reviewedIssueIds.Remove(SelectedIssue.IssueId))
+            _reviewedIssueIds.Add(SelectedIssue.IssueId);
+
+        RaiseReviewedStateChanged();
+
+        if (_hideReviewed)
+            ApplyFilters();
+    }
+
+    private void MarkAllVisibleReviewed()
+    {
+        if (VisibleIssues.Count == 0)
+            return;
+
+        foreach (SchemaIssue issue in VisibleIssues)
+            _reviewedIssueIds.Add(issue.IssueId);
+
+        RaiseReviewedStateChanged();
+
+        if (_hideReviewed)
+            ApplyFilters();
+    }
+
+    private void RaiseReviewedStateChanged()
+    {
+        RaisePropertyChanged(nameof(ReviewedCount));
+        RaisePropertyChanged(nameof(HasReviewedIssues));
+        RaisePropertyChanged(nameof(SelectedIssueIsReviewed));
+        RaisePropertyChanged(nameof(MarkReviewedLabel));
+    }
+
+    private void IgnoreSelectedRule()
+    {
+        if (SelectedIssue is null)
+            return;
+
+        switch (SelectedIssue.RuleCode)
+        {
+            case SchemaRuleCode.FK_CATALOG_INCONSISTENT:
+                IncludeFkCatalogInconsistent = false;
+                break;
+            case SchemaRuleCode.MISSING_FK:
+                IncludeMissingFk = false;
+                break;
+            case SchemaRuleCode.NAMING_CONVENTION_VIOLATION:
+                IncludeNamingConventionViolation = false;
+                break;
+            case SchemaRuleCode.LOW_SEMANTIC_NAME:
+                IncludeLowSemanticName = false;
+                break;
+            case SchemaRuleCode.MISSING_REQUIRED_COMMENT:
+                IncludeMissingRequiredComment = false;
+                break;
+            case SchemaRuleCode.NF1_HINT_MULTI_VALUED:
+                IncludeNf1HintMultiValued = false;
+                break;
+            case SchemaRuleCode.NF2_HINT_PARTIAL_DEPENDENCY:
+                IncludeNf2HintPartialDependency = false;
+                break;
+            case SchemaRuleCode.NF3_HINT_TRANSITIVE_DEPENDENCY:
+                IncludeNf3HintTransitiveDependency = false;
+                break;
+        }
+    }
+
+    private void IgnoreVisibleTables()
+    {
+        if (VisibleIssues.Count == 0)
+            return;
+
+        string[] tables = VisibleIssues
+            .Select(GetTableKey)
+            .Where(static key => !string.Equals(key, "(sem tabela)", StringComparison.Ordinal))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        bool added = false;
+        foreach (string table in tables)
+        {
+            string normalized = NormalizeTablePattern(table);
+            if (string.IsNullOrWhiteSpace(normalized))
+                continue;
+
+            if (IgnoredTables.Any(item => string.Equals(item, normalized, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            IgnoredTables.Add(normalized);
+            SelectedIgnoredTable ??= normalized;
+            added = true;
+        }
+
+        if (!added)
+            return;
+
+        RaisePropertyChanged(nameof(HasIgnoredTables));
+        ClearIgnoredTablesCommand.NotifyCanExecuteChanged();
+        RemoveSelectedIgnoredTableCommand.NotifyCanExecuteChanged();
+        ApplyFilters();
+    }
+
     private static bool MatchesTableFilter(SchemaIssue issue, string filter)
     {
         if (string.IsNullOrWhiteSpace(filter))
@@ -763,9 +1238,26 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
         RaisePropertyChanged(nameof(RawWarningCount));
         RaisePropertyChanged(nameof(RawCriticalCount));
         RaisePropertyChanged(nameof(FilteredTotalIssues));
+        RaisePropertyChanged(nameof(HasNoVisibleIssues));
         RaisePropertyChanged(nameof(FilteredInfoCount));
         RaisePropertyChanged(nameof(FilteredWarningCount));
         RaisePropertyChanged(nameof(FilteredCriticalCount));
+        RaisePropertyChanged(nameof(FilteredAffectedTablesCount));
+        RaisePropertyChanged(nameof(FilteredQuickWinIssuesCount));
+        RaisePropertyChanged(nameof(ReviewedCount));
+        RaisePropertyChanged(nameof(HasReviewedIssues));
+        MarkAllVisibleReviewedCommand.NotifyCanExecuteChanged();
+        IgnoreVisibleTablesCommand.NotifyCanExecuteChanged();
+    }
+
+    private static bool IsQuickWinIssue(SchemaIssue issue)
+    {
+        if (issue.Suggestions.Count == 0)
+            return false;
+
+        return issue.Suggestions.Any(static suggestion =>
+            suggestion.SqlCandidates.Any(candidate =>
+                candidate.Visibility is CandidateVisibility.VisibleActionable or CandidateVisibility.VisibleReadOnly));
     }
 
     private void RebuildSeverityFilterFromFlags(bool applyFilters = true)
@@ -934,18 +1426,58 @@ public sealed class SchemaAnalysisPanelViewModel : ViewModelBase
 
 public sealed class SchemaIssueGroupViewModel
 {
-    public SchemaIssueGroupViewModel(SchemaIssueSeverity severity, string title, IReadOnlyList<SchemaIssue> items)
+    public SchemaIssueGroupViewModel(string key, string title, IReadOnlyList<SchemaIssue> items)
     {
-        Severity = severity;
+        Key = key;
         Title = title;
         Items = items;
     }
 
-    public SchemaIssueSeverity Severity { get; }
+    public string Key { get; }
 
     public string Title { get; }
 
     public int Count => Items.Count;
 
+    public string CountLabel => Count == 1 ? "1 issue" : $"{Count} issues";
+
     public IReadOnlyList<SchemaIssue> Items { get; }
+}
+
+public enum IssueSortMode
+{
+    Severity,
+    Confidence,
+    Frequency,
+    Table,
+}
+
+public enum IssueGroupMode
+{
+    Severity,
+    Table,
+    Type,
+    Schema,
+}
+
+public sealed record SchemaSavedView
+{
+    public required string Name { get; init; }
+    public bool IncludeInfo { get; init; }
+    public bool IncludeWarning { get; init; }
+    public bool IncludeCritical { get; init; }
+    public bool IncludeFkCatalogInconsistent { get; init; }
+    public bool IncludeMissingFk { get; init; }
+    public bool IncludeNamingConventionViolation { get; init; }
+    public bool IncludeLowSemanticName { get; init; }
+    public bool IncludeMissingRequiredComment { get; init; }
+    public bool IncludeNf1HintMultiValued { get; init; }
+    public bool IncludeNf2HintPartialDependency { get; init; }
+    public bool IncludeNf3HintTransitiveDependency { get; init; }
+    public double MinConfidenceFilter { get; init; }
+    public string TableTextFilter { get; init; } = string.Empty;
+    public bool QuickWinsOnly { get; init; }
+    public bool HideReviewed { get; init; }
+    public IssueSortMode SortMode { get; init; }
+    public IssueGroupMode GroupMode { get; init; }
 }

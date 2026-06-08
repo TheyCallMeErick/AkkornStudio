@@ -1,3 +1,5 @@
+using System;
+
 namespace AkkornStudio.UI.ViewModels;
 
 public sealed class SqlEditorExecutionTelemetry
@@ -7,6 +9,7 @@ public sealed class SqlEditorExecutionTelemetry
     public int FailureCount { get; init; }
     public long TotalDurationMs { get; init; }
     public IReadOnlyList<string> ErrorMessages { get; init; } = [];
+    public IReadOnlyDictionary<string, int> FailureByCategory { get; init; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
     public static SqlEditorExecutionTelemetry Empty() => new()
     {
@@ -15,5 +18,6 @@ public sealed class SqlEditorExecutionTelemetry
         FailureCount = 0,
         TotalDurationMs = 0,
         ErrorMessages = [],
+        FailureByCategory = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
     };
 }

@@ -30,9 +30,11 @@ public static partial class QueryHintSyntax
             return false;
         }
 
-        if (provider == DatabaseProvider.SQLite)
+        if (provider is DatabaseProvider.SQLite or DatabaseProvider.Postgres)
         {
-            validationError = "Query hints are not supported for this provider.";
+            validationError = provider == DatabaseProvider.Postgres
+                ? "Query hints are not supported for PostgreSQL."
+                : "Query hints are not supported for this provider.";
             return false;
         }
 
@@ -44,7 +46,6 @@ public static partial class QueryHintSyntax
         {
             DatabaseProvider.SqlServer => items.All(IsValidSqlServerOptionHint),
             DatabaseProvider.MySql => items.All(IsValidSelectCommentHint),
-            DatabaseProvider.Postgres => items.All(IsValidSelectCommentHint),
             _ => false,
         };
 
@@ -54,7 +55,7 @@ public static partial class QueryHintSyntax
             {
                 DatabaseProvider.SqlServer => "Query hints include unsupported SQL Server OPTION() entries.",
                 DatabaseProvider.MySql => "Query hints include unsupported MySQL SELECT comment hint entries.",
-                DatabaseProvider.Postgres => "Query hints include unsupported Postgres SELECT comment hint entries.",
+                DatabaseProvider.Postgres => "Query hints are not supported for PostgreSQL.",
                 _ => "Query hints are not supported for this provider.",
             };
             return false;

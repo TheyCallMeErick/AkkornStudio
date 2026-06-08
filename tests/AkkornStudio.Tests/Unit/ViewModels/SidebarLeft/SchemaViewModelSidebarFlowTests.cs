@@ -109,6 +109,90 @@ public class SchemaViewModelSidebarFlowTests
         Assert.Same(originalOrders, filteredOrders);
     }
 
+    [Fact]
+    public void FilterQuery_WithAtPrefix_FiltersTablesByName()
+    {
+        var vm = new SchemaViewModel();
+        vm.Metadata = BuildSampleMetadata();
+
+        vm.FilterQuery = "@orders";
+
+        Assert.Single(vm.Categories);
+        Assert.Equal("Tables", vm.Categories[0].Name);
+        Assert.Single(vm.Categories[0].Items);
+        Assert.Equal("orders", vm.Categories[0].Items[0].Name);
+    }
+
+    [Fact]
+    public void FilterQuery_WithHashPrefix_FiltersViewsOnly()
+    {
+        var vm = new SchemaViewModel();
+        vm.Metadata = BuildSampleMetadata();
+
+        vm.FilterQuery = "#orders";
+
+        Assert.Single(vm.Categories);
+        Assert.Equal("Views", vm.Categories[0].Name);
+        Assert.Single(vm.Categories[0].Items);
+        Assert.Equal("orders_view", vm.Categories[0].Items[0].Name);
+    }
+
+    [Fact]
+    public void FilterQuery_WithBangPrefix_SearchesColumnsOnly()
+    {
+        var vm = new SchemaViewModel();
+        vm.Metadata = BuildSampleMetadata();
+
+        vm.FilterQuery = "!customer";
+
+        Assert.Single(vm.Categories);
+        Assert.Equal("Tables", vm.Categories[0].Name);
+        Assert.Single(vm.Categories[0].Items);
+        Assert.Equal("orders", vm.Categories[0].Items[0].Name);
+    }
+
+    [Fact]
+    public void FilterQuery_WithSchemaShortcut_FiltersBySchema()
+    {
+        var vm = new SchemaViewModel();
+        vm.Metadata = BuildMultiSchemaMetadata();
+
+        vm.FilterQuery = "schema:sales";
+
+        Assert.Single(vm.Categories);
+        Assert.Equal("Tables", vm.Categories[0].Name);
+        Assert.Single(vm.Categories[0].Items);
+        Assert.Equal("invoices", vm.Categories[0].Items[0].Name);
+    }
+
+    [Fact]
+    public void FilterQuery_WithForeignKeyShortcut_ReturnsOnlyTablesWithForeignKeys()
+    {
+        var vm = new SchemaViewModel();
+        vm.Metadata = BuildMetadataWithShortcutSignals();
+
+        vm.FilterQuery = "fk";
+
+        Assert.Single(vm.Categories);
+        Assert.Equal("Tables", vm.Categories[0].Name);
+        Assert.Single(vm.Categories[0].Items);
+        Assert.Equal("order_items", vm.Categories[0].Items[0].Name);
+    }
+
+    [Fact]
+    public void FilterQuery_WithIndexedShortcut_ReturnsOnlyTablesWithIndexedColumns()
+    {
+        var vm = new SchemaViewModel();
+        vm.Metadata = BuildMetadataWithShortcutSignals();
+
+        vm.FilterQuery = "idx:code";
+
+        Assert.Single(vm.Categories);
+        Assert.Equal("Tables", vm.Categories[0].Name);
+        Assert.Single(vm.Categories[0].Items);
+        Assert.Equal("indexed_table", vm.Categories[0].Items[0].Name);
+    }
+
     private static DbMetadata BuildSampleMetadata()
     {
         var orders = new TableMetadata(
@@ -176,6 +260,46 @@ public class SchemaViewModelSidebarFlowTests
             "16",
             DateTimeOffset.UtcNow,
             [new SchemaMetadata("public", [orders]), new SchemaMetadata("sales", [invoices])],
+            []
+        );
+    }
+
+    private static DbMetadata BuildMetadataWithShortcutSignals()
+    {
+        var orderItems = new TableMetadata(
+            "public",
+            "order_items",
+            TableKind.Table,
+            10,
+            [
+                new ColumnMetadata("id", "int", "int", false, true, false, true, true, 1),
+                new ColumnMetadata("order_id", "int", "int", false, false, true, true, true, 2)
+            ],
+            [],
+            [],
+            []
+        );
+
+        var indexed = new TableMetadata(
+            "public",
+            "indexed_table",
+            TableKind.Table,
+            10,
+            [
+                new ColumnMetadata("id", "int", "int", false, true, false, true, true, 1),
+                new ColumnMetadata("code", "varchar", "varchar", false, false, false, false, true, 2)
+            ],
+            [],
+            [],
+            []
+        );
+
+        return new DbMetadata(
+            "sample_db",
+            DatabaseProvider.Postgres,
+            "16",
+            DateTimeOffset.UtcNow,
+            [new SchemaMetadata("public", [orderItems, indexed])],
             []
         );
     }

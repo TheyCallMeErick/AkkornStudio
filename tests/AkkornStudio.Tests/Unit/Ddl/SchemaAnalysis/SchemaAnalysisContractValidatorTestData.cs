@@ -30,8 +30,12 @@ internal static class SchemaAnalysisContractValidatorTestData
                 InfoCount: 0,
                 WarningCount: issues.Count,
                 CriticalCount: 0,
+                QuickWinCount: 0,
+                OverallScore: 0d,
                 PerRuleCount: new Dictionary<SchemaRuleCode, int> { [SchemaRuleCode.MISSING_FK] = issues.Count },
-                PerTableCount: new Dictionary<string, int> { ["public.orders"] = issues.Count }
+                PerTableCount: new Dictionary<string, int> { ["public.orders"] = issues.Count },
+                AreaScores: new Dictionary<string, double>(),
+                ObservedPatterns: new SchemaObservedPatterns(NamingConvention.MixedAllowed, null, null)
             )
         );
     }

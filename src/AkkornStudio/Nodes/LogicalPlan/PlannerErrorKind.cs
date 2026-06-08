@@ -11,4 +11,5 @@ public enum PlannerErrorKind
     CyclicDependency = 6,
     OutputSourceAmbiguous = 7,
     GroupByImplicit = 8,
+    InvalidJoinOperator = 9,
 }

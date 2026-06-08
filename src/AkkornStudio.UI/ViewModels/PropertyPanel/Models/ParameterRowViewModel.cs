@@ -18,8 +18,8 @@ public sealed class ParameterRowViewModel(NodeParameter param, string? currentVa
     public string? DefaultValue { get; } = param.DefaultValue;
 
     public bool IsText => Kind is ParameterKind.Text or ParameterKind.JsonPath;
-    public bool IsPlainText => IsText && !HasSuggestedValues;
-    public bool IsTextWithSuggestions => IsText && HasSuggestedValues;
+    public bool IsPlainText => IsText;
+    public bool IsTextWithSuggestions => false;
     public bool IsNumber => Kind == ParameterKind.Number;
     public bool IsBoolean => Kind == ParameterKind.Boolean;
     public bool IsEnum => Kind is ParameterKind.Enum or ParameterKind.CastType;

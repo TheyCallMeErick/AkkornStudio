@@ -13,13 +13,19 @@ public sealed class AliasGenerator
         if (_used.Add(seed))
             return seed;
 
-        for (int index = 1; index < 1000; index++)
+        int index = 1;
+        while (true)
         {
             string candidate = $"{seed}_{index}";
             if (_used.Add(candidate))
                 return candidate;
-        }
 
-        throw new InvalidOperationException($"Cannot generate unique alias for '{seed}'.");
+            index++;
+        }
+    }
+
+    public void Reset()
+    {
+        _used.Clear();
     }
 }

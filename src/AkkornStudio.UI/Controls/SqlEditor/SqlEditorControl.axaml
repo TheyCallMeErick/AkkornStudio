@@ -15,23 +15,19 @@
       <Setter Property="Foreground" Value="{StaticResource StatusErrorBrush}"/>
     </Style>
     <Style Selector="Border.sql-connection-badge">
-      <Setter Property="Padding" Value="8,4"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
-      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
       <Setter Property="MaxWidth" Value="300"/>
     </Style>
-    <Style Selector="Button.sql-primary-runstop">
-      <Setter Property="Padding" Value="10,2"/>
-      <Setter Property="MinHeight" Value="24"/>
-      <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}"/>
+    <Style Selector="Button.sql-connection-launch">
+      <Setter Property="Padding" Value="2,0"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="Button.sql-connection-launch:pointerover">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="RenderTransform" Value="scale(1.01)"/>
     </Style>
     <Style Selector="Button.sql-tool-action">
-      <Setter Property="MinHeight" Value="24"/>
-      <Setter Property="Padding" Value="10,2"/>
-      <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}"/>
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
-      <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
       <Setter Property="Transitions">
         <Transitions>
@@ -69,14 +65,23 @@
 
     <Grid Grid.Row="1"
           Margin="10,8,10,0"
-          ColumnDefinitions="Auto,*">
+          ColumnDefinitions="Auto,Auto,*">
       <Button Grid.Column="0"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="0"
+              Classes="secondary compact"
+              IsVisible="{Binding HasBackNavigationContext}"
+              Command="{Binding NavigateBackCommand}"
+              Margin="0,0,8,0">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <mi:MaterialIcon Kind="ArrowLeft" Width="12" Height="12" VerticalAlignment="Center"/>
+          <TextBlock Text="{Binding BackNavigationLabel}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </Button>
+
+      <Button Grid.Column="1"
+              Classes="icon-ghost sql-connection-launch"
               Command="{Binding OpenConnectionSwitcherCommand}">
         <Grid>
-          <Border Classes="sql-connection-badge"
+          <Border Classes="badge sql-connection-badge"
                   IsVisible="{Binding IsNeutralConnectionContext}"
                   Background="{StaticResource Bg2Brush}">
             <TextBlock Text="{Binding ActiveConnectionContextBadgeText}"
@@ -84,7 +89,7 @@
                        Foreground="{StaticResource TextPrimaryBrush}"
                        FontSize="{StaticResource FontSizeCaption}"/>
           </Border>
-          <Border Classes="sql-connection-badge"
+          <Border Classes="badge sql-connection-badge"
                   IsVisible="{Binding IsProductionConnectionContext}"
                   Background="#33E16174">
             <TextBlock Text="{Binding ActiveConnectionContextBadgeText}"
@@ -92,7 +97,7 @@
                        Foreground="{StaticResource TextPrimaryBrush}"
                        FontSize="{StaticResource FontSizeCaption}"/>
           </Border>
-          <Border Classes="sql-connection-badge"
+          <Border Classes="badge sql-connection-badge"
                   IsVisible="{Binding IsStagingConnectionContext}"
                   Background="#33D9A441">
             <TextBlock Text="{Binding ActiveConnectionContextBadgeText}"
@@ -100,7 +105,7 @@
                        Foreground="{StaticResource TextPrimaryBrush}"
                        FontSize="{StaticResource FontSizeCaption}"/>
           </Border>
-          <Border Classes="sql-connection-badge"
+          <Border Classes="badge sql-connection-badge"
                   IsVisible="{Binding HasNoActiveConnection}"
                   Background="{StaticResource Bg2Brush}">
             <TextBlock Text="{Binding ActiveConnectionContextBadgeText}"
@@ -114,12 +119,8 @@
 
     <Grid Grid.Row="2" ClipToBounds="True">
       <Border Grid.Row="0"
+              Classes="surface-panel"
               Margin="10,10,10,12"
-              Background="{StaticResource Bg0Brush}"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="1"
-              CornerRadius="{StaticResource RadiusLG}"
-              BoxShadow="{StaticResource PanelShadow}"
               ClipToBounds="True">
         <ae:TextEditor x:Name="SqlTextEditor"
                        FontFamily="{StaticResource MonoFont}"
@@ -133,23 +134,20 @@
 
       <Border Grid.Row="0"
               x:Name="GoToLineOverlay"
+              Classes="surface-floating"
               IsVisible="False"
               HorizontalAlignment="Right"
               VerticalAlignment="Top"
               Margin="22,18,22,0"
               Padding="10,8"
-              MinWidth="210"
-              Background="{StaticResource Bg1Brush}"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="1"
-              CornerRadius="{StaticResource RadiusMD}"
-              BoxShadow="{StaticResource PanelShadow}">
+              MinWidth="210">
         <StackPanel Spacing="6">
           <TextBlock x:Name="GoToLineLabel"
                      Text="Ir para linha"
                      FontSize="{StaticResource FontSizeCaption}"
                      Foreground="{StaticResource TextSecondaryBrush}"/>
           <TextBox x:Name="GoToLineInput"
+                   Classes="field"
                    KeyDown="GoToLineInput_OnKeyDown"
                    MinWidth="140"
                    HorizontalAlignment="Stretch"
@@ -157,48 +155,130 @@
         </StackPanel>
       </Border>
 
-      <Panel IsVisible="{Binding ShouldShowResultsSheet}"
-             ZIndex="40">
+      <Panel IsVisible="{Binding IsConnectionSwitcherOpen}"
+             ZIndex="60">
         <Border Background="{StaticResource MacroScrimBrush}"
-                PointerPressed="ResultsModalBackdrop_OnPointerPressed"
+                PointerPressed="ConnectionSwitcherBackdrop_OnPointerPressed"
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Stretch"/>
 
-        <Border Width="1040"
-                MaxWidth="1040"
-                Height="640"
-                MaxHeight="700"
-                MinHeight="340"
-                Background="{StaticResource Bg1Brush}"
-                BorderBrush="{StaticResource BorderSubtleBrush}"
-                BorderThickness="1"
-                CornerRadius="{StaticResource RadiusLG}"
-                BoxShadow="{StaticResource PanelShadow}"
+        <Border Width="560"
+                Classes="surface-floating"
+                MaxWidth="620"
+                MinHeight="360"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 ClipToBounds="True">
-          <Grid RowDefinitions="Auto,*">
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,12,14,8">
+          <Grid RowDefinitions="Auto,*,Auto">
+            <Grid Grid.Row="0"
+                  Classes="surface-floating-header"
+                  ColumnDefinitions="*,Auto"
+                  Margin="14,12,14,8">
               <StackPanel Orientation="Horizontal" Spacing="8">
-                <mi:MaterialIcon Kind="Table" Width="16" Height="16" VerticalAlignment="Center" Foreground="{StaticResource AccentBlueBrush}"/>
-                <TextBlock Text="{Binding [sqlEditor.results.title], Source={x:Static loc:LocalizationService.Instance}}"
-                           HorizontalAlignment="Left"
-                           Foreground="{StaticResource TextPrimaryBrush}"
-                           FontWeight="{StaticResource FontWeightTitle}"
+                <mi:MaterialIcon Kind="DatabaseCogOutline"
+                                 Width="16"
+                                 Height="16"
+                                 VerticalAlignment="Center"
+                                 Foreground="{StaticResource AccentBlueBrush}"/>
+                <TextBlock Text="Trocar conexão SQL"
                            FontSize="{StaticResource FontSizeBody}"
+                           FontWeight="{StaticResource FontWeightTitle}"
                            VerticalAlignment="Center"/>
               </StackPanel>
 
               <Button Grid.Column="1"
-                      Width="28"
-                      Height="28"
-                      Padding="0"
-                      Command="{Binding CloseResultsSheetCommand}">
+                      Classes="icon-ghost"
+                      Command="{Binding CloseConnectionSwitcherCommand}">
                 <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
               </Button>
             </Grid>
 
-            <ctrl:SqlEditorResultPanel Grid.Row="1" Margin="12,0,12,12"/>
+            <ScrollViewer Grid.Row="1"
+                          Margin="14,6,14,0"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="10">
+                <Border Classes="callout-subtle">
+                  <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                    <TextBlock Grid.Row="0"
+                               Text="Conexão"
+                               Classes="section-label"/>
+                    <TextBlock Grid.Column="1"
+                               Grid.Row="0"
+                               Text="{Binding CurrentConnectionProfileLabel}"
+                               FontWeight="{StaticResource FontWeightStrong}"/>
+
+                    <TextBlock Grid.Row="1" Text="Provider" Classes="section-label"/>
+                    <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding CurrentConnectionProviderLabel}"/>
+
+                    <TextBlock Grid.Row="2" Text="Banco" Classes="section-label"/>
+                    <TextBlock Grid.Column="1" Grid.Row="2" Text="{Binding CurrentConnectionDatabaseLabel}"/>
+
+                    <TextBlock Grid.Row="3" Text="Host" Classes="section-label"/>
+                    <TextBlock Grid.Column="1" Grid.Row="3" Text="{Binding CurrentConnectionHostLabel}"/>
+
+                    <TextBlock Grid.Row="4" Text="Usuário / URL" Classes="section-label"/>
+                    <StackPanel Grid.Column="1" Grid.Row="4" Spacing="2">
+                      <TextBlock Text="{Binding CurrentConnectionUserLabel}"/>
+                      <TextBlock Text="{Binding CurrentConnectionUrlLabel}"
+                                 FontFamily="{StaticResource MonoFont}"
+                                 FontSize="{StaticResource FontSizeCaption}"
+                                 Foreground="{StaticResource TextMutedBrush}"
+                                 TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+
+                <TextBlock Text="Conexão" Classes="section-label"/>
+                <ComboBox ItemsSource="{Binding ConnectionSwitcherProfiles}"
+                          SelectedItem="{Binding ConnectionSwitcherSelectedProfile}"
+                          HorizontalAlignment="Stretch">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SqlEditorConnectionProfileOption">
+                      <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+                        <mi:MaterialIcon Kind="DatabaseOutline"
+                                         Width="14"
+                                         Height="14"
+                                         Margin="0,0,8,0"
+                                         VerticalAlignment="Center"
+                                         Foreground="{StaticResource AccentPrimaryBrush}"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding DisplayName}"
+                                   FontWeight="{StaticResource FontWeightStrong}"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Grid.Column="1"
+                                   Grid.Row="1"
+                                   Text="{Binding Provider}"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="{StaticResource FontSizeCaption}"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+
+                <StackPanel IsVisible="{Binding CanChangeDatabaseInSwitcher}" Spacing="6">
+                  <TextBlock Text="Banco/Catalog" Classes="section-label"/>
+                  <ComboBox ItemsSource="{Binding ConnectionSwitcherDatabases}"
+                            SelectedItem="{Binding ConnectionSwitcherSelectedDatabase}"
+                            HorizontalAlignment="Stretch"/>
+                </StackPanel>
+              </StackPanel>
+            </ScrollViewer>
+
+            <Border Grid.Row="2"
+                    Classes="surface-floating-footer"
+                    Padding="14,10">
+              <StackPanel Orientation="Horizontal"
+                          HorizontalAlignment="Right"
+                          Spacing="8">
+                <Button Classes="secondary compact"
+                        Command="{Binding CloseConnectionSwitcherCommand}"
+                        Content="Cancelar"/>
+                <Button Classes="primary compact"
+                        Command="{Binding ApplyConnectionSwitcherCommand}"
+                        Content="Aplicar"/>
+              </StackPanel>
+            </Border>
           </Grid>
         </Border>
       </Panel>
@@ -212,7 +292,7 @@
       <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
             VerticalAlignment="Center">
         <Button Grid.Column="0"
-                Classes="sql-primary-runstop"
+                Classes="secondary compact"
                 Margin="0,0,10,0"
                 Content="{Binding ExecuteOrCancelButtonText}"
                 IsEnabled="{Binding CanExecuteOrCancel}"
@@ -220,7 +300,7 @@
                 Click="ExecuteOrCancelPrimaryButton_Click"/>
 
         <Button Grid.Column="1"
-                Classes="sql-tool-action explain"
+                Classes="secondary compact sql-tool-action explain"
                 Margin="0,0,8,0"
                 IsEnabled="{Binding IsExplainRunning, Converter={x:Static BoolConverters.Not}}"
                 Click="ExplainButton_Click">
@@ -231,7 +311,7 @@
         </Button>
 
         <Button Grid.Column="2"
-                Classes="sql-tool-action benchmark"
+                Classes="secondary compact sql-tool-action benchmark"
                 Margin="0,0,10,0"
                 IsEnabled="{Binding IsBenchmarkRunning, Converter={x:Static BoolConverters.Not}}"
                 Click="BenchmarkButton_Click">
@@ -242,13 +322,13 @@
         </Button>
 
         <Button Grid.Column="3"
-                Classes="sql-primary-runstop"
+                Classes="secondary compact"
                 Margin="0,0,8,0"
                 Content="Executar tudo"
                 Click="ExecuteAllButton_Click"/>
 
         <Button Grid.Column="4"
-                Classes="sql-primary-runstop"
+                Classes="secondary compact"
                 Margin="0,0,10,0"
                 Content="Formatar SQL"
                 Click="FormatSqlButton_Click"/>
@@ -296,20 +376,15 @@
                    Text="{Binding ResultSummaryText}"/>
 
         <Button Grid.Column="10"
+                Classes="secondary compact"
                 Margin="0,0,10,0"
                 IsVisible="{Binding CanReopenResultsSheet}"
                 Command="{Binding ReopenResultsSheetCommand}"
-                Padding="10,2"
-                MinHeight="24"
-                FontSize="{StaticResource FontSizeCaption}"
                 Content="{Binding RestoreResultsButtonText}"/>
 
         <Button Grid.Column="11"
+                Classes="icon-ghost"
                 Margin="0,0,10,0"
-                Background="Transparent"
-                BorderBrush="Transparent"
-                BorderThickness="0"
-                Padding="0"
                 Click="CursorPositionButton_Click"
                 ToolTip.Tip="{Binding CursorPositionTooltipText}">
           <TextBlock VerticalAlignment="Center"
@@ -339,13 +414,47 @@
                                 Margin="0,30,0,0"/>
 
     <Border Grid.Row="3"
+            Classes="callout-subtle warning"
+            IsVisible="{Binding HasPendingQueryParameterPrompt}"
+            Margin="0,30,0,0"
+            Padding="10,8">
+      <StackPanel Spacing="8">
+        <TextBlock Text="{Binding PendingQueryParameterPromptMessage}"
+                   FontWeight="{StaticResource FontWeightTitle}"
+                   Foreground="{StaticResource TextPrimaryBrush}"/>
+        <ItemsControl ItemsSource="{Binding PendingQueryParameters}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="180,*"
+                    ColumnSpacing="8"
+                    Margin="0,0,0,4">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding Name}"
+                           VerticalAlignment="Center"
+                           FontFamily="{StaticResource MonoFont}"/>
+                <TextBox Grid.Column="1"
+                         Text="{Binding InputValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         Watermark="valor"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="primary compact"
+                  Command="{Binding ConfirmPendingQueryParametersCommand}"
+                  Content="Executar com parâmetros"/>
+          <Button Classes="secondary compact"
+                  Command="{Binding CancelPendingQueryParametersCommand}"
+                  Content="Cancelar"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="3"
+            Classes="callout-subtle warning"
             IsVisible="{Binding HasPendingCloseTabConfirmation}"
             Margin="0,30,0,0"
-            Padding="10,8"
-            Background="{StaticResource Bg0Brush}"
-            BorderBrush="{StaticResource StatusWarningBrush}"
-            BorderThickness="1"
-            CornerRadius="{StaticResource RadiusMD}">
+            Padding="10,8">
       <StackPanel Spacing="6">
         <TextBlock Text="{Binding PendingCloseTabMessage}"
                    FontWeight="{StaticResource FontWeightTitle}"
@@ -355,6 +464,7 @@
                   Classes="Danger"
                   Command="{Binding ConfirmPendingCloseTabCommand}"/>
           <Button Content="{Binding [sqlEditor.tab.keepTab], Source={x:Static loc:LocalizationService.Instance}}"
+                  Classes="secondary compact"
                   Command="{Binding CancelPendingCloseTabCommand}"/>
         </StackPanel>
       </StackPanel>

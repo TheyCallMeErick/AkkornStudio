@@ -123,6 +123,24 @@ public class SqlDialectTests
     }
 
     [Fact]
+    public void MySqlDialect_EmitCreateIndex_ExpressionKey_UsesSingleParenthesis()
+    {
+        var dialect = new MySqlDialect();
+
+        string sql = dialect.EmitCreateIndex(
+            schemaName: "public",
+            tableName: "orders",
+            indexName: "ix_orders_lower_number",
+            isUnique: false,
+            keyColumns: [new AkkornStudio.Ddl.DdlIndexKeyExpr(ExpressionSql: "LOWER(order_number)")],
+            includeColumns: [],
+            ifNotExists: false);
+
+        Assert.Contains("((LOWER(order_number)))", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("(((LOWER(order_number))))", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SqlServerDialect_SpecificBehaviors()
     {
         // Arrange
@@ -136,6 +154,27 @@ public class SqlDialectTests
     }
 
     [Fact]
+    public void SqlServerDialect_FormatPagination_WithOffsetAndNoLimit_StillEmitsFetchClause()
+    {
+        var dialect = new SqlServerDialect();
+
+        string pagination = dialect.FormatPagination(limit: null, offset: 25);
+
+        Assert.Equal($"OFFSET 25 ROWS FETCH NEXT {long.MaxValue} ROWS ONLY", pagination);
+    }
+
+    [Fact]
+    public void SqlServerDialect_GetColumnsQuery_UsesPrimaryKeyConstraintInsteadOfIdentityFlag()
+    {
+        var dialect = new SqlServerDialect();
+
+        string sql = dialect.GetColumnsQuery();
+
+        Assert.Contains("CONSTRAINT_TYPE = 'PRIMARY KEY'", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("IsIdentity", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ApplyQueryHints_SqlServer_AppendsOptionClause()
     {
         var dialect = new SqlServerDialect();
@@ -146,16 +185,24 @@ public class SqlDialectTests
         Assert.Contains("MAXDOP 1", sql.ToUpperInvariant());
     }
 
-    [Theory]
-    [InlineData(DatabaseProvider.Postgres)]
-    [InlineData(DatabaseProvider.MySql)]
-    public void ApplyQueryHints_SelectCommentDialects_InjectComment(DatabaseProvider provider)
+    [Fact]
+    public void ApplyQueryHints_MySql_InjectsSelectCommentHint()
     {
-        ISqlDialect dialect = CreateDialect(provider);
+        ISqlDialect dialect = CreateDialect(DatabaseProvider.MySql);
 
         string sql = dialect.ApplyQueryHints("SELECT id FROM users", "BKA(users)");
 
         Assert.Contains("/*+", sql);
+    }
+
+    [Fact]
+    public void ApplyQueryHints_Postgres_IsNoOp()
+    {
+        ISqlDialect dialect = CreateDialect(DatabaseProvider.Postgres);
+
+        string sql = dialect.ApplyQueryHints("SELECT id FROM users;", "SeqScan(users)");
+
+        Assert.Equal("SELECT id FROM users", sql);
     }
 
     [Fact]
@@ -168,7 +215,92 @@ public class SqlDialectTests
         Assert.Equal("SELECT * FROM users", sql);
     }
 
+    [Fact]
+    public void SqliteDialect_AlterColumnType_ThrowsExplicitNotSupportedError()
+    {
+        var dialect = new SqliteDialect();
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            dialect.EmitAlterTableAlterColumnType("main", "orders", "total", "DECIMAL(10,2)", true));
+
+        Assert.Contains("does not support ALTER COLUMN TYPE", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Rebuild the table", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SqliteDialect_DropColumn_WithIfExists_ThrowsExplicitNotSupportedError()
+    {
+        var dialect = new SqliteDialect();
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            dialect.EmitAlterTableDropColumn("main", "orders", "total", ifExists: true));
+
+        Assert.Contains("does not support IF EXISTS", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SqliteDialect_DropColumn_WithoutIfExists_EmitsDropColumnStatement()
+    {
+        var dialect = new SqliteDialect();
+
+        string sql = dialect.EmitAlterTableDropColumn("main", "orders", "total", ifExists: false);
+
+        Assert.Equal("ALTER TABLE \"orders\" DROP COLUMN \"total\";", sql);
+    }
+
+    [Fact]
+    public void SqlServerDialect_ObjectIdAndRenameStatements_EscapeSingleQuotesInIdentifiers()
+    {
+        var dialect = new SqlServerDialect();
+
+        string createTable = dialect.EmitCreateTable(
+            "dbo'unsafe",
+            "users'unsafe",
+            ifNotExists: true,
+            columnFragments: ["[id] INT NOT NULL"],
+            constraintFragments: []);
+        string renameColumn = dialect.EmitAlterTableRenameColumn(
+            "dbo",
+            "users",
+            "old'name",
+            "new'name");
+
+        Assert.Contains("OBJECT_ID(N'dbo''unsafe.users''unsafe', N'U')", createTable, StringComparison.Ordinal);
+        Assert.Contains("sp_rename N'dbo.users.old''name', N'new''name', 'COLUMN'", renameColumn, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(DatabaseProvider.Postgres)]
+    [InlineData(DatabaseProvider.MySql)]
+    [InlineData(DatabaseProvider.SqlServer)]
+    [InlineData(DatabaseProvider.SQLite)]
+    public void EmitCreateTableColumn_WhenDataTypeIsBlank_ThrowsExplicitError(DatabaseProvider provider)
+    {
+        ISqlDialect dialect = CreateDialect(provider);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            dialect.EmitCreateTableColumn("id", "", isNullable: false));
+
+        Assert.Contains("data type is required", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void WrapWithPreviewLimit_TrailingLineComment_DoesNotCommentOutLimitOrWrapper()
+    {
+        const string sql = "SELECT 1\n-- comentário final";
+
+        string postgresWrapped = new PostgresDialect().WrapWithPreviewLimit(sql, 10);
+        string mySqlWrapped = new MySqlDialect().WrapWithPreviewLimit(sql, 10);
+        string sqlServerWrapped = new SqlServerDialect().WrapWithPreviewLimit(sql, 10);
+        string sqliteWrapped = new SqliteDialect().WrapWithPreviewLimit(sql, 10);
+
+        Assert.Contains("\nLIMIT 10", postgresWrapped, StringComparison.Ordinal);
+        Assert.Contains("\n) AS __preview", mySqlWrapped, StringComparison.Ordinal);
+        Assert.Contains("\n) AS __preview", sqlServerWrapped, StringComparison.Ordinal);
+        Assert.Contains("\n) AS __preview", sqliteWrapped, StringComparison.Ordinal);
+    }
 
     private static ISqlDialect CreateDialect(DatabaseProvider provider) =>
         provider switch

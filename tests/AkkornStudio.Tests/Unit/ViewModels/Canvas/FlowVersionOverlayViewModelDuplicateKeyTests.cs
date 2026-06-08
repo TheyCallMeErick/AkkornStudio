@@ -113,6 +113,32 @@ public class FlowVersionOverlayViewModelDuplicateKeyTests
     }
 
     [Fact]
+    public void FlowVersionOverlayViewModel_ScopesVersionsByCurrentFilePath()
+    {
+        string projectA = Path.Combine(Path.GetTempPath(), $"akkorn-a-{Guid.NewGuid():N}.akkn");
+        string projectB = Path.Combine(Path.GetTempPath(), $"akkorn-b-{Guid.NewGuid():N}.akkn");
+        var canvasA = new CanvasViewModel { CurrentFilePath = projectA };
+        var canvasB = new CanvasViewModel { CurrentFilePath = projectB };
+        var vmA = new FlowVersionOverlayViewModel(canvasA);
+        var vmB = new FlowVersionOverlayViewModel(canvasB);
+
+        vmA.DeleteAllVersions();
+        vmB.DeleteAllVersions();
+
+        vmA.CreateCheckpoint("Project A checkpoint");
+        vmB.CreateCheckpoint("Project B checkpoint");
+
+        Assert.Single(vmA.Versions);
+        Assert.Single(vmB.Versions);
+        Assert.Equal("Project A checkpoint", vmA.Versions[0].Label);
+        Assert.Equal("Project B checkpoint", vmB.Versions[0].Label);
+        Assert.NotEqual(vmA.Versions[0].Id, vmB.Versions[0].Id);
+
+        vmA.DeleteAllVersions();
+        vmB.DeleteAllVersions();
+    }
+
+    [Fact]
     public void FlowVersionOverlayViewModel_DiffModeToggle()
     {
         var canvas = new CanvasViewModel();

@@ -4,5 +4,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <RestorePackagesPath Condition="'$(RestorePackagesPath)' == '' and '$(UserProfile)' != ''">$(UserProfile)\.nuget\packages</RestorePackagesPath>
+    <NuGetAudit>false</NuGetAudit>
+    <RestoreDisableParallel>true</RestoreDisableParallel>
+    <BuildInParallel>false</BuildInParallel>
   </PropertyGroup>
 </Project>

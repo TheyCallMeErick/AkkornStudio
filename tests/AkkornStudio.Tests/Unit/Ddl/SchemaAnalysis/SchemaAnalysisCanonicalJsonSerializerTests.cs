@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AkkornStudio.Ddl.SchemaAnalysis.Application.Processing;
 using AkkornStudio.Ddl.SchemaAnalysis.Domain.Contracts;
 using AkkornStudio.Ddl.SchemaAnalysis.Domain.Enums;
 using AkkornStudio.Ddl.SchemaAnalysis.Infrastructure.Serialization;
@@ -158,16 +159,20 @@ public sealed class SchemaAnalysisCanonicalJsonSerializerTests
                 InfoCount: 0,
                 WarningCount: 1,
                 CriticalCount: 0,
+                QuickWinCount: 0,
+                OverallScore: 0d,
                 PerRuleCount: new Dictionary<SchemaRuleCode, int>
                 {
-                    [SchemaRuleCode.MISSING_FK] = 1,
-                    [SchemaRuleCode.NAMING_CONVENTION_VIOLATION] = 0,
+                  [SchemaRuleCode.MISSING_FK] = 1,
+                  [SchemaRuleCode.NAMING_CONVENTION_VIOLATION] = 0,
                 },
                 PerTableCount: new Dictionary<string, int>
                 {
-                    ["public.orders"] = 1,
-                    ["public.customers"] = 0,
-                }
+                  ["public.orders"] = 1,
+                  ["public.customers"] = 0,
+                },
+                AreaScores: new Dictionary<string, double>(),
+                ObservedPatterns: new SchemaObservedPatterns(NamingConvention.MixedAllowed, null, null)
             )
         );
     }

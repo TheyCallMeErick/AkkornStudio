@@ -1,5 +1,8 @@
 using Avalonia;
 using AkkornStudio.Core;
+using AkkornStudio.Ddl.SchemaAnalysis.Application.Processing;
+using AkkornStudio.Ddl.SchemaAnalysis.Domain.Contracts;
+using AkkornStudio.Ddl.SchemaAnalysis.Domain.Enums;
 using AkkornStudio.Metadata;
 using AkkornStudio.Nodes;
 using AkkornStudio.UI.Services.Localization;
@@ -81,16 +84,16 @@ public class LiveDdlBarViewModelTests
     }
 
     [Fact]
-    public async Task AnalyzeSchemaStructureAsync_WhenMetadataMissing_SetsIdleState()
+    public async Task AnalyzeSchemaStructureAsync_WhenMetadataMissing_SetsEmptyState()
     {
         var ddlCanvas = new CanvasViewModel(null, null, null, null, new DdlDomainStrategy());
         LiveDdlBarViewModel liveDdl = Assert.IsType<LiveDdlBarViewModel>(ddlCanvas.LiveDdl);
 
         await liveDdl.AnalyzeSchemaStructureAsync();
 
-        Assert.Equal(SchemaAnalysisViewState.Idle, liveDdl.SchemaAnalysisPanel.State);
+        Assert.Equal(SchemaAnalysisViewState.Empty, liveDdl.SchemaAnalysisPanel.State);
         Assert.Equal(
-            L("preview.schemaAnalysis.state.metadataUnavailable", "Metadata indisponível para análise estrutural."),
+            L("preview.schemaAnalysis.state.empty", "Nenhum problema estrutural infer�vel foi detectado."),
             liveDdl.SchemaAnalysisPanel.StateMessage
         );
     }
@@ -131,6 +134,84 @@ public class LiveDdlBarViewModelTests
         await liveDdl.AnalyzeSchemaStructureAsync(cts.Token);
 
         Assert.Equal(SchemaAnalysisViewState.Cancelled, liveDdl.SchemaAnalysisPanel.State);
+    }
+
+    [Fact]
+    public void SchemaAnalysisPanel_ApplyToCanvas_RenamesTableForNamingConventionIssue()
+    {
+        var ddlCanvas = new CanvasViewModel(null, null, null, null, new DdlDomainStrategy());
+        var table = new NodeViewModel(NodeDefinitionRegistry.Get(NodeType.TableDefinition), new Point(0, 0));
+        table.Parameters["SchemaName"] = "public";
+        table.Parameters["TableName"] = "SalesOrder";
+        ddlCanvas.Nodes.Add(table);
+
+        LiveDdlBarViewModel liveDdl = Assert.IsType<LiveDdlBarViewModel>(ddlCanvas.LiveDdl);
+        SchemaIssue issue = CreateIssue(
+            ruleCode: SchemaRuleCode.NAMING_CONVENTION_VIOLATION,
+            targetType: SchemaTargetType.Table,
+            tableName: "SalesOrder",
+            columnName: null,
+            evidence:
+            [
+                new SchemaEvidence(EvidenceKind.MetadataFact, "namingConvention", "SnakeCase", 1.0d),
+            ]);
+
+        liveDdl.SchemaAnalysisPanel.ApplyResult(CreateResult([issue]));
+        liveDdl.SchemaAnalysisPanel.ApplyToCanvasCommand.Execute(null);
+
+        Assert.Equal("sales_order", table.Parameters["TableName"]);
+    }
+
+    [Fact]
+    public void SchemaAnalysisPanel_ApplyToCanvas_AppliesCommentCandidateToColumn()
+    {
+        var ddlCanvas = new CanvasViewModel(null, null, null, null, new DdlDomainStrategy());
+
+        var table = new NodeViewModel(NodeDefinitionRegistry.Get(NodeType.TableDefinition), new Point(0, 0));
+        table.Parameters["SchemaName"] = "public";
+        table.Parameters["TableName"] = "orders";
+
+        var column = new NodeViewModel(NodeDefinitionRegistry.Get(NodeType.ColumnDefinition), new Point(0, 0));
+        column.Parameters["ColumnName"] = "status";
+        column.Parameters["DataType"] = "text";
+
+        ddlCanvas.Nodes.Add(table);
+        ddlCanvas.Nodes.Add(column);
+        ddlCanvas.Connections.Add(new ConnectionViewModel(
+            column.OutputPins.First(p => p.Name == "column"),
+            new Point(0, 0),
+            new Point(10, 10))
+        { ToPin = table.InputPins.First(p => p.Name == "column") });
+
+        LiveDdlBarViewModel liveDdl = Assert.IsType<LiveDdlBarViewModel>(ddlCanvas.LiveDdl);
+        SqlFixCandidate candidate = new(
+            CandidateId: "c-1",
+            Provider: DatabaseProvider.Postgres,
+            Title: "Comment",
+            Sql: "COMMENT ON COLUMN \"public\".\"orders\".\"status\" IS 'Current order status';",
+            PreconditionsSql: [],
+            Safety: SqlCandidateSafety.NonDestructive,
+            Visibility: CandidateVisibility.VisibleActionable,
+            IsAutoApplicable: true,
+            Notes: []);
+        SchemaSuggestion suggestion = new(
+            SuggestionId: "s-1",
+            Title: "Add comment",
+            Description: "Apply comment to column",
+            Confidence: 0.9d,
+            SqlCandidates: [candidate]);
+        SchemaIssue issue = CreateIssue(
+            ruleCode: SchemaRuleCode.MISSING_REQUIRED_COMMENT,
+            targetType: SchemaTargetType.Column,
+            tableName: "orders",
+            columnName: "status",
+            suggestions: [suggestion]);
+
+        liveDdl.SchemaAnalysisPanel.ApplyResult(CreateResult([issue]));
+        liveDdl.SchemaAnalysisPanel.SelectedSqlCandidate = candidate;
+        liveDdl.SchemaAnalysisPanel.ApplyToCanvasCommand.Execute(null);
+
+        Assert.Equal("Current order status", column.Parameters["Comment"]);
     }
 
     private static DbMetadata CreateMetadata()
@@ -184,4 +265,59 @@ public class LiveDdlBarViewModelTests
         string value = LocalizationService.Instance[key];
         return string.Equals(value, key, StringComparison.Ordinal) ? fallback : value;
     }
+
+    private static SchemaAnalysisResult CreateResult(IReadOnlyList<SchemaIssue> issues)
+    {
+        return new SchemaAnalysisResult(
+            AnalysisId: "analysis",
+            Status: SchemaAnalysisStatus.Completed,
+            Provider: DatabaseProvider.Postgres,
+            DatabaseName: "db",
+            StartedAtUtc: DateTimeOffset.UtcNow,
+            CompletedAtUtc: DateTimeOffset.UtcNow,
+            DurationMs: 10,
+            MetadataFingerprint: "fingerprint",
+            ProfileContentHash: "profile",
+            ProfileVersion: 1,
+            PartialState: new SchemaAnalysisPartialState(false, "NONE", 1, 1),
+            Issues: issues,
+            Diagnostics: [],
+            Summary: new SchemaAnalysisSummary(
+                TotalIssues: issues.Count,
+                InfoCount: issues.Count(i => i.Severity == SchemaIssueSeverity.Info),
+                WarningCount: issues.Count(i => i.Severity == SchemaIssueSeverity.Warning),
+                CriticalCount: issues.Count(i => i.Severity == SchemaIssueSeverity.Critical),
+                QuickWinCount: 0,
+                OverallScore: 0d,
+                PerRuleCount: new Dictionary<SchemaRuleCode, int>(),
+                PerTableCount: new Dictionary<string, int>(),
+                AreaScores: new Dictionary<string, double>(),
+                ObservedPatterns: new SchemaObservedPatterns(NamingConvention.MixedAllowed, null, null)));
+    }
+
+    private static SchemaIssue CreateIssue(
+        SchemaRuleCode ruleCode,
+        SchemaTargetType targetType,
+        string tableName,
+        string? columnName,
+        IReadOnlyList<SchemaEvidence>? evidence = null,
+        IReadOnlyList<SchemaSuggestion>? suggestions = null)
+    {
+        return new SchemaIssue(
+            IssueId: Guid.NewGuid().ToString("N"),
+            RuleCode: ruleCode,
+            Severity: SchemaIssueSeverity.Warning,
+            Confidence: 0.95d,
+            TargetType: targetType,
+            SchemaName: "public",
+            TableName: tableName,
+            ColumnName: columnName,
+            ConstraintName: null,
+            Title: "Issue",
+            Message: "Issue message",
+            Evidence: evidence ?? [new SchemaEvidence(EvidenceKind.MetadataFact, "k", "v", 1.0d)],
+            Suggestions: suggestions ?? [],
+            IsAmbiguous: false);
+    }
 }
+

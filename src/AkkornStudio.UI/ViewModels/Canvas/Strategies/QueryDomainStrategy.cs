@@ -8,16 +8,13 @@ namespace AkkornStudio.UI.ViewModels.Canvas.Strategies;
 
 public sealed class QueryDomainStrategy : ICanvasDomainStrategy, ICanvasDomainStrategyExt
 {
-    private readonly Func<bool>? _isDdlModeActiveResolver;
-    private readonly Action<TableMetadata, Point>? _importDdlTableAction;
-
     public QueryDomainStrategy(
         Func<bool>? isDdlModeActiveResolver = null,
         Action<TableMetadata, Point>? importDdlTableAction = null
     )
     {
-        _isDdlModeActiveResolver = isDdlModeActiveResolver;
-        _importDdlTableAction = importDdlTableAction;
+        _ = isDdlModeActiveResolver;
+        _ = importDdlTableAction;
     }
 
     public string DomainName => "Query";
@@ -97,11 +94,8 @@ public sealed class QueryDomainStrategy : ICanvasDomainStrategy, ICanvasDomainSt
     {
         _ = table;
         _ = position;
-
-        var resolver = isDdlModeActiveResolver ?? _isDdlModeActiveResolver;
-        var importer = importDdlTableAction ?? _importDdlTableAction;
-        if (resolver?.Invoke() == true && importer is not null)
-            return false;
+        _ = isDdlModeActiveResolver;
+        _ = importDdlTableAction;
 
         spawnQueryTableNode();
         return true;

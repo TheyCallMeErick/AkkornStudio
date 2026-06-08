@@ -27,12 +27,29 @@ public class DataTableConverter : IValueConverter
             return view;
         }
 
-        _logger.LogDebug("Value is not DataTable, returning null");
-        return null;
+        if (value is DataView dv)
+        {
+            _logger.LogDebug("Value is already a DataView with {RowCount} rows", dv.Count);
+            return dv;
+        }
+
+        if (value is null)
+        {
+            _logger.LogDebug("Value is null, returning empty DataView");
+            return CreateEmptyView();
+        }
+
+        _logger.LogWarning(
+            "Unsupported value type '{ValueType}' for DataTableConverter. Returning empty DataView.",
+            value.GetType().FullName
+        );
+        return CreateEmptyView();
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo? culture)
     {
         throw new NotSupportedException();
     }
+
+    private static DataView CreateEmptyView() => new(new DataTable());
 }

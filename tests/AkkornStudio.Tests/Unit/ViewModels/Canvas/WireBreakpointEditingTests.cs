@@ -161,4 +161,27 @@ public sealed class WireBreakpointEditingTests
         Assert.Null(vm.SelectedBreakpointConnection);
         Assert.Equal(-1, vm.SelectedBreakpointIndex);
     }
+
+    [Fact]
+    public void Breakpoints_ExposesReadOnlyListView_NotMutableListInstance()
+    {
+        var vm = new CanvasViewModel();
+        vm.InitializeDemoNodes();
+        ConnectionViewModel wire = vm.Connections.First(c => c.ToPin is not null);
+        wire.SetBreakpoints([new WireBreakpoint(new Point(220, 190))]);
+
+        Assert.IsNotType<List<WireBreakpoint>>(wire.Breakpoints);
+    }
+
+    [Fact]
+    public void Breakpoints_ReadOnlyListRejectsMutationAttempts()
+    {
+        var vm = new CanvasViewModel();
+        vm.InitializeDemoNodes();
+        ConnectionViewModel wire = vm.Connections.First(c => c.ToPin is not null);
+        wire.SetBreakpoints([new WireBreakpoint(new Point(220, 190))]);
+
+        IList<WireBreakpoint> breakpoints = Assert.IsAssignableFrom<IList<WireBreakpoint>>(wire.Breakpoints);
+        Assert.Throws<NotSupportedException>(() => breakpoints.Add(new WireBreakpoint(new Point(260, 230))));
+    }
 }

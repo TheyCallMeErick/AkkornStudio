@@ -133,6 +133,9 @@ public sealed class SqlSelectionExtractor
             return;
 
         string trimmed = raw.Trim();
+        if (string.IsNullOrWhiteSpace(RemoveLeadingComments(trimmed)))
+            return;
+
         int leading = raw.Length - raw.TrimStart().Length;
         int trailing = raw.Length - raw.TrimEnd().Length;
 
@@ -140,5 +143,35 @@ public sealed class SqlSelectionExtractor
         int effectiveEnd = rawEnd - trailing;
 
         results.Add((effectiveStart, effectiveEnd, trimmed));
+    }
+
+    private static string RemoveLeadingComments(string sql)
+    {
+        string current = sql.TrimStart();
+
+        while (true)
+        {
+            if (current.StartsWith("--", StringComparison.Ordinal))
+            {
+                int newLineIndex = current.IndexOf('\n');
+                if (newLineIndex < 0)
+                    return string.Empty;
+
+                current = current[(newLineIndex + 1)..].TrimStart();
+                continue;
+            }
+
+            if (current.StartsWith("/*", StringComparison.Ordinal))
+            {
+                int endIndex = current.IndexOf("*/", StringComparison.Ordinal);
+                if (endIndex < 0)
+                    return string.Empty;
+
+                current = current[(endIndex + 2)..].TrimStart();
+                continue;
+            }
+
+            return current;
+        }
     }
 }

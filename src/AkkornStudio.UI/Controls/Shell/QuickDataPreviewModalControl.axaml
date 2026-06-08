@@ -1,0 +1,180 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AkkornStudio.UI.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             x:Class="AkkornStudio.UI.Controls.Shell.QuickDataPreviewModalControl"
+             x:DataType="vm:QuickDataPreviewModalViewModel"
+             x:Name="Root">
+
+  <Panel IsVisible="{Binding IsVisible}" ZIndex="92">
+    <Border Background="{StaticResource MacroScrimBrush}"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"/>
+
+    <Border Classes="surface-floating"
+            Width="1400"
+            MaxWidth="1400"
+            Height="840"
+            MaxHeight="840"
+            MinHeight="520"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center">
+      <Grid RowDefinitions="Auto,Auto,*">
+        <Grid Grid.Row="0" Classes="surface-floating-header" ColumnDefinitions="*,Auto" Margin="14,12,14,8">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <mi:MaterialIcon Kind="TableSearch" Width="16" Height="16" VerticalAlignment="Center" Foreground="{StaticResource AccentBlueBrush}"/>
+            <StackPanel Spacing="1" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Title}" FontSize="{StaticResource FontSizeTitle}" FontWeight="{StaticResource FontWeightTitle}" Foreground="{StaticResource TextPrimaryBrush}"/>
+              <TextBlock Text="{Binding Subtitle}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+            </StackPanel>
+          </StackPanel>
+
+          <Button Grid.Column="1"
+                  Command="{Binding CloseCommand}"
+                  Classes="icon-ghost"
+                  ToolTip.Tip="Fechar">
+            <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+          </Button>
+        </Grid>
+
+        <Border Grid.Row="1" Classes="surface-card" Padding="10,6" Margin="0,0,0,2">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+              <TextBlock VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}">
+                <Run Text="Provider: "/>
+                <Run Text="{Binding ProviderLabel}"/>
+                <Run Text="  |  "/>
+                <Run Text="{Binding StatusText}"/>
+              </TextBlock>
+
+              <!-- Pagination (table mode only) -->
+              <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsTableMode}" VerticalAlignment="Center">
+                <Border Width="1" Height="14" Background="{StaticResource BorderSubtleBrush}"/>
+                <Button Classes="secondary compact"
+                        Command="{Binding PreviousPageCommand}"
+                        IsEnabled="{Binding CanGoPreviousPage}"
+                        Padding="6,3"
+                        ToolTip.Tip="Página anterior">
+                  <mi:MaterialIcon Kind="ChevronLeft" Width="12" Height="12"/>
+                </Button>
+                <TextBlock Text="{Binding PageDisplay}" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{StaticResource FontSizeCaption}" MinWidth="56" TextAlignment="Center"/>
+                <Button Classes="secondary compact"
+                        Command="{Binding NextPageCommand}"
+                        IsEnabled="{Binding CanGoNextPage}"
+                        Padding="6,3"
+                        ToolTip.Tip="Próxima página">
+                  <mi:MaterialIcon Kind="ChevronRight" Width="12" Height="12"/>
+                </Button>
+                <ComboBox ItemsSource="{Binding PageSizeOptions}"
+                          SelectedItem="{Binding PageSize}"
+                          Width="70"
+                          FontSize="{StaticResource FontSizeCaption}"
+                          ToolTip.Tip="Linhas por página"/>
+              </StackPanel>
+
+              <!-- Remove WHERE -->
+              <Button Classes="secondary compact"
+                      Command="{Binding RemoveWhereCommand}"
+                      IsVisible="{Binding HasWhereClause}"
+                      ToolTip.Tip="Remover cláusula WHERE e reexecutar">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <mi:MaterialIcon Kind="FilterRemove" Width="12" Height="12"/>
+                  <TextBlock Text="Remover WHERE"/>
+                </StackPanel>
+              </Button>
+
+              <ProgressBar Width="80"
+                           Height="3"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding IsLoading}"
+                           IsIndeterminate="True"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <Button Classes="secondary compact"
+                      Command="{Binding OpenInSqlEditorCommand}"
+                      Content="Abrir no SQL Editor"/>
+              <Button Classes="secondary compact"
+                      Command="{Binding CloseCommand}"
+                      Content="Fechar"/>
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" ColumnDefinitions="3*,2*" ColumnSpacing="10" Margin="12">
+          <Border Grid.Column="0" Classes="surface-card" Padding="8">
+            <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
+              <TextBlock Grid.Row="0" Text="Consulta" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+              <TextBox Grid.Row="1" Text="{Binding SqlText}" IsReadOnly="True" TextWrapping="Wrap" FontFamily="{StaticResource MonoFont}" MinHeight="60" MaxHeight="130"/>
+
+              <Grid Grid.Row="2">
+                <Border Classes="surface-card" Padding="14" IsVisible="{Binding HasError}">
+                  <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" Foreground="{StaticResource StatusErrorBrush}"/>
+                </Border>
+
+                <DataGrid x:Name="ResultDataGrid"
+                          IsVisible="{Binding HasData}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserResizeColumns="True"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto"
+                          Background="#0A1220"
+                          GridLinesVisibility="All"
+                          HorizontalGridLinesBrush="#1A2840"
+                          VerticalGridLinesBrush="#1A2840"
+                          BorderThickness="0"
+                          RowBackground="Transparent"
+                          Foreground="#C6D4E8"
+                          FontSize="12"/>
+
+                <TextBlock IsVisible="{Binding ShowEmptyMessage}"
+                           Text="Sem dados para exibir."
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource TextMutedBrush}"/>
+              </Grid>
+            </Grid>
+          </Border>
+
+          <Border Grid.Column="1" Classes="surface-card" Padding="10">
+            <Grid RowDefinitions="Auto,*">
+              <TextBlock Grid.Row="0" Text="Relacionamentos" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
+
+              <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                <StackPanel Spacing="8">
+                  <TextBlock IsVisible="{Binding ShowNoRelationshipsMessage}"
+                             Text="Nenhum relacionamento encontrado para o contexto atual."
+                             TextWrapping="Wrap"
+                             Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                  <ItemsControl ItemsSource="{Binding Relationships}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:QuickDataPreviewModalViewModel+QuickDataPreviewRelationshipItemViewModel">
+                        <Border Classes="surface-card" Padding="8">
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <StackPanel Grid.Column="0" Spacing="2">
+                              <TextBlock Text="{Binding Label}" TextWrapping="Wrap" Foreground="{StaticResource TextPrimaryBrush}"/>
+                              <TextBlock Text="{Binding DirectionLabel}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                              <Border Classes="badge"><TextBlock Text="{Binding Cardinality}"/></Border>
+                              <Button Classes="secondary compact"
+                                      Content="Abrir"
+                                      Command="{Binding #Root.DataContext.PreviewRelationshipCommand}"
+                                      CommandParameter="{Binding}"/>
+                            </StackPanel>
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </ScrollViewer>
+            </Grid>
+          </Border>
+        </Grid>
+      </Grid>
+    </Border>
+  </Panel>
+</UserControl>

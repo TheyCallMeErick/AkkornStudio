@@ -25,10 +25,7 @@ public sealed class ErAlterColumnTypeCommand(
     {
         _ = canvas;
 
-        _index = _entity.Columns
-            .Select((col, idx) => new { col, idx })
-            .FirstOrDefault(x => string.Equals(x.col.ColumnName, _columnName, StringComparison.OrdinalIgnoreCase))
-            ?.idx ?? -1;
+        _index = ResolveColumnIndex();
 
         if (_index < 0)
             return;
@@ -49,7 +46,7 @@ public sealed class ErAlterColumnTypeCommand(
     public void Undo(CanvasViewModel canvas)
     {
         _ = canvas;
-        if (_index < 0 || _oldColumn is null)
+        if (_index < 0 || _index >= _entity.Columns.Count || _oldColumn is null)
             return;
 
         _entity.Columns[_index] = _oldColumn;
@@ -57,6 +54,12 @@ public sealed class ErAlterColumnTypeCommand(
 
     public IDdlExpression ToDdlExpression()
     {
+        int columnIndex = ResolveColumnIndex();
+        if (columnIndex < 0)
+            throw new InvalidOperationException(
+                $"Column '{_columnName}' was not found on entity '{_entity.Id}'.");
+
+        bool isNullable = _oldColumn?.IsNullable ?? _entity.Columns[columnIndex].IsNullable;
         (string schema, string table) = SplitEntityId(_entity.Id);
 
         return new AlterTableExpr(
@@ -64,10 +67,17 @@ public sealed class ErAlterColumnTypeCommand(
             tableName: table,
             operations:
             [
-                new AlterColumnTypeOpExpr(_columnName, _newDataType, _oldColumn?.IsNullable ?? true),
+                new AlterColumnTypeOpExpr(_columnName, _newDataType, isNullable),
             ],
             emitSeparateStatements: true);
     }
+
+    private int ResolveColumnIndex() =>
+        _entity.Columns
+            .Select((col, idx) => new { col, idx })
+            .FirstOrDefault(x =>
+                string.Equals(x.col.ColumnName, _columnName, StringComparison.OrdinalIgnoreCase))
+            ?.idx ?? -1;
 
     private static (string Schema, string Table) SplitEntityId(string entityId)
     {

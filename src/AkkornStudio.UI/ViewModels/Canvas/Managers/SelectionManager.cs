@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Windows.Input;
 using AkkornStudio.UI.ViewModels.UndoRedo.Commands;
 
@@ -70,12 +72,17 @@ public sealed class SelectionManager : ISelectionManager
             () => AlignNodes(AlignMode.DistributeV),
             () => HasAtLeastSelected(3)
         );
+
+        _nodes.CollectionChanged += OnNodesCollectionChanged;
+        foreach (NodeViewModel node in _nodes)
+            node.PropertyChanged += OnNodePropertyChanged;
     }
 
     public void SelectAll()
     {
         foreach (NodeViewModel n in _nodes)
             n.IsSelected = true;
+        NotifyAlignmentCommandsStateChanged();
     }
 
     public void DeselectAll()
@@ -83,6 +90,7 @@ public sealed class SelectionManager : ISelectionManager
         foreach (NodeViewModel n in _nodes)
             n.IsSelected = false;
         _propertyPanel.Clear();
+        NotifyAlignmentCommandsStateChanged();
     }
 
     public void SelectNode(NodeViewModel node, bool add = false)
@@ -96,6 +104,8 @@ public sealed class SelectionManager : ISelectionManager
             _propertyPanel.ShowNode(sel[0]);
         else if (sel.Count > 1)
             _propertyPanel.ShowMultiSelection(sel);
+
+        NotifyAlignmentCommandsStateChanged();
     }
 
     public List<NodeViewModel> SelectedNodes() => [.. _nodes.Where(n => n.IsSelected)];
@@ -122,8 +132,10 @@ public sealed class SelectionManager : ISelectionManager
     public void AlignNodes(AlignMode mode)
     {
         List<NodeViewModel> sel = SelectedNodes();
-        if (sel.Count < 2)
+        int required = RequiredSelectionThreshold(mode);
+        if (sel.Count < required)
             return;
+
         _undoRedo.Execute(new AlignNodesCommand(sel, mode));
     }
 
@@ -141,5 +153,39 @@ public sealed class SelectionManager : ISelectionManager
         AlignCenterVCommand.NotifyCanExecuteChanged();
         DistributeHCommand.NotifyCanExecuteChanged();
         DistributeVCommand.NotifyCanExecuteChanged();
+    }
+
+    private static int RequiredSelectionThreshold(AlignMode mode) =>
+        mode is AlignMode.DistributeH or AlignMode.DistributeV ? 3 : 2;
+
+    private void OnNodesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (object item in e.OldItems)
+            {
+                if (item is NodeViewModel oldNode)
+                    oldNode.PropertyChanged -= OnNodePropertyChanged;
+            }
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (object item in e.NewItems)
+            {
+                if (item is NodeViewModel newNode)
+                    newNode.PropertyChanged += OnNodePropertyChanged;
+            }
+        }
+
+        NotifyAlignmentCommandsStateChanged();
+    }
+
+    private void OnNodePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (!string.Equals(e.PropertyName, nameof(NodeViewModel.IsSelected), StringComparison.Ordinal))
+            return;
+
+        NotifyAlignmentCommandsStateChanged();
     }
 }

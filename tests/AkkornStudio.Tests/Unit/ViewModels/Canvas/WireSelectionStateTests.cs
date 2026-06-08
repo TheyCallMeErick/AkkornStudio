@@ -1,4 +1,5 @@
 using AkkornStudio.UI.ViewModels;
+using System.Reflection;
 
 namespace AkkornStudio.Tests.Unit.ViewModels.Canvas;
 
@@ -51,5 +52,34 @@ public sealed class WireSelectionStateTests
         Assert.True(deleted);
         Assert.Null(vm.SelectedConnection);
         Assert.DoesNotContain(vm.Connections, c => ReferenceEquals(c, selected));
+    }
+
+    [Fact]
+    public void ClearConnectionSelection_ClearsOrphanSelectedBreakpointWireOutsideConnections()
+    {
+        var vm = new CanvasViewModel();
+        vm.InitializeDemoNodes();
+
+        ConnectionViewModel orphanWire = vm.Connections.First(c => c.ToPin is not null);
+        orphanWire.IsSelected = true;
+
+        vm.Connections.Remove(orphanWire);
+        SetPrivateField<ConnectionViewModel?>(vm, "_selectedConnection", null);
+        SetPrivateField(vm, "_selectedBreakpointConnection", orphanWire);
+        SetPrivateField(vm, "_selectedBreakpointIndex", 0);
+
+        vm.ClearConnectionSelection();
+
+        Assert.False(orphanWire.IsSelected);
+        Assert.Null(vm.SelectedConnection);
+        Assert.Null(vm.SelectedBreakpointConnection);
+        Assert.Equal(-1, vm.SelectedBreakpointIndex);
+    }
+
+    private static void SetPrivateField<T>(CanvasViewModel vm, string fieldName, T value)
+    {
+        FieldInfo? field = typeof(CanvasViewModel).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        field!.SetValue(vm, value);
     }
 }

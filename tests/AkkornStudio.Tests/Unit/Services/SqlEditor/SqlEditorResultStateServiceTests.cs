@@ -44,6 +44,7 @@ public sealed class SqlEditorResultStateServiceTests
         Assert.Equal(0, telemetry.StatementCount);
         Assert.Equal(0, telemetry.SuccessCount);
         Assert.Equal(0, telemetry.FailureCount);
+        Assert.Empty(telemetry.FailureByCategory);
     }
 
     [Fact]
@@ -54,8 +55,8 @@ public sealed class SqlEditorResultStateServiceTests
         [
             BuildResult("SELECT 1", true, 1, 2),
             BuildResult("SELECT x", false, null, 4, "bad"),
-            BuildResult("SELECT y", false, null, 3, "bad"),
-            BuildResult("SELECT z", false, null, 1, "worse"),
+            BuildResult("SELECT y", false, null, 3, "bad", SqlExecutionErrorCategory.Operational),
+            BuildResult("SELECT z", false, null, 1, "worse", SqlExecutionErrorCategory.Timeout),
         ];
 
         SqlEditorExecutionTelemetry telemetry = sut.BuildTelemetry(results);
@@ -65,9 +66,17 @@ public sealed class SqlEditorResultStateServiceTests
         Assert.Equal(3, telemetry.FailureCount);
         Assert.Equal(10, telemetry.TotalDurationMs);
         Assert.Equal(2, telemetry.ErrorMessages.Count);
+        Assert.Equal(2, telemetry.FailureByCategory["Operational"]);
+        Assert.Equal(1, telemetry.FailureByCategory["Timeout"]);
     }
 
-    private static SqlEditorResultSet BuildResult(string sql, bool success, long? rows, long ms, string? error = null)
+    private static SqlEditorResultSet BuildResult(
+        string sql,
+        bool success,
+        long? rows,
+        long ms,
+        string? error = null,
+        SqlExecutionErrorCategory errorCategory = SqlExecutionErrorCategory.None)
     {
         DataTable? data = null;
         if (success)
@@ -85,6 +94,9 @@ public sealed class SqlEditorResultStateServiceTests
             ExecutionTime = TimeSpan.FromMilliseconds(ms),
             Data = data,
             ErrorMessage = error,
+            ErrorCategory = errorCategory == SqlExecutionErrorCategory.None && !success
+                ? SqlExecutionErrorCategory.Operational
+                : errorCategory,
             ExecutedAt = DateTimeOffset.UtcNow,
         };
     }

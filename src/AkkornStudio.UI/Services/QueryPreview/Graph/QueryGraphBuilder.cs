@@ -89,22 +89,22 @@ public sealed class QueryGraphBuilder(CanvasViewModel canvas, DatabaseProvider p
     /// </summary>
     public (string Sql, List<string> Errors) BuildSql()
     {
-        (string sql, List<PreviewDiagnostic> diagnostics) = BuildSqlWithDiagnostics();
-        return (sql, diagnostics.Select(d => d.Message).ToList());
+        QuerySqlBuildResult result = BuildSqlWithDiagnostics();
+        return (result.PreviewSql, result.Diagnostics.Select(d => d.Message).ToList());
     }
 
     /// <summary>
     /// Builds SQL and returns structured diagnostics with stable categories/codes.
     /// </summary>
-    public (string Sql, List<PreviewDiagnostic> Diagnostics) BuildSqlWithDiagnostics()
+    public QuerySqlBuildResult BuildSqlWithDiagnostics()
     {
-        (string sql, List<string> legacyMessages) = BuildSqlCore();
+        (string sql, string? executionSqlTemplate, IReadOnlyDictionary<string, object?> bindings, IReadOnlyDictionary<string, QueryExecutionParameterContext> parameterContexts, List<string> legacyMessages) = BuildSqlCore();
         List<PreviewDiagnostic> diagnostics = PreviewDiagnosticMapper.FromLegacyMessages(legacyMessages);
         _diagnosticEnricher.Enrich(_canvas, diagnostics);
-        return (sql, diagnostics);
+        return new QuerySqlBuildResult(sql, executionSqlTemplate, bindings, parameterContexts, diagnostics);
     }
 
-    private (string Sql, List<string> Errors) BuildSqlCore()
+    private (string Sql, string? ExecutionSqlTemplate, IReadOnlyDictionary<string, object?> Bindings, IReadOnlyDictionary<string, QueryExecutionParameterContext> ParameterContexts, List<string> Errors) BuildSqlCore()
     {
         return PipelineRunner.Execute();
     }
@@ -120,5 +120,9 @@ public sealed class QueryGraphBuilder(CanvasViewModel canvas, DatabaseProvider p
 
 }
 
-
-
+public sealed record QuerySqlBuildResult(
+    string PreviewSql,
+    string? ExecutionSqlTemplate,
+    IReadOnlyDictionary<string, object?> Bindings,
+    IReadOnlyDictionary<string, QueryExecutionParameterContext> ParameterContexts,
+    List<PreviewDiagnostic> Diagnostics);

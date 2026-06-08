@@ -25,10 +25,7 @@
                    Margin="6,0,8,0"
                    TextTrimming="CharacterEllipsis"/>
         <Border Grid.Column="2"
-                Background="{StaticResource Bg3Brush}"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1"
-                CornerRadius="{StaticResource RadiusXS}"
+                Classes="badge"
                 Padding="4,1"
                 Margin="0,0,6,0">
           <TextBlock Text="{Binding ScalarLabel}" Foreground="{StaticResource AccentPrimaryHoverBrush}" FontSize="{StaticResource FontSizeMonoSmall}" FontWeight="{StaticResource FontWeightMonoStrong}"/>
@@ -57,10 +54,7 @@
                    TextTrimming="CharacterEllipsis"/>
 
         <Border Grid.Column="2"
-                Background="{StaticResource Bg3Brush}"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1"
-                CornerRadius="{StaticResource RadiusXS}"
+                Classes="badge"
                 Padding="4,1"
                 Margin="0,0,6,0">
           <TextBlock Text="{Binding DataType}" Foreground="{StaticResource AccentPrimaryHoverBrush}" FontSize="{StaticResource FontSizeMonoSmall}" FontWeight="{StaticResource FontWeightMonoStrong}"/>
@@ -261,10 +255,7 @@
           <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4"
                       VerticalAlignment="Center" Margin="4,0,0,0">
 
-              <Border CornerRadius="{StaticResource RadiusXS}"
-                Background="{StaticResource AccentPrimaryHoverBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1"
+              <Border Classes="badge info"
                 Padding="5,2"
                 IsVisible="{Binding IsPrimaryFromSource}">
                 <TextBlock Text="FROM"
@@ -303,8 +294,7 @@
                   AutomationProperties.Name="Editar subconsulta"/>
 
             <!-- Alias chip (when set) -->
-            <Border CornerRadius="{StaticResource RadiusXS}"
-                    Background="{StaticResource SelectedOverlayBrush}"
+            <Border Classes="badge"
                     Padding="5,2"
                     IsVisible="{Binding Alias, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
               <TextBlock Text="{Binding Alias}"
@@ -478,6 +468,15 @@
                          FontWeight="{StaticResource FontWeightTitle}"
                          HorizontalAlignment="Center"/>
             </Border>
+            <Button Classes="preview-toggle"
+                    Name="OpenJoinErDiagramBtn"
+                    ToolTip.Tip="Abrir relacao no ER"
+                    AutomationProperties.Name="Abrir relacao no ER">
+              <mi:MaterialIcon Kind="RelationManyToMany"
+                               Width="12"
+                               Height="12"
+                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+            </Button>
           </StackPanel>
         </Border>
 
@@ -621,6 +620,22 @@
                 </Button>
               </StackPanel>
             </Grid>
+          </Border>
+
+          <!-- Comparison summary -->
+          <Border Background="{StaticResource Bg0Brush}"
+                  BorderBrush="{StaticResource BorderSubtleBrush}"
+                  BorderThickness="1"
+                  CornerRadius="{StaticResource RadiusSM}"
+                  Margin="8,3,8,3"
+                  Padding="6,4"
+                  IsVisible="{Binding HasComparisonInlineSummary}">
+            <TextBlock Text="{Binding ComparisonInlineSummary}"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       FontFamily="{StaticResource MonoFont}"
+                       TextTrimming="CharacterEllipsis"
+                       MaxLines="2"/>
           </Border>
 
           <!-- OUTPUT BAND -->
@@ -847,6 +862,46 @@
               CornerRadius="{StaticResource RadiusLGBottom}"
               Padding="10,6,7,6">
         <StackPanel Spacing="4">
+          <Border Classes="callout-subtle"
+                  Padding="8,6"
+                  Margin="0,0,0,4"
+                  IsVisible="{Binding IsAutoProjectionResultOutput}">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <TextBlock Text="ER projection"
+                         FontSize="{StaticResource FontSizeCaption}"
+                         FontWeight="{StaticResource FontWeightTitle}"
+                         Foreground="{StaticResource AccentPrimaryHoverBrush}"
+                         VerticalAlignment="Center"/>
+              <Button Classes="preview-toggle"
+                      Name="RefineAutoProjectionBtn"
+                      ToolTip.Tip="Refinar sugestao de colunas"
+                      AutomationProperties.Name="Refinar sugestao de colunas">
+                <mi:MaterialIcon Kind="TuneVariant"
+                                 Width="12"
+                                 Height="12"
+                                 Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+              </Button>
+              <Button Classes="preview-toggle"
+                      Name="ResetAutoProjectionBtn"
+                      ToolTip.Tip="Resetar sugestao do ER"
+                      AutomationProperties.Name="Resetar sugestao do ER">
+                <mi:MaterialIcon Kind="Restore"
+                                 Width="12"
+                                 Height="12"
+                                 Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+              </Button>
+              <Button Classes="preview-toggle"
+                      Name="AddSuggestedFilterBtn"
+                      ToolTip.Tip="Adicionar filtro sugerido"
+                      AutomationProperties.Name="Adicionar filtro sugerido">
+                <mi:MaterialIcon Kind="FilterPlus"
+                                 Width="12"
+                                 Height="12"
+                                 Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+              </Button>
+            </StackPanel>
+          </Border>
+
           <!-- INPUT PINS for ResultOutput (where, columns inputs shown here) -->
           <ItemsControl ItemsSource="{Binding InputPins}">
             <ItemsControl.ItemTemplate>

@@ -176,6 +176,9 @@ public partial class SqlEditorControl : UserControl
         {
             RefreshExecutionStatementHighlight();
         }
+
+        if (e.PropertyName == nameof(SqlEditorViewModel.EditorFocusRequestVersion))
+            FocusEditorAtDocumentEnd();
     }
 
     private void SyncEditorTextFromViewModel()
@@ -372,6 +375,15 @@ public partial class SqlEditorControl : UserControl
 
         if (isCancel)
         {
+            if (_vm.IsConnectionSwitcherOpen)
+            {
+                if (_vm.CloseConnectionSwitcherCommand.CanExecute(null))
+                    _vm.CloseConnectionSwitcherCommand.Execute(null);
+
+                e.Handled = true;
+                return;
+            }
+
             if (_vm.ShouldShowResultsSheet)
             {
                 if (_vm.CloseResultsSheetCommand.CanExecute(null))
@@ -1152,6 +1164,21 @@ public partial class SqlEditorControl : UserControl
         e.Handled = true;
     }
 
+    private void ConnectionSwitcherBackdrop_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_vm is null)
+            return;
+
+        PointerPointProperties properties = e.GetCurrentPoint(this).Properties;
+        if (!properties.IsLeftButtonPressed)
+            return;
+
+        if (_vm.CloseConnectionSwitcherCommand.CanExecute(null))
+            _vm.CloseConnectionSwitcherCommand.Execute(null);
+
+        e.Handled = true;
+    }
+
     private static int? ResolveTabShortcutIndex(Key key, KeyModifiers modifiers)
     {
         if (!modifiers.HasFlag(KeyModifiers.Control))
@@ -1590,6 +1617,24 @@ public partial class SqlEditorControl : UserControl
             _editor.Focus();
             _editor.TextArea?.Focus();
         }, DispatcherPriority.Background);
+    }
+
+    private void FocusEditorAtDocumentEnd()
+    {
+        if (_editor is null || !IsVisible)
+            return;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_editor is null || !_editor.IsVisible)
+                return;
+
+            EnsureEditorReady();
+            int endOffset = _editor.Document?.TextLength ?? 0;
+            _editor.CaretOffset = Math.Clamp(endOffset, 0, endOffset);
+            _editor.Focus();
+            _editor.TextArea?.Focus();
+        }, DispatcherPriority.Input);
     }
 
     private void ShowGoToLineOverlay()

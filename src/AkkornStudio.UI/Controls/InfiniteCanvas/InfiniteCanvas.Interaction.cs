@@ -21,7 +21,7 @@ public sealed partial class InfiniteCanvas
 {
     // Note: In Avalonia 11+, Panel.Render() is sealed and cannot be overridden.
     // Rubber band selection rectangle is drawn as a visual element instead.
-    private Border? _rubberBandRect;
+    private CanvasMarqueeAdorner? _rubberBandRect;
 
     private const double GuideThreshold = 8.0; // canvas units — how close to snap a guide
     private const double DefaultNodeH = 130;
@@ -140,7 +140,7 @@ public sealed partial class InfiniteCanvas
         _isApplyingViewportFromCanvas = true;
         try
         {
-            ViewModel.ZoomToward(screen, factor);
+            _viewportController.ZoomAtPointer(ViewModel, this, e);
         }
         finally
         {
@@ -160,18 +160,17 @@ public sealed partial class InfiniteCanvas
         Point screen = e.GetPosition(this);
 
         if (_dragBreakpointWire is null
-            && (
-                props.IsMiddleButtonPressed
-                || (props.IsLeftButtonPressed && _isSpacePanArmed)
-                || (props.IsLeftButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Alt))
-            ))
+            && CanvasViewportGestureDecisions.IsPanGesture(
+                _gesturePolicy,
+                props,
+                e.KeyModifiers,
+                _isSpacePanArmed))
         {
             ClearHoverHighlights();
             Log($">>> PAN STARTED: Screen={screen}, PanOffset={_panOffset}, Zoom={_zoom}");
+            _viewportController.BeginPan(this, e.Pointer, screen);
             _isPanning = true;
-            _panStart = screen; // Store screen position, not difference
             _startPanOffset = _panOffset; // NodifyM pattern: capture pan offset at start
-            e.Pointer.Capture(this);
             Cursor = new Cursor(StandardCursorType.SizeAll);
             e.Handled = true;
             return;
@@ -227,11 +226,11 @@ public sealed partial class InfiniteCanvas
                 if (selectedWireCandidate.RoutingMode == CanvasWireRoutingMode.Orthogonal)
                 {
                     int breakpointIndex = BezierWireLayer.FindBreakpointAt(selectedWireCandidate, canvas, tolerance: 8);
-                    if (breakpointIndex >= 0)
+                    if (TryGetBreakpointPosition(selectedWireCandidate, breakpointIndex, out Point breakpointPosition))
                     {
                         _dragBreakpointWire = selectedWireCandidate;
                         _dragBreakpointIndex = breakpointIndex;
-                        _dragBreakpointInitialPosition = selectedWireCandidate.Breakpoints[breakpointIndex].Position;
+                        _dragBreakpointInitialPosition = breakpointPosition;
                         ViewModel?.SelectConnection(selectedWireCandidate);
                         ViewModel?.SelectWireBreakpoint(selectedWireCandidate, breakpointIndex);
                         SyncWires();
@@ -385,6 +384,20 @@ public sealed partial class InfiniteCanvas
         return WireContextBreakpointAction.NoneAction();
     }
 
+    internal static bool TryGetBreakpointPosition(
+        ConnectionViewModel wire,
+        int breakpointIndex,
+        out Point breakpointPosition)
+    {
+        breakpointPosition = default;
+
+        if (breakpointIndex < 0 || breakpointIndex >= wire.Breakpoints.Count)
+            return false;
+
+        breakpointPosition = wire.Breakpoints[breakpointIndex].Position;
+        return true;
+    }
+
     internal static IReadOnlyList<NodeDefinition> ResolveCompatibleWireInsertDefinitions(
         ConnectionViewModel wire,
         CanvasContext canvasContext,
@@ -535,8 +548,8 @@ public sealed partial class InfiniteCanvas
             if (d.X * d.X + d.Y * d.Y >= ContextPanStartThreshold * ContextPanStartThreshold)
             {
                 _contextMenuPending = false;
+                _viewportController.BeginPan(this, e.Pointer, screen);
                 _isPanning = true;
-                _panStart = screen;
                 _startPanOffset = _panOffset;
                 Cursor = new Cursor(StandardCursorType.SizeAll);
                 Log($">>> PAN STARTED (right-drag): Screen={screen}, PanOffset={_panOffset}, Zoom={_zoom}");
@@ -550,25 +563,14 @@ public sealed partial class InfiniteCanvas
         if (_isPanning)
         {
             ClearHoverHighlights();
-            Point delta = screen - _panStart;
-            _panOffset = _panOffset + (Vector)delta;
+            _viewportController.TryPan(ViewModel!, this, e);
+            _panOffset = ViewModel!.PanOffset;
 
-            Log($"    PAN MOVING: Screen={screen}, Delta={delta}, NewPanOffset={_panOffset}, Zoom={_zoom}");
+            Log($"    PAN MOVING: Screen={screen}, NewPanOffset={_panOffset}, Zoom={_zoom}");
 
             // Force immediate visual update during pan (don't wait for layout pass)
-            _scene.RenderTransform = new TransformGroup
-            {
-                Children =
-                [
-                    new ScaleTransform(_zoom, _zoom),
-                    new TranslateTransform(_panOffset.X, _panOffset.Y),
-                ],
-            };
-            _grid.PanOffset = _panOffset;
-            _grid.InvalidateVisual();
+            _viewportController.SyncVisuals(ViewModel!, _scene, _grid, Bounds.Size);
             SyncWires();
-
-            _panStart = screen; // Update for next frame
             return;
         }
         if (_pinDrag?.IsDragging == true)
@@ -637,7 +639,7 @@ public sealed partial class InfiniteCanvas
                 Log($"    Synced to ViewModel: PanOffset={_panOffset}");
             }
             _isPanning = false;
-            e.Pointer.Capture(null);
+            _viewportController.EndPan(e);
             Cursor = _isSpacePanArmed ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
             return;
         }
@@ -652,8 +654,8 @@ public sealed partial class InfiniteCanvas
 
         if (_dragBreakpointWire is not null && _dragBreakpointIndex >= 0)
         {
-            Point finalPosition = _dragBreakpointIndex < _dragBreakpointWire.Breakpoints.Count
-                ? _dragBreakpointWire.Breakpoints[_dragBreakpointIndex].Position
+            Point finalPosition = TryGetBreakpointPosition(_dragBreakpointWire, _dragBreakpointIndex, out Point currentBreakpointPosition)
+                ? currentBreakpointPosition
                 : _dragBreakpointInitialPosition;
 
             if (ViewModel is not null)
@@ -676,7 +678,18 @@ public sealed partial class InfiniteCanvas
         {
             Log($"<<< RUBBER BAND COMPLETED: Canvas={canvas}");
             _isRubberBanding = false;
-            UpdateRubberBand();
+            if (ViewModel is ICanvasViewportSelectionState selectionState)
+            {
+                Rect region = new(
+                    Math.Min(_rubberStart.X, _rubberCurrent.X),
+                    Math.Min(_rubberStart.Y, _rubberCurrent.Y),
+                    Math.Abs(_rubberCurrent.X - _rubberStart.X),
+                    Math.Abs(_rubberCurrent.Y - _rubberStart.Y));
+                _selectionAdornerController.CompleteMarqueeSelection(selectionState, region, _rubberBandRect);
+            }
+            else
+            {
+            }
             UpdateRubberBandVisual();
             e.Pointer.Capture(null);
 
@@ -850,16 +863,16 @@ public sealed partial class InfiniteCanvas
 
     private void UpdateRubberBand()
     {
-        if (ViewModel is null)
+        if (ViewModel is not ICanvasViewportSelectionState selectionState)
             return;
-        var r = new Rect(
+
+        Rect region = new(
             Math.Min(_rubberStart.X, _rubberCurrent.X),
             Math.Min(_rubberStart.Y, _rubberCurrent.Y),
             Math.Abs(_rubberCurrent.X - _rubberStart.X),
             Math.Abs(_rubberCurrent.Y - _rubberStart.Y)
         );
-        foreach (NodeViewModel n in ViewModel.Nodes)
-            n.IsSelected = r.Contains(n.Position);
+        _ = selectionState.TrySelectInRegion(region);
     }
 
     private void UpdateRubberBandVisual()
@@ -868,7 +881,7 @@ public sealed partial class InfiniteCanvas
         {
             if (_rubberBandRect is not null)
             {
-                _scene.Children.Remove(_rubberBandRect);
+                _overlay.Children.Remove(_rubberBandRect);
                 _rubberBandRect = null;
 
                 // Ensure wires stay on top after rubber band is removed
@@ -877,36 +890,26 @@ public sealed partial class InfiniteCanvas
             return;
         }
 
-        double x = _panOffset.X + Math.Min(_rubberStart.X, _rubberCurrent.X) * _zoom;
-        double y = _panOffset.Y + Math.Min(_rubberStart.Y, _rubberCurrent.Y) * _zoom;
-        double w = Math.Abs(_rubberCurrent.X - _rubberStart.X) * _zoom;
-        double h = Math.Abs(_rubberCurrent.Y - _rubberStart.Y) * _zoom;
+        Rect region = new(
+            Math.Min(_rubberStart.X, _rubberCurrent.X),
+            Math.Min(_rubberStart.Y, _rubberCurrent.Y),
+            Math.Abs(_rubberCurrent.X - _rubberStart.X),
+            Math.Abs(_rubberCurrent.Y - _rubberStart.Y));
 
         if (_rubberBandRect is null)
         {
-            _rubberBandRect = new Border
+            _rubberBandRect = new CanvasMarqueeAdorner
             {
-                Background = ResourceBrush("SelectedOverlayBrush", UiColorConstants.C_7C96FF22),
-                BorderBrush = ResourceBrush("BorderFocusBrush", UiColorConstants.C_6B8CFF),
-                BorderThickness = new Thickness(1),
+                Fill = ResourceBrush("SelectedOverlayBrush", UiColorConstants.C_7C96FF22),
+                Stroke = ResourceBrush("BorderFocusBrush", UiColorConstants.C_6B8CFF),
+                StrokeThickness = 1,
                 IsHitTestVisible = false,
             };
             // Add rubber band before wires so it renders behind
-            int wiresIndex = _scene.Children.IndexOf(_wires);
-            if (wiresIndex >= 0)
-            {
-                _scene.Children.Insert(wiresIndex, _rubberBandRect);
-            }
-            else
-            {
-                _scene.Children.Add(_rubberBandRect);
-            }
+            _overlay.Children.Insert(0, _rubberBandRect);
         }
 
-        Canvas.SetLeft(_rubberBandRect, x);
-        Canvas.SetTop(_rubberBandRect, y);
-        _rubberBandRect.Width = w;
-        _rubberBandRect.Height = h;
+        _selectionAdornerController.SyncMarqueeAdorner(ViewModel!, region, _rubberBandRect);
 
         // Ensure wires remain visible during rubber band selection
         EnsureWiresOnTop();

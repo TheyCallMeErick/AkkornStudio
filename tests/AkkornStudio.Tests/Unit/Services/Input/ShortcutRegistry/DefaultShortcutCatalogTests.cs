@@ -18,7 +18,6 @@ public sealed class DefaultShortcutCatalogTests
         Assert.Contains(definitions, d => d.ActionId.Value == ShortcutActionIds.Redo);
         Assert.Contains(definitions, d => d.ActionId.Value == ShortcutActionIds.TogglePreview);
         Assert.Contains(definitions, d => d.ActionId.Value == ShortcutActionIds.ExplainPlan);
-        Assert.Contains(definitions, d => d.ActionId.Value == ShortcutActionIds.RunPreview);
         Assert.Contains(definitions, d => d.ActionId.Value == ShortcutActionIds.SqlRunCurrent);
     }
 

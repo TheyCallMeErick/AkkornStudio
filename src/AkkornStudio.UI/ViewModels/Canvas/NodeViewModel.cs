@@ -22,6 +22,7 @@ namespace AkkornStudio.UI.ViewModels;
 /// </summary>
 public sealed class NodeViewModel : ViewModelBase, ICanvasTableNode, ICanvasLayerNode
 {
+    private const string AutoProjectionMarkerParameter = "__akkorn_auto_projection";
     private static readonly IReadOnlyList<string> JoinTypeOptionValues = [
         "INNER",
         "LEFT",
@@ -61,6 +62,7 @@ public sealed class NodeViewModel : ViewModelBase, ICanvasTableNode, ICanvasLaye
         _isHovered,
         _isOrphan;
     private string? _alias;
+    private string? _comparisonInlineSummary;
     private double _width = 220;
     private int _zOrder;
     private List<ValidationIssue> _validationIssues = [];
@@ -124,6 +126,14 @@ public sealed class NodeViewModel : ViewModelBase, ICanvasTableNode, ICanvasLaye
 
     /// <summary>True if this node is the final result output.</summary>
     public bool IsResultOutput => Type == NodeType.ResultOutput;
+
+    /// <summary>True when this ResultOutput was auto-generated from the ER flow.</summary>
+    public bool IsAutoProjectionResultOutput =>
+        IsResultOutput
+        && string.Equals(
+            Parameters.GetValueOrDefault(AutoProjectionMarkerParameter),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
 
     /// <summary>True if this node is a ColumnList (multiple column selector).</summary>
     public bool IsColumnList => Type == NodeType.ColumnList;
@@ -275,6 +285,20 @@ public sealed class NodeViewModel : ViewModelBase, ICanvasTableNode, ICanvasLaye
     /// Hides the empty input area for source-like nodes that have no inputs.
     /// </summary>
     public bool ShowStandardInputBand => ShowStandardPins && InputPins.Count > 0;
+
+    public string? ComparisonInlineSummary
+    {
+        get => _comparisonInlineSummary;
+        private set
+        {
+            if (!Set(ref _comparisonInlineSummary, value))
+                return;
+
+            RaisePropertyChanged(nameof(HasComparisonInlineSummary));
+        }
+    }
+
+    public bool HasComparisonInlineSummary => !string.IsNullOrWhiteSpace(ComparisonInlineSummary);
 
     public bool IsValueNumber => Type == NodeType.ValueNumber;
     public bool IsValueString => Type == NodeType.ValueString;
@@ -838,6 +862,100 @@ public sealed class NodeViewModel : ViewModelBase, ICanvasTableNode, ICanvasLaye
         }
 
         return null;
+    }
+
+    internal void SyncComparisonInlineSummary(IEnumerable<ConnectionViewModel> allConnections)
+    {
+        ComparisonInlineSummary = BuildComparisonInlineSummary(allConnections);
+    }
+
+    private string? BuildComparisonInlineSummary(IEnumerable<ConnectionViewModel> allConnections)
+    {
+        if (!SupportsBinaryComparisonInlineSummary())
+            return null;
+
+        string left = ResolveComparisonOperandDisplay("left", allConnections);
+        string right = ResolveComparisonOperandDisplay("right", allConnections);
+        return $"{left} {ResolveComparisonOperatorSymbol()} {right}";
+    }
+
+    private bool SupportsBinaryComparisonInlineSummary() =>
+        Type is NodeType.Equals
+            or NodeType.NotEquals
+            or NodeType.GreaterThan
+            or NodeType.GreaterOrEqual
+            or NodeType.LessThan
+            or NodeType.LessOrEqual;
+
+    private string ResolveComparisonOperandDisplay(
+        string pinName,
+        IEnumerable<ConnectionViewModel> allConnections)
+    {
+        ConnectionViewModel? wire = allConnections.FirstOrDefault(c =>
+            c.ToPin?.Owner == this
+            && string.Equals(c.ToPin.Name, pinName, StringComparison.OrdinalIgnoreCase));
+
+        if (wire is not null)
+            return DescribeComparisonSourcePin(wire.FromPin);
+
+        if (PinLiterals.TryGetValue(pinName, out string? literal)
+            && !string.IsNullOrWhiteSpace(literal))
+        {
+            return FormatComparisonLiteral(literal);
+        }
+
+        return $"<{pinName}>";
+    }
+
+    private static string DescribeComparisonSourcePin(PinViewModel fromPin)
+    {
+        if (fromPin.ColumnRefMeta is not null)
+        {
+            string qualifier = string.IsNullOrWhiteSpace(fromPin.ColumnRefMeta.TableAlias)
+                ? fromPin.Owner.Title
+                : fromPin.ColumnRefMeta.TableAlias.Trim();
+            return string.IsNullOrWhiteSpace(qualifier)
+                ? fromPin.ColumnRefMeta.ColumnName
+                : $"{qualifier}.{fromPin.ColumnRefMeta.ColumnName}";
+        }
+
+        if (fromPin.Owner.IsValueNode
+            && fromPin.Owner.Parameters.TryGetValue("value", out string? value)
+            && !string.IsNullOrWhiteSpace(value))
+        {
+            return FormatComparisonLiteral(value);
+        }
+
+        return $"{fromPin.Owner.Title}.{fromPin.Name}";
+    }
+
+    private string ResolveComparisonOperatorSymbol() =>
+        Type switch
+        {
+            NodeType.Equals => "=",
+            NodeType.NotEquals => "<>",
+            NodeType.GreaterThan => ">",
+            NodeType.GreaterOrEqual => ">=",
+            NodeType.LessThan => "<",
+            NodeType.LessOrEqual => "<=",
+            _ => "=",
+        };
+
+    private static string FormatComparisonLiteral(string rawLiteral)
+    {
+        string normalized = rawLiteral
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Trim();
+
+        if (string.IsNullOrWhiteSpace(normalized))
+            return "''";
+
+        const int maxPreviewLength = 48;
+        if (normalized.Length <= maxPreviewLength)
+            return normalized;
+
+        return normalized[..(maxPreviewLength - 3)] + "...";
     }
 
     private static bool IsProjectionInputPinName(string pinName) =>
@@ -1405,6 +1523,9 @@ public sealed class NodeViewModel : ViewModelBase, ICanvasTableNode, ICanvasLaye
     public void RaiseParameterChanged(string p)
     {
         RaisePropertyChanged($"Param_{p}");
+
+        if (IsResultOutput && string.Equals(p, AutoProjectionMarkerParameter, StringComparison.OrdinalIgnoreCase))
+            RaisePropertyChanged(nameof(IsAutoProjectionResultOutput));
 
         if (string.Equals(p, "ViewName", StringComparison.OrdinalIgnoreCase))
             RaisePropertyChanged(nameof(CanOpenViewSubcanvas));

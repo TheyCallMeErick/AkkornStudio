@@ -20,7 +20,6 @@ public sealed class ShortcutRegressionTests
             ShortcutActionIds.Undo,
             ShortcutActionIds.Redo,
             ShortcutActionIds.TogglePreview,
-            ShortcutActionIds.RunPreview,
             ShortcutActionIds.ExplainPlan,
         ];
 

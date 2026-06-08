@@ -45,5 +45,37 @@ public class ManualJoinDialogViewModelTests
         Assert.DoesNotContain(vm.RightColumns, c => c.Name == "name");
         Assert.True(vm.HasCompatibleRightColumns);
     }
-}
 
+    [Fact]
+    public void Open_WhenLeftIsNumber_FiltersOutIntegerNarrowingTargets()
+    {
+        var canvas = new CanvasViewModel();
+        var left = canvas.SpawnTableNode("public.orders", [("customer_id", PinDataType.Number)], new Point(0, 0));
+        var right = canvas.SpawnTableNode("public.customers", [("id_int", PinDataType.Integer), ("id_num", PinDataType.Number)], new Point(100, 0));
+        var vm = new ManualJoinDialogViewModel();
+
+        vm.Open(left, right);
+
+        vm.SelectedLeftColumn = vm.LeftColumns.First(c => c.Name.Equals("customer_id", StringComparison.OrdinalIgnoreCase));
+
+        Assert.DoesNotContain(vm.RightColumns, c => c.Name.Equals("id_int", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(vm.RightColumns, c => c.Name.Equals("id_num", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Open_WhenLeftIsInteger_AllowsWiderNumericTargets()
+    {
+        var canvas = new CanvasViewModel();
+        var left = canvas.SpawnTableNode("public.orders", [("customer_id", PinDataType.Integer)], new Point(0, 0));
+        var right = canvas.SpawnTableNode("public.customers", [("id_num", PinDataType.Number), ("id_dec", PinDataType.Decimal)], new Point(100, 0));
+        var vm = new ManualJoinDialogViewModel();
+
+        vm.Open(left, right);
+
+        vm.SelectedLeftColumn = vm.LeftColumns.First(c => c.Name.Equals("customer_id", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Contains(vm.RightColumns, c => c.Name.Equals("id_num", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(vm.RightColumns, c => c.Name.Equals("id_dec", StringComparison.OrdinalIgnoreCase));
+        Assert.True(vm.ConfirmCommand.CanExecute(null));
+    }
+}

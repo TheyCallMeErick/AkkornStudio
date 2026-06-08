@@ -6,9 +6,11 @@ public sealed class AlignNodesCommand(IReadOnlyList<NodeViewModel> nodes, AlignM
     : ICanvasCommand
 {
     private const double DefaultNodeW = 230;
-    private const double DefaultNodeH = 130;
+    private const double MinimumNodeH = 74;
+    private const double PinRowH = 22;
 
-    private readonly IReadOnlyList<NodeViewModel> _nodes = nodes;
+    private readonly IReadOnlyList<NodeViewModel> _nodes =
+        nodes ?? throw new ArgumentNullException(nameof(nodes));
     private readonly IReadOnlyList<Point> _before = nodes.Select(n => n.Position).ToArray();
     private readonly IReadOnlyList<Point> _after = ComputeTargets(nodes, mode);
 
@@ -31,8 +33,21 @@ public sealed class AlignNodesCommand(IReadOnlyList<NodeViewModel> nodes, AlignM
         AlignMode mode
     )
     {
-        double W(NodeViewModel n) => n.Width > 0 ? n.Width : DefaultNodeW;
-        double H(NodeViewModel n) => DefaultNodeH;
+        if (nodes.Count == 0)
+            return [];
+
+        var nodeIndexes = new Dictionary<NodeViewModel, int>(ReferenceEqualityComparer.Instance);
+        for (int i = 0; i < nodes.Count; i++)
+            nodeIndexes[nodes[i]] = i;
+
+        static double W(NodeViewModel n) =>
+            double.IsFinite(n.Width) && n.Width > 0 ? n.Width : DefaultNodeW;
+
+        static double H(NodeViewModel n)
+        {
+            int pinRows = Math.Max(n.InputPins.Count, n.OutputPins.Count);
+            return MinimumNodeH + (pinRows * PinRowH);
+        }
 
         Point[] result = [.. nodes.Select(n => n.Position)];
 
@@ -90,7 +105,7 @@ public sealed class AlignNodesCommand(IReadOnlyList<NodeViewModel> nodes, AlignM
                 double cursor = left;
                 for (int i = 0; i < sorted.Count; i++)
                 {
-                    int idx = Enumerable.Range(0, nodes.Count).First(j => nodes[j] == sorted[i]);
+                    int idx = nodeIndexes[sorted[i]];
                     result[idx] = new Point(cursor, nodes[idx].Position.Y);
                     cursor += W(sorted[i]) + gap;
                 }
@@ -106,12 +121,14 @@ public sealed class AlignNodesCommand(IReadOnlyList<NodeViewModel> nodes, AlignM
                 double cursor = top;
                 for (int i = 0; i < sorted.Count; i++)
                 {
-                    int idx = Enumerable.Range(0, nodes.Count).First(j => nodes[j] == sorted[i]);
+                    int idx = nodeIndexes[sorted[i]];
                     result[idx] = new Point(nodes[idx].Position.X, cursor);
                     cursor += H(sorted[i]) + gap;
                 }
                 break;
             }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported align mode.");
         }
 
         return result;

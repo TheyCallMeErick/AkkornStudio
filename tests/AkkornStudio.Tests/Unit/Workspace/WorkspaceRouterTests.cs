@@ -68,13 +68,54 @@ public class WorkspaceRouterTests
         Assert.Equal(activeBefore, router.ActiveDocumentId);
     }
 
-    private static OpenWorkspaceDocument CreateDocument(WorkspaceDocumentType type, string title)
+    [Fact]
+    public void TryActivate_SwitchingDocuments_PreservesDirtyFlagInBackgroundDocument()
+    {
+        var router = new WorkspaceRouter();
+        OpenWorkspaceDocument queryDirty = CreateDocument(
+            WorkspaceDocumentType.QueryCanvas,
+            "Query",
+            isDirty: true);
+        OpenWorkspaceDocument ddlClean = CreateDocument(
+            WorkspaceDocumentType.DdlCanvas,
+            "DDL",
+            isDirty: false);
+
+        router.OpenDocument(queryDirty);
+        router.OpenDocument(ddlClean);
+
+        bool changed = router.TryActivate(queryDirty.Descriptor.DocumentId);
+
+        Assert.True(changed);
+        OpenWorkspaceDocument reopenedQuery = Assert.Single(router.OpenDocuments,
+            document => document.Descriptor.DocumentId == queryDirty.Descriptor.DocumentId);
+        Assert.True(reopenedQuery.Descriptor.IsDirty);
+    }
+
+    [Fact]
+    public void ReplaceDocuments_WhenActiveIdIsInvalid_PrefersQueryCanvasAsFallback()
+    {
+        var router = new WorkspaceRouter();
+        OpenWorkspaceDocument ddlDocument = CreateDocument(WorkspaceDocumentType.DdlCanvas, "DDL");
+        OpenWorkspaceDocument queryDocument = CreateDocument(WorkspaceDocumentType.QueryCanvas, "Query");
+
+        router.ReplaceDocuments(
+            [ddlDocument, queryDocument],
+            activeDocumentId: Guid.NewGuid());
+
+        Assert.Equal(queryDocument.Descriptor.DocumentId, router.ActiveDocumentId);
+    }
+
+    private static OpenWorkspaceDocument CreateDocument(
+        WorkspaceDocumentType type,
+        string title,
+        bool isDirty = false)
     {
         WorkspaceDocumentDescriptor descriptor = new(
             DocumentId: Guid.NewGuid(),
             DocumentType: type,
             Title: title,
-            IsDirty: false,
+            IsDirty: isDirty,
             PersistenceSchemaVersion: "1.0",
             Payload: JsonSerializer.SerializeToElement(new { }));
 

@@ -82,7 +82,7 @@ public class CommandPaletteFactoryNewCanvasTests
     }
 
     [Fact]
-    public void TogglePreviewCommand_UsesShellOutputPreviewForActiveQueryCanvas()
+    public void TogglePreviewCommand_InQueryMode_OpensQueryPreviewState()
     {
 #pragma warning disable SYSLIB0050
         var window = (Window)FormatterServices.GetUninitializedObject(typeof(Window));
@@ -111,6 +111,7 @@ public class CommandPaletteFactoryNewCanvasTests
 
         Assert.True(shell.OutputPreview.IsVisible);
         Assert.Equal(OutputPreviewModalViewModel.EOutputPreviewMode.Query, shell.OutputPreview.Mode);
+        Assert.True(shell.OutputPreview.ShowQueryPrimaryContent);
     }
 
     [Fact]

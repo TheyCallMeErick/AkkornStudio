@@ -3,14 +3,35 @@
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:sqlcomp="using:AkkornStudio.UI.Services.SqlEditor"
              x:Class="AkkornStudio.UI.App"
-             RequestedThemeVariant="Dark">
+             RequestedThemeVariant="Dark"
+             >
 
   <Application.Resources>
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
-        <!-- Design tokens first -->
         <ResourceInclude Source="avares://AkkornStudio.UI/Assets/Themes/DesignTokens.axaml"/>
       </ResourceDictionary.MergedDictionaries>
+
+      <!-- Force Fluent system accent away from default amber/orange hues -->
+      <Color x:Key="SystemAccentColor">#5B7CFA</Color>
+      <Color x:Key="SystemAccentColorLight1">#6C8CFF</Color>
+      <Color x:Key="SystemAccentColorLight2">#8EA7FF</Color>
+      <Color x:Key="SystemAccentColorLight3">#B8C6FF</Color>
+      <Color x:Key="SystemAccentColorDark1">#4E6EE8</Color>
+      <Color x:Key="SystemAccentColorDark2">#3F5BC7</Color>
+      <Color x:Key="SystemAccentColorDark3">#31469B</Color>
+
+      <!-- Fluent semantic brushes override (avoid neutral gray surfaces) -->
+      <SolidColorBrush x:Key="SystemControlBackgroundBaseLowBrush" Color="#101629"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundBaseMediumLowBrush" Color="#121A2E"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundBaseMediumBrush" Color="#151E34"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundBaseHighBrush" Color="#19233D"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundChromeLowBrush" Color="#0F1528"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumBrush" Color="#15203A"/>
+      <SolidColorBrush x:Key="SystemControlBackgroundChromeHighBrush" Color="#1C2946"/>
+      <SolidColorBrush x:Key="SystemControlForegroundBaseHighBrush" Color="#E7ECFF"/>
+      <SolidColorBrush x:Key="SystemControlForegroundBaseMediumBrush" Color="#AEB9D9"/>
+      <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush" Color="#7F8AAE"/>
     </ResourceDictionary>
   </Application.Resources>
 
@@ -54,7 +75,16 @@
 
   <Application.Styles>
     <!-- Fluent Dark base -->
-    <FluentTheme/>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Dark"
+                               Accent="#5B7CFA"
+                               RegionColor="#090B14"/>
+        <ColorPaletteResources x:Key="Light"
+                               Accent="#5B7CFA"
+                               RegionColor="#EEF2FF"/>
+      </FluentTheme.Palettes>
+    </FluentTheme>
 
 
 

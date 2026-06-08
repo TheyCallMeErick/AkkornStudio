@@ -52,20 +52,6 @@
       <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
     </Style>
 
-    <!-- Action button -->
-    <Style Selector="Button.sql-action">
-      <Setter Property="Background"       Value="Transparent"/>
-      <Setter Property="BorderThickness"  Value="0"/>
-      <Setter Property="Foreground"       Value="{StaticResource TextMutedBrush}"/>
-      <Setter Property="Padding"          Value="6,3"/>
-      <Setter Property="CornerRadius"     Value="{StaticResource RadiusSM}"/>
-      <Setter Property="FontSize"         Value="{StaticResource FontSizeCaption}"/>
-      <Setter Property="Cursor"           Value="Hand"/>
-    </Style>
-    <Style Selector="Button.sql-action:pointerover">
-      <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
-      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-    </Style>
     <Style Selector="Button.sql-cta">
       <Setter Property="MinWidth" Value="180"/>
       <Setter Property="Padding" Value="12,9"/>
@@ -112,9 +98,7 @@
   </UserControl.Styles>
 
   <!-- ══ Bar shell ══════════════════════════════════════════════════════════ -->
-  <Border Background="{StaticResource Bg0Brush}"
-          BorderBrush="{StaticResource BorderSubtleBrush}"
-          BorderThickness="0,1,0,0"
+  <Border Classes="surface-panel"
           VerticalAlignment="Stretch">
 
     <Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto" Margin="0">
@@ -190,12 +174,7 @@
 
         <!-- Provider picker -->
         <ComboBox Grid.Column="3"
-                  Background="{StaticResource Bg0Brush}"
-                  BorderBrush="{StaticResource BorderSubtleBrush}"
-                  Foreground="{StaticResource AccentPrimaryHoverBrush}"
-                  FontSize="{StaticResource FontSizeCaption}"
-                  CornerRadius="{StaticResource RadiusXS}"
-                  Padding="7,2"
+                  Classes="field"
                   Margin="4,0"
                   VerticalAlignment="Center">
           <ComboBox.Items>
@@ -208,7 +187,7 @@
 
         <!-- Copy SQL button -->
         <Button Grid.Column="4"
-                Classes="sql-action"
+                Classes="tb compact"
                 Name="CopyBtn"
           ToolTip.Tip="{Binding [tooltip.copySql], Source={x:Static loc:LocalizationService.Instance}}"
                 IsEnabled="{Binding HasSql}">
@@ -220,7 +199,7 @@
 
         <!-- Format / pretty-print -->
         <Button Grid.Column="5"
-                Classes="sql-action"
+                Classes="tb compact"
                 Name="FormatBtn"
           ToolTip.Tip="{Binding [tooltip.formatSql], Source={x:Static loc:LocalizationService.Instance}}"
                 IsEnabled="{Binding HasSql}">
@@ -242,7 +221,7 @@
       </Grid>
 
       <!-- ── SQL text display ───────────────────────────────────────────────── -->
-      <Border Grid.Row="2" Margin="12,0,12,4" Background="{StaticResource Bg0Brush}" BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1" CornerRadius="{StaticResource RadiusSM}">
+      <Border Grid.Row="2" Margin="12,0,12,4" Classes="surface-card">
         <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                       VerticalScrollBarVisibility="Auto"
                       MinHeight="90"
@@ -311,12 +290,7 @@
 
                 <Button IsVisible="{Binding HasQuickAction}"
                         Command="{Binding QuickActionCommand}"
-                        Background="{StaticResource Bg3Brush}"
-                        BorderBrush="{StaticResource AccentPrimaryHoverBrush}"
-                        Foreground="{StaticResource BtnInfoFgBrush}"
-                        BorderThickness="1"
-                        Padding="6,1"
-                        FontSize="{StaticResource FontSizeCaption}"
+                        Classes="info compact"
                         Content="{Binding QuickActionLabel}"/>
               </StackPanel>
           </DataTemplate>
@@ -335,10 +309,7 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="validation:GuardIssue">
-            <Border CornerRadius="{StaticResource RadiusXS}"
-                    Background="{StaticResource BtnWarningBgBrush}"
-                    BorderBrush="{StaticResource StatusWarningBrush}"
-                    BorderThickness="1"
+            <Border Classes="badge warning"
                     Padding="6,3"
                     Margin="0,2,6,0">
               <StackPanel Orientation="Horizontal" Spacing="5">
@@ -365,11 +336,8 @@
 
             <Border Grid.Row="5"
               Margin="12,2,12,10"
+              Classes="surface-card"
               Padding="10,10"
-              Background="{StaticResource Bg1Brush}"
-              BorderBrush="{StaticResource BorderBrush}"
-              BorderThickness="1"
-              CornerRadius="{StaticResource RadiusMD}"
                 IsVisible="{ReflectionBinding ShowPerformanceTools, ElementName=Root}">
         <Grid ColumnDefinitions="*,Auto,Auto,*">
           <TextBlock Grid.Column="0"
@@ -382,7 +350,7 @@
                   Classes="sql-cta explain"
                   Margin="0,0,8,0"
                   ToolTip.Tip="{Binding [tooltip.openExplainPlan], Source={x:Static loc:LocalizationService.Instance}}"
-                  IsEnabled="{Binding HasSql}"
+                  IsEnabled="{Binding CanExecutePreviewActions}"
                   AutomationProperties.Name="{Binding [tooltip.openExplainPlan], Source={x:Static loc:LocalizationService.Instance}}">
             <StackPanel Orientation="Horizontal" Spacing="7">
               <mi:MaterialIcon Kind="TableSearch" Width="14" Height="14"/>
@@ -394,7 +362,7 @@
                   Name="BenchmarkBtn"
                   Classes="sql-cta benchmark"
                   ToolTip.Tip="{Binding [tooltip.openBenchmark], Source={x:Static loc:LocalizationService.Instance}}"
-                  IsEnabled="{Binding HasSql}"
+                  IsEnabled="{Binding CanExecutePreviewActions}"
                   AutomationProperties.Name="{Binding [tooltip.openBenchmark], Source={x:Static loc:LocalizationService.Instance}}">
             <StackPanel Orientation="Horizontal" Spacing="7">
               <mi:MaterialIcon Kind="TimerOutline" Width="14" Height="14"/>

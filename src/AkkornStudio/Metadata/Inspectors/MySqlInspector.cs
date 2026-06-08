@@ -164,6 +164,97 @@ public sealed class MySqlInspector(ConnectionConfig config) : BaseInspector(conf
         return set;
     }
 
+    // ── Check constraints (best-effort, MySQL 8.0.16+) ───────────────────────────
+
+    protected override async Task<IReadOnlyList<CheckConstraintMetadata>> FetchCheckConstraintsAsync(
+        DbConnection conn,
+        string schema,
+        string table,
+        CancellationToken ct
+    )
+    {
+        const string sql = """
+            SELECT cc.CONSTRAINT_NAME, cc.CHECK_CLAUSE
+            FROM information_schema.CHECK_CONSTRAINTS cc
+            JOIN information_schema.TABLE_CONSTRAINTS tc
+              ON tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA
+             AND tc.CONSTRAINT_NAME   = cc.CONSTRAINT_NAME
+            WHERE tc.TABLE_SCHEMA = @schema
+              AND tc.TABLE_NAME   = @table
+            """;
+
+        try
+        {
+            await using var cmd = (MySqlCommand)conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("@schema", schema);
+            cmd.Parameters.AddWithValue("@table", table);
+
+            var checks = new List<CheckConstraintMetadata>();
+            await using MySqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (reader.IsDBNull(0) || reader.IsDBNull(1))
+                    continue;
+
+                checks.Add(new CheckConstraintMetadata(reader.GetString(0), reader.GetString(1).Trim()));
+            }
+
+            return checks;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    // ── Column attributes (best-effort) ──────────────────────────────────────────
+
+    protected override async Task<IReadOnlyDictionary<string, ColumnAttributes>> FetchColumnAttributesAsync(
+        DbConnection conn,
+        string schema,
+        string table,
+        CancellationToken ct
+    )
+    {
+        const string sql = """
+            SELECT COLUMN_NAME, EXTRA, GENERATION_EXPRESSION, COLLATION_NAME
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = @schema
+              AND TABLE_NAME   = @table
+            """;
+
+        var map = new Dictionary<string, ColumnAttributes>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            await using var cmd = (MySqlCommand)conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("@schema", schema);
+            cmd.Parameters.AddWithValue("@table", table);
+
+            await using MySqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                string name = reader.GetString(0);
+                string extra = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+                string? gen = reader.IsDBNull(2) ? null : reader.GetString(2);
+                string? collation = reader.IsDBNull(3) ? null : reader.GetString(3);
+
+                bool isAutoIncrement = extra.Contains("auto_increment", StringComparison.OrdinalIgnoreCase);
+                if (string.IsNullOrWhiteSpace(gen))
+                    gen = null;
+
+                map[name] = new ColumnAttributes(isAutoIncrement, gen, collation);
+            }
+        }
+        catch
+        {
+            return map;
+        }
+
+        return map;
+    }
+
     // ── Indexes ───────────────────────────────────────────────────────────────
 
     protected override async Task<IReadOnlyList<IndexMetadata>> FetchIndexesAsync(

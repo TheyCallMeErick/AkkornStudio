@@ -1,15 +1,27 @@
+﻿using Avalonia;
 using AkkornStudio.Metadata;
 using AkkornStudio.UI.ViewModels;
 
 namespace AkkornStudio.UI.ViewModels.ErDiagram;
 
 /// <summary>
-/// Represents a simple child-to-parent FK relationship edge in the ER canvas.
+/// Represents a child-to-parent FK relationship edge in the ER canvas.
+/// Supports both single-column and composite relationships.
 /// </summary>
 public sealed class ErRelationEdgeViewModel : ViewModelBase
 {
     private string _childEntityId;
     private string _parentEntityId;
+    private bool _isSelected;
+    private double _startX;
+    private double _startY;
+    private double _endX;
+    private double _endY;
+    private IReadOnlyList<Point> _routePoints = [];
+    private bool _isHovered;
+    private bool _isDimmed;
+    private bool _isHidden;
+    private ErVisualState _visualState = ErVisualState.Normal;
 
     public ErRelationEdgeViewModel(
         string? constraintName,
@@ -19,12 +31,31 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
         string parentColumn,
         ReferentialAction onDelete,
         ReferentialAction onUpdate)
+        : this(
+            constraintName,
+            childEntityId,
+            parentEntityId,
+            [childColumn],
+            [parentColumn],
+            onDelete,
+            onUpdate)
+    {
+    }
+
+    public ErRelationEdgeViewModel(
+        string? constraintName,
+        string childEntityId,
+        string parentEntityId,
+        IReadOnlyList<string> childColumns,
+        IReadOnlyList<string> parentColumns,
+        ReferentialAction onDelete,
+        ReferentialAction onUpdate)
     {
         ConstraintName = constraintName;
         _childEntityId = childEntityId;
         _parentEntityId = parentEntityId;
-        ChildColumn = childColumn;
-        ParentColumn = parentColumn;
+        ChildColumns = childColumns.Count == 0 ? [] : [.. childColumns];
+        ParentColumns = parentColumns.Count == 0 ? [] : [.. parentColumns];
         OnDelete = onDelete;
         OnUpdate = onUpdate;
     }
@@ -55,15 +86,214 @@ public sealed class ErRelationEdgeViewModel : ViewModelBase
         }
     }
 
-    public string ChildColumn { get; }
+    public IReadOnlyList<string> ChildColumns { get; }
 
-    public string ParentColumn { get; }
+    public IReadOnlyList<string> ParentColumns { get; }
+
+    public string ChildColumn => ChildColumns.FirstOrDefault() ?? string.Empty;
+
+    public string ParentColumn => ParentColumns.FirstOrDefault() ?? string.Empty;
 
     public ReferentialAction OnDelete { get; }
 
     public ReferentialAction OnUpdate { get; }
 
-    public string Cardinality => "N:1";
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (!Set(ref _isSelected, value))
+                return;
 
-    public string TooltipText => $"{ChildEntityId}.{ChildColumn} → {ParentEntityId}.{ParentColumn}";
+            RaiseStylePropertiesChanged();
+        }
+    }
+
+    public bool IsHovered
+    {
+        get => _isHovered;
+        set
+        {
+            if (!Set(ref _isHovered, value))
+                return;
+
+            RaiseStylePropertiesChanged();
+        }
+    }
+
+    public bool IsDimmed
+    {
+        get => _isDimmed;
+        set
+        {
+            if (!Set(ref _isDimmed, value))
+                return;
+
+            RaiseStylePropertiesChanged();
+        }
+    }
+
+    public bool IsHidden
+    {
+        get => _isHidden;
+        set => Set(ref _isHidden, value);
+    }
+
+    public ErVisualState VisualState
+    {
+        get => _visualState;
+        set
+        {
+            if (!Set(ref _visualState, value))
+                return;
+
+            RaiseStylePropertiesChanged();
+        }
+    }
+
+    private const double DotRadius = 4.5;
+
+    public double StartX
+    {
+        get => _startX;
+        set
+        {
+            if (!Set(ref _startX, value))
+                return;
+
+            RaisePropertyChanged(nameof(StartPoint));
+            RaisePropertyChanged(nameof(MidpointX));
+            RaisePropertyChanged(nameof(StartDotLeft));
+        }
+    }
+
+    public double StartY
+    {
+        get => _startY;
+        set
+        {
+            if (!Set(ref _startY, value))
+                return;
+
+            RaisePropertyChanged(nameof(StartPoint));
+            RaisePropertyChanged(nameof(MidpointY));
+            RaisePropertyChanged(nameof(StartDotTop));
+        }
+    }
+
+    public double EndX
+    {
+        get => _endX;
+        set
+        {
+            if (!Set(ref _endX, value))
+                return;
+
+            RaisePropertyChanged(nameof(EndPoint));
+            RaisePropertyChanged(nameof(MidpointX));
+            RaisePropertyChanged(nameof(EndDotLeft));
+        }
+    }
+
+    public double EndY
+    {
+        get => _endY;
+        set
+        {
+            if (!Set(ref _endY, value))
+                return;
+
+            RaisePropertyChanged(nameof(EndPoint));
+            RaisePropertyChanged(nameof(MidpointY));
+            RaisePropertyChanged(nameof(EndDotTop));
+        }
+    }
+
+    // Canvas.Left/Top for endpoint dot ellipses (centered on the pin point)
+    public double StartDotLeft => StartX - DotRadius;
+    public double StartDotTop => StartY - DotRadius;
+    public double EndDotLeft => EndX - DotRadius;
+    public double EndDotTop => EndY - DotRadius;
+    public double DotSize => DotRadius * 2;
+
+    public double MidpointX => (StartX + EndX) / 2d;
+
+    public double MidpointY => (StartY + EndY) / 2d;
+
+    public IReadOnlyList<Point> RoutePoints
+    {
+        get => _routePoints;
+        private set => Set(ref _routePoints, value);
+    }
+
+    public Point StartPoint => new(StartX, StartY);
+
+    public Point EndPoint => new(EndX, EndY);
+
+    public double LabelX => RoutePoints.Count >= 3 ? RoutePoints[1].X : MidpointX;
+
+    public double LabelY => RoutePoints.Count >= 3 ? (RoutePoints[1].Y + RoutePoints[2].Y) / 2d : MidpointY;
+
+    public string Cardinality => ChildColumns.Count > 1 ? $"N:1 ({ChildColumns.Count})" : "N:1";
+
+    public int ColumnPairCount => Math.Min(ChildColumns.Count, ParentColumns.Count);
+
+    public string ConstraintLabel => string.IsNullOrWhiteSpace(ConstraintName) ? "Unnamed relationship" : ConstraintName;
+
+    public string MappingSummary =>
+        string.Join(" | ", ChildColumns.Zip(ParentColumns, static (child, parent) => $"{child} -> {parent}"));
+
+    public string JoinPredicateSql =>
+        string.Join(
+            " AND ",
+            ChildColumns.Zip(
+                ParentColumns,
+                (child, parent) => $"{ChildEntityId}.{child} = {ParentEntityId}.{parent}"));
+
+    public string TooltipText =>
+        $"{ConstraintLabel}\n{ChildEntityId}.{FormatColumnList(ChildColumns)} -> {ParentEntityId}.{FormatColumnList(ParentColumns)}\nDELETE: {OnDelete} | UPDATE: {OnUpdate}";
+
+    public string HitStroke => "#00FFFFFF";
+
+    public string StrokeColor =>
+        IsSelected
+            ? "#3B82F6"
+            : IsHovered
+                ? "#6BAED6"
+                : VisualState switch
+                {
+                    ErVisualState.Warning => "#F59E0B",
+                    ErVisualState.Error => "#EF4444",
+                    ErVisualState.Changed => "#C47A3A",
+                    ErVisualState.ConnectedHighlight => "#22C55E",
+                    _ => "#1E3254",
+                };
+
+    public double StrokeThickness =>
+        IsSelected ? 2.5d : IsHovered ? 2.0d : 1.4d;
+
+    public double StrokeOpacity => IsDimmed ? 0.15d : 0.85d;
+
+    public void SetRoute(IEnumerable<Point> routePoints)
+    {
+        RoutePoints = routePoints.ToArray();
+        RaisePropertyChanged(nameof(LabelX));
+        RaisePropertyChanged(nameof(LabelY));
+        RaisePropertyChanged(nameof(StartDotLeft));
+        RaisePropertyChanged(nameof(StartDotTop));
+        RaisePropertyChanged(nameof(EndDotLeft));
+        RaisePropertyChanged(nameof(EndDotTop));
+    }
+
+    private static string FormatColumnList(IReadOnlyList<string> columns) =>
+        columns.Count <= 1 ? (columns.FirstOrDefault() ?? string.Empty) : $"({string.Join(", ", columns)})";
+
+    private void RaiseStylePropertiesChanged()
+    {
+        RaisePropertyChanged(nameof(StrokeColor));
+        RaisePropertyChanged(nameof(StrokeThickness));
+        RaisePropertyChanged(nameof(StrokeOpacity));
+    }
 }
+

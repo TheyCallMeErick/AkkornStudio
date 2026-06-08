@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:AkkornStudio.UI.ViewModels"
              xmlns:ctrl="using:AkkornStudio.UI.Controls"
-             xmlns:shell="using:AkkornStudio.UI.Controls.Shell"
              xmlns:ae="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
              xmlns:loc="using:AkkornStudio.UI.Services.Localization"
              xmlns:mi="using:Material.Icons.Avalonia"
@@ -11,35 +10,6 @@
              x:DataType="vm:OutputPreviewModalViewModel">
 
   <UserControl.Styles>
-    <Style Selector="Button.modal-tab">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding" Value="10,6"/>
-      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
-      <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}"/>
-      <Setter Property="Cursor" Value="Hand"/>
-      <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
-      <Setter Property="Transitions">
-        <Transitions>
-          <BrushTransition Property="Background" Duration="0:0:0.12"/>
-          <BrushTransition Property="Foreground" Duration="0:0:0.12"/>
-          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12"/>
-        </Transitions>
-      </Setter>
-    </Style>
-    <Style Selector="Button.modal-tab:pointerover">
-      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-      <Setter Property="RenderTransform" Value="scale(1.04)"/>
-    </Style>
-    <Style Selector="Button.modal-tab.active">
-      <Setter Property="Foreground" Value="{StaticResource AccentPrimaryHoverBrush}"/>
-      <Setter Property="FontWeight" Value="{StaticResource FontWeightTitle}"/>
-      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
-    </Style>
-    <Style Selector="Button.modal-tab:pressed">
-      <Setter Property="RenderTransform" Value="scale(0.98)"/>
-    </Style>
     <Style Selector="ae|TextEditor.ddl-output">
       <Setter Property="Background" Value="{StaticResource Bg0Brush}"/>
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
@@ -57,22 +27,21 @@
             VerticalAlignment="Stretch"/>
 
         <Border IsVisible="{Binding ShowShellCard}"
+            Classes="surface-floating"
           Width="1180"
             MaxWidth="1180"
             Height="700"
             MaxHeight="700"
             MinHeight="520"
-            Background="{StaticResource Bg1Brush}"
-            BorderBrush="{StaticResource BorderSubtleBrush}"
-            BorderThickness="1"
-            CornerRadius="{StaticResource RadiusLG}"
-            BoxShadow="{StaticResource PanelShadow}"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
             RenderTransformOrigin="50%,50%"
             RenderTransform="scale(1)">
       <Grid RowDefinitions="Auto,Auto,*,Auto">
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,12,14,8">
+        <Grid Grid.Row="0"
+              Classes="surface-floating-header"
+              ColumnDefinitions="*,Auto"
+              Margin="14,12,14,8">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <mi:MaterialIcon Kind="EyeOutline" Width="16" Height="16" VerticalAlignment="Center" Foreground="{StaticResource AccentBlueBrush}"/>
             <StackPanel Spacing="1" VerticalAlignment="Center">
@@ -84,8 +53,7 @@
           </StackPanel>
           <Button Grid.Column="1"
                   Command="{Binding CloseCommand}"
-                  Classes="tb"
-                  Padding="8,4"
+                  Classes="icon-ghost"
                   ToolTip.Tip="{Binding [preview.close], Source={x:Static loc:LocalizationService.Instance}}"
                   AutomationProperties.Name="{Binding [preview.close], Source={x:Static loc:LocalizationService.Instance}}">
             <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
@@ -93,26 +61,19 @@
         </Grid>
 
         <Border Grid.Row="1"
+                Classes="surface-card"
                 Margin="0,0,0,2"
-                Padding="8,0,8,0"
-                Background="{StaticResource Bg0Brush}"
-                BorderBrush="{StaticResource BorderSubtleBrush}"
-                BorderThickness="0,1,0,1">
+                Padding="8,0,8,0">
           <StackPanel Orientation="Horizontal" Spacing="2">
-            <Button Classes="modal-tab"
+            <Button Classes="panel-tab"
                     Classes.active="{Binding ShowPrimaryContent}"
                     Command="{Binding ShowPrimaryTabCommand}"
                     Content="{Binding PrimaryTabLabel}"/>
-             <Button Classes="modal-tab"
+             <Button Classes="panel-tab"
                Classes.active="{Binding ShowCanvasDiagnosticsContent}"
                IsVisible="{Binding HasCanvasDiagnostics}"
                Command="{Binding ShowCanvasDiagnosticsTabCommand}"
                Content="{Binding CanvasDiagnosticsTabLabel}"/>
-             <Button Classes="modal-tab"
-               Classes.active="{Binding ShowStructureDiagnosticsContent}"
-               IsVisible="{Binding HasStructureDiagnostics}"
-               Command="{Binding ShowStructureDiagnosticsTabCommand}"
-               Content="{Binding StructureDiagnosticsTabLabel}"/>
           </StackPanel>
         </Border>
 
@@ -173,11 +134,6 @@
               <ctrl:SidebarDiagnosticsControl DataContext="{Binding Diagnostics}" />
             </Border>
 
-            <Border IsVisible="{Binding ShowStructureDiagnosticsContent}"
-              Background="{StaticResource Bg0Brush}">
-              <shell:DdlSchemaAnalysisWorkspaceControl DataContext="{Binding DdlTool}" />
-            </Border>
-
           <Border IsVisible="{Binding ShowUnavailablePrimaryContent}"
                   Background="{StaticResource Bg0Brush}"
                   Padding="16">
@@ -191,10 +147,7 @@
         </Grid>
 
         <Border Grid.Row="3"
-                BorderBrush="{StaticResource BorderSubtleBrush}"
-                BorderThickness="0,1,0,0"
-                Background="{StaticResource Bg1Brush}"
-                CornerRadius="{StaticResource RadiusLGBottom}"
+                Classes="surface-floating-footer"
                 Padding="14,10">
           <Grid ColumnDefinitions="*,Auto">
             <TextBlock Grid.Column="0"
@@ -204,8 +157,7 @@
                        VerticalAlignment="Center"/>
             <Button Grid.Column="1"
                     Command="{Binding CloseCommand}"
-                    Classes="secondary"
-                    Padding="10,6"
+                    Classes="secondary compact"
                     Content="{Binding [preview.close], Source={x:Static loc:LocalizationService.Instance}}"/>
           </Grid>
         </Border>

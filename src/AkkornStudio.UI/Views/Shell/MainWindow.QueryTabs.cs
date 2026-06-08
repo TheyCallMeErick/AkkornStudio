@@ -31,17 +31,34 @@ public partial class MainWindow
         if (activeCanvas is null)
             return;
 
-        CanvasLoadResult result = CanvasSerializer.Deserialize(CreateFreshCanvasSnapshot(), activeCanvas);
-        if (!result.Success)
+        try
         {
-            activeCanvas.DataPreview.ShowError(LF("tab.resetFailed", "Falha ao limpar documento ativo: {0}", result.Error ?? string.Empty), null);
-            return;
-        }
+            CanvasLoadResult result = CanvasSerializer.Deserialize(CreateFreshCanvasSnapshot(), activeCanvas);
+            if (!result.Success)
+            {
+                activeCanvas.DataPreview.ShowError(LF("tab.resetFailed", "Falha ao limpar documento ativo: {0}", result.Error ?? string.Empty), null);
+                return;
+            }
 
-        activeCanvas.CurrentFilePath = null;
-        activeCanvas.IsDirty = false;
-        Title = activeCanvas.WindowTitle;
-        InvalidateActiveDiagramCanvasWires();
+            activeCanvas.CurrentFilePath = null;
+            activeCanvas.IsDirty = false;
+            Title = activeCanvas.WindowTitle;
+            InvalidateActiveDiagramCanvasWires();
+            TrackCriticalFlow("CF-03-canvas-core-editing", "reset_active_canvas", "ok");
+        }
+        catch (Exception ex)
+        {
+            CurrentShell.Toasts.ShowError("Falha ao criar novo diagrama.", ex.Message);
+            TrackCriticalFlow(
+                "CF-03-canvas-core-editing",
+                "reset_active_canvas",
+                "fail",
+                new Dictionary<string, object?>
+                {
+                    ["errorType"] = ex.GetType().Name,
+                    ["errorMessage"] = ex.Message,
+                });
+        }
     }
 
     private void CreateNewQueryTab()

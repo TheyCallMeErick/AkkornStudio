@@ -24,24 +24,35 @@ public sealed class PostgresMetadataQueries : IMetadataQueryProvider
             CASE WHEN c.is_nullable = 'YES' THEN 'YES' ELSE 'NO' END AS is_nullable,
             c.character_maximum_length,
             CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END AS is_pk,
-            fk_ref.table_name AS fk_table
+            fk_ref.fk_table AS fk_table
         FROM information_schema.columns c
         LEFT JOIN (
             SELECT a.attname AS column_name
             FROM   pg_constraint pk
             JOIN   pg_attribute a ON pk.conrelid = a.attrelid AND a.attnum = ANY(pk.conkey)
+            JOIN   pg_class pk_table ON pk.conrelid = pk_table.oid
+            JOIN   pg_namespace pk_schema ON pk_table.relnamespace = pk_schema.oid
             WHERE  pk.contype = 'p'
-              AND  pg_class_schema.relname = @schema
-              AND  pg_class_table.relname = @table
+              AND  pk_schema.nspname = @schema
+              AND  pk_table.relname = @table
         ) pk ON pk.column_name = c.column_name
         LEFT JOIN (
             SELECT DISTINCT
-                fk_c.relname AS table_name,
-                a.attname AS column_name
+                child_n.nspname AS table_schema,
+                child_c.relname AS table_name,
+                a.attname AS column_name,
+                parent_c.relname AS fk_table
             FROM   pg_constraint fk
-            JOIN   pg_class fk_c ON fk.conrelid = fk_c.oid
+            JOIN   pg_class child_c ON fk.conrelid = child_c.oid
+            JOIN   pg_namespace child_n ON child_c.relnamespace = child_n.oid
             JOIN   pg_attribute a ON fk.conrelid = a.attrelid AND a.attnum = ANY(fk.conkey)
-        ) fk_ref ON fk_ref.column_name = c.column_name
+            JOIN   pg_class parent_c ON fk.confrelid = parent_c.oid
+            WHERE  fk.contype = 'f'
+              AND  child_n.nspname = @schema
+              AND  child_c.relname = @table
+        ) fk_ref ON fk_ref.table_schema = c.table_schema
+                 AND fk_ref.table_name = c.table_name
+                 AND fk_ref.column_name = c.column_name
         WHERE  c.table_schema = @schema
           AND  c.table_name = @table
         ORDER  BY c.ordinal_position

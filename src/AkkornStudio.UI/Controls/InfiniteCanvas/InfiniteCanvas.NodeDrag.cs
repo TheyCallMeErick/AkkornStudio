@@ -11,6 +11,12 @@ namespace AkkornStudio.UI.Controls;
 /// </summary>
 public sealed partial class InfiniteCanvas
 {
+    private void ResetNodeDragTransientState()
+    {
+        _dragNode = null;
+        _groupDragStarts = null;
+    }
+
     private void OnNodeClicked(object? s, (NodeViewModel Node, bool Shift) a) =>
         ViewModel?.SelectNode(a.Node, a.Shift);
 
@@ -29,33 +35,43 @@ public sealed partial class InfiniteCanvas
 
     private void OnNodeDragStarted(object? s, (NodeViewModel Node, Point Pos) a)
     {
-        Log($">>> NODE DRAG STARTED: Node='{a.Node.Title}', NodePos={a.Node.Position}, DragPos={a.Pos}, PanOffset={_panOffset}, Zoom={_zoom}");
-        _dragNode = a.Node;
-        _nodeDragStart = a.Pos;
-        _nodePosStart = a.Node.Position;
+        // Defensive reset for aborted gestures that never reached completion.
+        ResetNodeDragTransientState();
 
-        // CRITICAL NodifyM pattern: Capture pan offset at start for compensation during drag
-        _startPanOffset = _panOffset;
-        _startNodeDragCanvasPos = ScreenToCanvas(a.Pos);
-        Log($"    Captured start pan offset: {_startPanOffset}, canvas pos: {_startNodeDragCanvasPos}");
-
-        // Capture other selected nodes so they move together as a group
-        if (ViewModel is not null && a.Node.IsSelected)
+        try
         {
-            _groupDragStarts = ViewModel.Nodes
-                .Where(n => n.IsSelected && n != a.Node)
-                .Select(n => (n, n.Position))
-                .ToList();
-            Log($"    Multi-node drag: {_groupDragStarts.Count} additional nodes selected");
-        }
-        else
-        {
-            _groupDragStarts = null;
-            Log($"    Single-node drag");
-        }
+            Log($">>> NODE DRAG STARTED: Node='{a.Node.Title}', NodePos={a.Node.Position}, DragPos={a.Pos}, PanOffset={_panOffset}, Zoom={_zoom}");
+            _dragNode = a.Node;
+            _nodeDragStart = a.Pos;
+            _nodePosStart = a.Node.Position;
 
-        EnsureWiresOnTop();
-        _wires.InvalidateVisual();
+            // CRITICAL NodifyM pattern: Capture pan offset at start for compensation during drag
+            _startPanOffset = _panOffset;
+            _startNodeDragCanvasPos = ScreenToCanvas(a.Pos);
+            Log($"    Captured start pan offset: {_startPanOffset}, canvas pos: {_startNodeDragCanvasPos}");
+
+            // Capture other selected nodes so they move together as a group
+            if (ViewModel is not null && a.Node.IsSelected)
+            {
+                _groupDragStarts = ViewModel.Nodes
+                    .Where(n => n.IsSelected && n != a.Node)
+                    .Select(n => (n, n.Position))
+                    .ToList();
+                Log($"    Multi-node drag: {_groupDragStarts.Count} additional nodes selected");
+            }
+            else
+            {
+                Log($"    Single-node drag");
+            }
+
+            EnsureWiresOnTop();
+            _wires.InvalidateVisual();
+        }
+        catch
+        {
+            ResetNodeDragTransientState();
+            throw;
+        }
     }
 
     private void OnNodeDragDelta(object? s, (NodeViewModel Node, Point Pos) a)
@@ -73,8 +89,9 @@ public sealed partial class InfiniteCanvas
         Point panCompensation = _startPanOffset - _panOffset;
         Log($"    Pan compensation: Start={_startPanOffset}, Current={_panOffset}, Delta={panCompensation}");
 
-        double rawX = _nodePosStart.X + (d.X + panCompensation.X) / _zoom;
-        double rawY = _nodePosStart.Y + (d.Y + panCompensation.Y) / _zoom;
+        double normalizedZoom = CanvasViewportController.NormalizeZoom(_zoom);
+        double rawX = _nodePosStart.X + (d.X + panCompensation.X) / normalizedZoom;
+        double rawY = _nodePosStart.Y + (d.Y + panCompensation.Y) / normalizedZoom;
 
         double newX = rawX,
             newY = rawY;
@@ -239,8 +256,7 @@ public sealed partial class InfiniteCanvas
         }
         finally
         {
-            _dragNode = null;
-            _groupDragStarts = null;
+            ResetNodeDragTransientState();
             EnsureWiresOnTop();
             _wires.InvalidateVisual();
         }

@@ -153,7 +153,7 @@ public sealed class SqlImportExecutionServiceOutcomeTests
     }
 
     [Fact]
-    public void Execute_WithUnion_WithoutSetMaterialization_ClassifiesAsPartial()
+    public void Execute_WithSimpleUnion_MaterializesSetOperationAsEquivalentTotal()
     {
         var service = CreateService();
         var report = new ObservableCollection<ImportReportItem>();
@@ -165,13 +165,37 @@ public sealed class SqlImportExecutionServiceOutcomeTests
         );
 
         Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.Contains(report, item =>
+            item.Status == ImportItemStatus.Imported
+            && item.Label.Contains("UNION", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.AstUnsupported
+        );
+    }
+
+    [Fact]
+    public void Execute_WithUnionArityMismatch_ClassifiesAsPartial()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "SELECT id FROM orders UNION SELECT id, name FROM customers",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
         Assert.Equal(ImportOutcomeStatus.Partial, result.Outcome!.Status);
         Assert.Equal(ImportEquivalenceClass.Partial, result.Outcome.EquivalenceClass);
-        Assert.True(result.Outcome.HasDegradedGraph);
         Assert.NotEmpty(result.Outcome.NonBlockingDiagnostics);
         Assert.Contains(
             result.Outcome.NonBlockingDiagnostics,
-            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.AstUnsupported
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.SetOperandArityMismatch
         );
     }
 
@@ -217,7 +241,7 @@ public sealed class SqlImportExecutionServiceOutcomeTests
     }
 
     [Fact]
-    public void Execute_WithSimpleCteRewritePath_EmitsFallbackDiagnostic()
+    public void Execute_WithSimpleCteRewritePath_ClassifiesAsEquivalentTotal()
     {
         var service = CreateService();
         var report = new ObservableCollection<ImportReportItem>();
@@ -229,9 +253,316 @@ public sealed class SqlImportExecutionServiceOutcomeTests
         );
 
         Assert.NotNull(result.Outcome);
-        Assert.Contains(
-            result.Outcome!.NonBlockingDiagnostics,
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
             diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithSimpleCteColumnListRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "WITH recent_orders(id) AS (SELECT id FROM orders) SELECT id FROM recent_orders",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithFilteredCteRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "WITH recent_orders AS (SELECT id, status FROM orders src WHERE src.status = 'OPEN') SELECT ro.id FROM recent_orders ro WHERE ro.id > 10",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithFilteredCteInInnerJoinRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "WITH active_customers AS (SELECT id, active FROM customers src WHERE src.active = true) SELECT o.id FROM orders o JOIN active_customers c ON o.customer_id = c.id WHERE o.id > 10",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithFilteredCteInLeftJoin_DoesNotRewriteAsEquivalent()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "WITH active_customers AS (SELECT id, active FROM customers src WHERE src.active = true) SELECT o.id FROM orders o LEFT JOIN active_customers c ON o.customer_id = c.id",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.NotEqual(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Contains(
+            result.Outcome.BlockingDiagnostics.Concat(result.Outcome.NonBlockingDiagnostics),
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.AstUnsupported
+        );
+    }
+
+    [Fact]
+    public void Execute_WithSimpleJoinInsideCteRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "WITH order_customers AS (SELECT o.id AS order_id, c.name AS customer_name FROM orders o JOIN customers c ON o.customer_id = c.id) SELECT oc.order_id FROM order_customers oc WHERE oc.order_id > 10",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithOrderedLimitedCteRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "WITH recent_orders AS (SELECT id AS order_id, status FROM orders WHERE status = 'OPEN' ORDER BY id DESC LIMIT 5) SELECT ro.order_id FROM recent_orders ro",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithSimpleFromSubqueryRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "SELECT id FROM (SELECT id FROM orders) o",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithFilteredFromSubqueryRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "SELECT o.id FROM (SELECT id, status FROM orders src WHERE src.status = 'OPEN') o WHERE o.id > 10",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithProjectionAliasFromSubqueryRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "SELECT o.order_id FROM (SELECT id AS order_id, status FROM orders) o WHERE o.order_id > 10",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithSimpleJoinSubqueryRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "SELECT o.id FROM orders o JOIN (SELECT id FROM customers) c ON o.customer_id = c.id",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithFilteredInnerJoinSubqueryRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "SELECT o.id FROM orders o JOIN (SELECT id, active FROM customers src WHERE src.active = true) c ON o.customer_id = c.id WHERE o.id > 10",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithFilteredLeftJoinSubqueryRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "SELECT o.id FROM orders o LEFT JOIN (SELECT id, active FROM customers src WHERE src.active = true) c ON o.customer_id = c.id",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithMultipleFilteredJoinSubqueryRewritePath_ClassifiesAsEquivalentTotal()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "SELECT o.id FROM orders o JOIN (SELECT id, region_id, active FROM customers src WHERE src.active = true) c ON o.customer_id = c.id JOIN (SELECT id, enabled FROM regions rr WHERE rr.enabled = true) r ON c.region_id = r.id WHERE o.id > 10",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.Equal(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Equal(ImportEquivalenceClass.EquivalentTotal, result.Outcome.EquivalenceClass);
+        Assert.False(result.Outcome.HasDegradedGraph);
+        Assert.DoesNotContain(
+            result.Outcome.NonBlockingDiagnostics,
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.FallbackRegexUsed
+        );
+    }
+
+    [Fact]
+    public void Execute_WithFilteredRightJoinSubquery_DoesNotRewriteAsEquivalent()
+    {
+        var service = CreateService();
+        var report = new ObservableCollection<ImportReportItem>();
+
+        SqlImportExecutionResult result = service.Execute(
+            "SELECT o.id FROM orders o RIGHT JOIN (SELECT id, active FROM customers src WHERE src.active = true) c ON o.customer_id = c.id",
+            report,
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result.Outcome);
+        Assert.NotEqual(ImportOutcomeStatus.EquivalentTotal, result.Outcome!.Status);
+        Assert.Contains(
+            result.Outcome.BlockingDiagnostics.Concat(result.Outcome.NonBlockingDiagnostics),
+            diagnostic => diagnostic.Code == SqlImportDiagnosticCodes.AstUnsupported
         );
     }
 

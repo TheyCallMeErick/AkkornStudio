@@ -9,6 +9,7 @@ public sealed class SchemaSuggestionFactory
 {
     private readonly SchemaMissingFkSqlCandidateFactory _missingFkSqlCandidateFactory = new();
     private readonly SchemaMissingRequiredCommentSqlCandidateFactory _missingRequiredCommentSqlCandidateFactory = new();
+    private readonly SchemaNf1SplitColumnSqlCandidateFactory _nf1SplitColumnSqlCandidateFactory = new();
 
     public IReadOnlyList<SchemaSuggestion> CreateSuggestions(
         SchemaIssue issue,
@@ -26,9 +27,9 @@ public sealed class SchemaSuggestionFactory
             SchemaRuleCode.MISSING_REQUIRED_COMMENT => BuildMissingRequiredCommentSuggestions(issue, provider),
             SchemaRuleCode.NAMING_CONVENTION_VIOLATION => BuildNamingSuggestions(issue),
             SchemaRuleCode.LOW_SEMANTIC_NAME => BuildLowSemanticNameSuggestions(issue),
-            SchemaRuleCode.NF1_HINT_MULTI_VALUED => BuildNormalizationSuggestions(issue, "Avaliar decomposição do atributo em estrutura atômica."),
+            SchemaRuleCode.NF1_HINT_MULTI_VALUED => BuildNf1NormalizationSuggestions(issue, provider),
             SchemaRuleCode.NF2_HINT_PARTIAL_DEPENDENCY => BuildNormalizationSuggestions(issue, "Avaliar mover o atributo para entidade dependente do componente parcial."),
-            SchemaRuleCode.NF3_HINT_TRANSITIVE_DEPENDENCY => BuildNormalizationSuggestions(issue, "Avaliar mover o atributo descritivo para a tabela de referência correspondente."),
+            SchemaRuleCode.NF3_HINT_TRANSITIVE_DEPENDENCY => BuildNormalizationSuggestions(issue, "Avaliar mover o atributo descritivo para a tabela de referencia correspondente."),
             _ => [],
         };
 
@@ -50,7 +51,7 @@ public sealed class SchemaSuggestionFactory
         SchemaSuggestion primarySuggestion = CreateSuggestion(
             issue,
             "Review inferred foreign key",
-            $"Revisar a coluna '{qualifiedColumn}' e confirmar se ela deve ser promovida a FK explícita.",
+            $"Revisar a coluna '{qualifiedColumn}' e confirmar se ela deve ser promovida a FK explicita.",
             issue.Confidence,
             []
         );
@@ -71,7 +72,7 @@ public sealed class SchemaSuggestionFactory
             CreateSuggestion(
                 issue,
                 "Validate relationship cardinality",
-                $"Confirmar cardinalidade, nulabilidade e comportamento de delete/update antes de materializar a relação em {provider}.",
+                $"Confirmar cardinalidade, nulabilidade e comportamento de delete/update antes de materializar a relacao em {provider}.",
                 Math.Max(0d, issue.Confidence - 0.1000),
                 []
             ),
@@ -84,7 +85,7 @@ public sealed class SchemaSuggestionFactory
         SchemaSuggestion suggestion = CreateSuggestion(
             issue,
             "Add technical comment",
-            $"Adicionar comentário técnico objetivo para '{target}' compatível com o provider {provider}.",
+            $"Adicionar comentario tecnico objetivo para '{target}' compativel com o provider {provider}.",
             issue.Confidence,
             []
         );
@@ -112,7 +113,7 @@ public sealed class SchemaSuggestionFactory
             CreateSuggestion(
                 issue,
                 "Rename to configured convention",
-                $"Renomear '{target}' para aderir à convenção configurada sem alterar o significado técnico.",
+                $"Renomear '{target}' para aderir a convencao configurada sem alterar o significado tecnico.",
                 issue.Confidence,
                 []
             ),
@@ -127,10 +128,33 @@ public sealed class SchemaSuggestionFactory
             CreateSuggestion(
                 issue,
                 "Use a more specific identifier",
-                $"Substituir '{target}' por nome técnico mais específico e observável no schema.",
+                $"Substituir '{target}' por nome tecnico mais especifico e observavel no schema.",
                 issue.Confidence,
                 []
             ),
+        ];
+    }
+
+    private List<SchemaSuggestion> BuildNf1NormalizationSuggestions(SchemaIssue issue, DatabaseProvider provider)
+    {
+        SchemaSuggestion suggestion = CreateSuggestion(
+            issue,
+            "Review normalization shape",
+            "Avaliar decomposicao do atributo em uma tabela filha atomica.",
+            issue.Confidence,
+            []);
+
+        SqlFixCandidate? candidate = _nf1SplitColumnSqlCandidateFactory.CreateCandidate(
+            issue,
+            provider,
+            suggestion.SuggestionId);
+
+        return
+        [
+            suggestion with
+            {
+                SqlCandidates = candidate is null ? [] : [candidate],
+            },
         ];
     }
 
@@ -167,6 +191,7 @@ public sealed class SchemaSuggestionFactory
             SqlCandidates: candidates
         );
     }
+
     private static string BuildQualifiedColumn(SchemaIssue issue)
     {
         if (!string.IsNullOrWhiteSpace(issue.SchemaName)

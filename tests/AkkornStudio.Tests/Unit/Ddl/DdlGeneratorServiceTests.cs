@@ -1,5 +1,6 @@
 using AkkornStudio.Core;
 using AkkornStudio.Ddl;
+using AkkornStudio.Metadata;
 
 namespace AkkornStudio.Tests.Unit.Ddl;
 
@@ -118,6 +119,25 @@ public class DdlGeneratorServiceTests
         Assert.Contains("((lower(name)))", sql, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Generate_CreateIndex_WithExpression_SqlServer_ThrowsExplicitError()
+    {
+        var expr = new CreateIndexExpr(
+            "dbo",
+            "users",
+            "ix_users_lower_name",
+            isUnique: false,
+            keyColumns: [new DdlIndexKeyExpr(ExpressionSql: "lower(name)")],
+            includeColumns: [],
+            ifNotExists: true
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.SqlServer);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => generator.Generate([expr]));
+        Assert.Contains("does not support arbitrary expression keys", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData(DatabaseProvider.SqlServer, "sp_rename")]
     [InlineData(DatabaseProvider.MySql, "MODIFY COLUMN")]
@@ -141,6 +161,22 @@ public class DdlGeneratorServiceTests
         string sql = generator.Generate([expr]);
 
         Assert.Contains(expectedToken, sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_AlterTableAlterColumnType_OnSqlite_ThrowsExplicitError()
+    {
+        var expr = new AlterTableExpr(
+            "main",
+            "orders",
+            operations: [new AlterColumnTypeOpExpr("total", "DECIMAL(10,2)", true)],
+            emitSeparateStatements: true
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.SQLite);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => generator.Generate([expr]));
+        Assert.Contains("does not support ALTER COLUMN TYPE", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -179,7 +215,7 @@ public class DdlGeneratorServiceTests
 
     [Theory]
     [InlineData(DatabaseProvider.Postgres, "CREATE OR REPLACE VIEW")]
-    [InlineData(DatabaseProvider.MySql, "CREATE OR REPLACE VIEW")]
+    [InlineData(DatabaseProvider.MySql, "DROP VIEW IF EXISTS")]
     [InlineData(DatabaseProvider.SqlServer, "CREATE VIEW")]
     [InlineData(DatabaseProvider.SQLite, "CREATE VIEW")]
     public void Generate_CreateView_EmitsProviderSpecificSyntax(DatabaseProvider provider, string expectedToken)
@@ -200,7 +236,7 @@ public class DdlGeneratorServiceTests
 
     [Theory]
     [InlineData(DatabaseProvider.Postgres, "CREATE OR REPLACE VIEW")]
-    [InlineData(DatabaseProvider.MySql, "CREATE OR REPLACE VIEW")]
+    [InlineData(DatabaseProvider.MySql, "DROP VIEW IF EXISTS")]
     [InlineData(DatabaseProvider.SqlServer, "ALTER VIEW")]
     [InlineData(DatabaseProvider.SQLite, "DROP VIEW IF EXISTS")]
     public void Generate_AlterView_EmitsProviderSpecificSyntax(DatabaseProvider provider, string expectedToken)
@@ -312,6 +348,144 @@ public class DdlGeneratorServiceTests
     }
 
     [Fact]
+    public void Generate_CreateTable_DropAndCreate_Postgres_AppendsCascadeToDrop()
+    {
+        var expr = new CreateTableExpr(
+            "public",
+            "orders",
+            ifNotExists: false,
+            columns: [new DdlColumnExpr("id", "INT", false)],
+            primaryKeys: [],
+            uniques: [],
+            checks: [],
+            tableComment: null,
+            mode: DdlIdempotentMode.DropAndCreate
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.Postgres);
+        string sql = generator.Generate([expr]);
+
+        Assert.Contains("DROP TABLE IF EXISTS", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CASCADE;", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_CreateTable_PrimaryKeyWithUnknownColumn_ThrowsExplicitError()
+    {
+        var expr = new CreateTableExpr(
+            "public",
+            "orders",
+            ifNotExists: true,
+            columns: [new DdlColumnExpr("id", "INT", false)],
+            primaryKeys: [new DdlPrimaryKeyExpr("pk_orders", ["missing_col"])],
+            uniques: [],
+            checks: []
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.Postgres);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => generator.Generate([expr]));
+        Assert.Contains("PRIMARY KEY references unknown column 'missing_col'", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_CreateTable_UniqueWithDuplicateColumns_ThrowsExplicitError()
+    {
+        var expr = new CreateTableExpr(
+            "public",
+            "orders",
+            ifNotExists: true,
+            columns:
+            [
+                new DdlColumnExpr("id", "INT", false),
+                new DdlColumnExpr("status", "TEXT", true),
+            ],
+            primaryKeys: [],
+            uniques: [new DdlUniqueExpr("uq_orders_status", ["status", "STATUS"])],
+            checks: []
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.Postgres);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => generator.Generate([expr]));
+        Assert.Contains("UNIQUE contains duplicate column 'STATUS'", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_CreateTable_WithForeignKey_QuotesConstraintAndParentReference()
+    {
+        var expr = new CreateTableExpr(
+            "public",
+            "orders",
+            ifNotExists: true,
+            columns:
+            [
+                new DdlColumnExpr("id", "INT", false),
+                new DdlColumnExpr("customer_id", "INT", false),
+            ],
+            primaryKeys: [new DdlPrimaryKeyExpr("pk_orders", ["id"])],
+            uniques: [],
+            checks: [],
+            foreignKeys:
+            [
+                new DdlForeignKeyExpr(
+                    ConstraintName: "fk_orders_customer",
+                    ChildColumns: ["customer_id"],
+                    ParentSchema: "public",
+                    ParentTable: "customers",
+                    ParentColumns: ["id"],
+                    OnDelete: ReferentialAction.Restrict,
+                    OnUpdate: ReferentialAction.Cascade
+                ),
+            ]
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.Postgres);
+        string sql = generator.Generate([expr]);
+
+        Assert.Contains("CONSTRAINT \"fk_orders_customer\" FOREIGN KEY (\"customer_id\")", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("REFERENCES \"public\".\"customers\" (\"id\")", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ON UPDATE CASCADE", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_CreateTable_WithForeignKey_OnSqlite_OmitsOnUpdateClause()
+    {
+        var expr = new CreateTableExpr(
+            "main",
+            "orders",
+            ifNotExists: true,
+            columns:
+            [
+                new DdlColumnExpr("id", "INTEGER", false),
+                new DdlColumnExpr("customer_id", "INTEGER", false),
+            ],
+            primaryKeys: [new DdlPrimaryKeyExpr("pk_orders", ["id"])],
+            uniques: [],
+            checks: [],
+            foreignKeys:
+            [
+                new DdlForeignKeyExpr(
+                    ConstraintName: "fk_orders_customer",
+                    ChildColumns: ["customer_id"],
+                    ParentSchema: "main",
+                    ParentTable: "customers",
+                    ParentColumns: ["id"],
+                    OnDelete: ReferentialAction.Cascade,
+                    OnUpdate: ReferentialAction.Cascade
+                ),
+            ]
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.SQLite);
+        string sql = generator.Generate([expr]);
+
+        Assert.Contains("FOREIGN KEY (\"customer_id\")", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ON DELETE CASCADE", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ON UPDATE", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Generate_CreateEnumType_IfNotExists_EmitsGuardedCreate()
     {
         var expr = new CreateEnumTypeExpr(
@@ -344,6 +518,25 @@ public class DdlGeneratorServiceTests
 
         Assert.Contains("DROP VIEW", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("CREATE VIEW", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_CreateView_DropAndCreate_Postgres_AppendsCascadeToDrop()
+    {
+        var expr = new CreateViewExpr(
+            "public",
+            "v_orders",
+            orReplace: false,
+            isMaterialized: false,
+            selectSql: "SELECT id FROM orders",
+            mode: DdlIdempotentMode.DropAndCreate
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.Postgres);
+        string sql = generator.Generate([expr]);
+
+        Assert.Contains("DROP VIEW IF EXISTS", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CASCADE;", sql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -390,6 +583,64 @@ public class DdlGeneratorServiceTests
 
         Assert.Contains("DROP SEQUENCE IF EXISTS", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("CREATE SEQUENCE", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_CreateSequence_DropAndCreate_Postgres_AppendsCascadeToDrop()
+    {
+        var expr = new CreateSequenceExpr(
+            "public",
+            "seq_orders",
+            startValue: null,
+            increment: null,
+            minValue: null,
+            maxValue: null,
+            cycle: false,
+            cache: null,
+            mode: DdlIdempotentMode.DropAndCreate
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.Postgres);
+        string sql = generator.Generate([expr]);
+
+        Assert.Contains("DROP SEQUENCE IF EXISTS", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CASCADE;", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_CreateEnumType_DropAndCreate_Postgres_AppendsCascadeToDrop()
+    {
+        var expr = new CreateEnumTypeExpr(
+            "public",
+            "status_enum",
+            ["NEW", "ACTIVE"],
+            DdlIdempotentMode.DropAndCreate
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.Postgres);
+        string sql = generator.Generate([expr]);
+
+        Assert.Contains("DROP TYPE IF EXISTS", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CASCADE;", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Generate_CreateTableAs_DropAndCreate_Postgres_AppendsCascadeToDrop()
+    {
+        var expr = new CreateTableAsExpr(
+            "public",
+            "orders_copy",
+            sourceTable: null,
+            selectSql: "SELECT * FROM orders",
+            includeData: true,
+            mode: DdlIdempotentMode.DropAndCreate
+        );
+
+        var generator = new DdlGeneratorService(DatabaseProvider.Postgres);
+        string sql = generator.Generate([expr]);
+
+        Assert.Contains("DROP TABLE IF EXISTS", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CASCADE;", sql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

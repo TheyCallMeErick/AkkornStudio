@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using AkkornStudio.Metadata;
 using AkkornStudio.Nodes;
+using AkkornStudio.Nodes.Pins;
 using AkkornStudio.UI.Services.Localization;
 using AkkornStudio.UI.Services.Theming;
 
@@ -194,15 +195,31 @@ public sealed class ManualJoinDialogViewModel : ViewModelBase
 
     private static bool AreTypesCompatible(PinDataType left, PinDataType right)
     {
-        if (left == right)
-            return true;
+        PinModel source = CreateCompatibilityProbePin(
+            ownerId: "manual-join-left",
+            pinName: "left",
+            direction: PinDirection.Output,
+            dataType: left);
+        PinModel destination = CreateCompatibilityProbePin(
+            ownerId: "manual-join-right",
+            pinName: "right",
+            direction: PinDirection.Input,
+            dataType: right);
 
-        bool leftNumeric = left is PinDataType.Integer or PinDataType.Decimal or PinDataType.Number;
-        bool rightNumeric = right is PinDataType.Integer or PinDataType.Decimal or PinDataType.Number;
-        if (leftNumeric && rightNumeric)
-            return true;
+        PinConnectionDecision decision = destination.CanConnect(source, PinConnectionContext.ValidationOnly());
+        return decision.IsAllowed;
+    }
 
-        return left == PinDataType.Expression || right == PinDataType.Expression;
+    private static PinModel CreateCompatibilityProbePin(
+        string ownerId,
+        string pinName,
+        PinDirection direction,
+        PinDataType dataType)
+    {
+        var descriptor = new PinDescriptor(pinName, direction, dataType);
+        var owner = new PinModelOwner(ownerId, NodeType.TableSource);
+        var pinId = new PinId($"{ownerId}:{pinName}:{direction}");
+        return PinModelFactory.Create(pinId, descriptor, owner, dataType, expectedColumnScalarType: null);
     }
 
     private static string ResolveTableLabel(NodeViewModel node)

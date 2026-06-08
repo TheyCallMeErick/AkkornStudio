@@ -118,6 +118,7 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
             {
                 context.CancellationToken.ThrowIfCancellationRequested();
                 string table = SqlImportIdentifierNormalizer.NormalizeQualifiedIdentifier(context.Input.FromParts[i].Table);
+                table = NormalizeImportedSourceTable(table, context.Input.FromParts[i].Alias);
                 Point pos = calculator.TablePosition(i);
 
                 (string resolvedFullName, IReadOnlyList<(string Name, PinDataType Type)> resolvedColumns) =
@@ -181,11 +182,15 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                 context.Canvas.Nodes.Add(joinNode);
 
                 string onClause = context.Input.FromParts[i].OnClause!;
-                if (ImportBuildUtilities.TryParseSimpleBinaryPredicate(
+                string rewrittenOnRaw = ImportBuildUtilities.RewriteKnownQualifiersToAliasInExpression(onClause, context.Input.FromParts);
+                if (TryResolveJoinBinaryPredicate(
+                        i,
                         onClause,
+                        context.Input.FromParts,
                         out string leftExpression,
                         out string joinOperator,
-                        out string rightExpression))
+                        out string rightExpression,
+                        out bool shouldPreserveRawOnClause))
                 {
                     string leftExpressionAliased = ImportBuildUtilities.RewriteQualifierToAlias(leftExpression, context.Input.FromParts);
                     string rightExpressionAliased = ImportBuildUtilities.RewriteQualifierToAlias(rightExpression, context.Input.FromParts);
@@ -202,6 +207,8 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                         ? "<>"
                         : joinOperator;
                     joinNode.Parameters["right_expr"] = rightExpressionAliased;
+                    if (shouldPreserveRawOnClause)
+                        joinNode.Parameters["on_raw"] = rewrittenOnRaw;
 
                     PinViewModel? leftPin = null;
                     PinViewModel? rightPin = null;
@@ -236,7 +243,6 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                 }
                 else
                 {
-                    string rewrittenOnRaw = ImportBuildUtilities.RewriteKnownQualifiersToAliasInExpression(onClause, context.Input.FromParts);
                     joinNode.Parameters["on_raw"] = rewrittenOnRaw;
                     context.Report.Add(SqlImportReportFactory.Partial(
                         SqlImportDiagnosticCodes.FallbackRegexUsed,
@@ -305,6 +311,228 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
                     }
                 }
             }
+        }
+
+        private static bool TryResolveJoinBinaryPredicate(
+            int currentJoinSourceIndex,
+            string onClause,
+            IReadOnlyList<ImportFromPart> fromParts,
+            out string leftExpression,
+            out string joinOperator,
+            out string rightExpression,
+            out bool shouldPreserveRawOnClause)
+        {
+            shouldPreserveRawOnClause = false;
+            if (ImportBuildUtilities.TryParseSimpleBinaryPredicate(
+                    onClause,
+                    out leftExpression,
+                    out joinOperator,
+                    out rightExpression))
+            {
+                return true;
+            }
+
+            IReadOnlyList<string> conjuncts = SplitTopLevelAndConjuncts(onClause);
+            for (int conjunctIndex = 0; conjunctIndex < conjuncts.Count; conjunctIndex++)
+            {
+                string conjunct = conjuncts[conjunctIndex];
+                if (!ImportBuildUtilities.TryParseSimpleBinaryPredicate(
+                        conjunct,
+                        out string candidateLeft,
+                        out string candidateOperator,
+                        out string candidateRight))
+                {
+                    continue;
+                }
+
+                int leftSourceIndex = ResolveSourceIndex(candidateLeft, fromParts);
+                int rightSourceIndex = ResolveSourceIndex(candidateRight, fromParts);
+                bool linksCurrentJoinToPrevious =
+                    (leftSourceIndex == currentJoinSourceIndex && rightSourceIndex >= 0 && rightSourceIndex < currentJoinSourceIndex)
+                    || (rightSourceIndex == currentJoinSourceIndex && leftSourceIndex >= 0 && leftSourceIndex < currentJoinSourceIndex);
+
+                if (!linksCurrentJoinToPrevious)
+                    continue;
+
+                if (!AreRemainingConjunctsCurrentSourceFilters(
+                        conjuncts,
+                        conjunctIndex,
+                        currentJoinSourceIndex,
+                        fromParts))
+                {
+                    continue;
+                }
+
+                leftExpression = candidateLeft;
+                joinOperator = candidateOperator;
+                rightExpression = candidateRight;
+                shouldPreserveRawOnClause = conjuncts.Count > 1;
+                return true;
+            }
+
+            leftExpression = string.Empty;
+            joinOperator = string.Empty;
+            rightExpression = string.Empty;
+            return false;
+        }
+
+        private static bool AreRemainingConjunctsCurrentSourceFilters(
+            IReadOnlyList<string> conjuncts,
+            int chosenJoinConjunctIndex,
+            int currentJoinSourceIndex,
+            IReadOnlyList<ImportFromPart> fromParts)
+        {
+            for (int index = 0; index < conjuncts.Count; index++)
+            {
+                if (index == chosenJoinConjunctIndex)
+                    continue;
+
+                if (!IsCurrentSourceLocalFilter(conjuncts[index], currentJoinSourceIndex, fromParts))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static IReadOnlyList<string> SplitTopLevelAndConjuncts(string expression)
+        {
+            var parts = new List<string>();
+            if (string.IsNullOrWhiteSpace(expression))
+                return parts;
+
+            int start = 0;
+            int depth = 0;
+            int index = 0;
+            while (index < expression.Length)
+            {
+                char current = expression[index];
+                if (current == '(')
+                {
+                    depth++;
+                    index++;
+                    continue;
+                }
+
+                if (current == ')')
+                {
+                    depth = Math.Max(0, depth - 1);
+                    index++;
+                    continue;
+                }
+
+                if (depth == 0 && IsAndAt(expression, index))
+                {
+                    string segment = expression[start..index].Trim();
+                    if (!string.IsNullOrWhiteSpace(segment))
+                        parts.Add(segment);
+                    index += 3;
+                    start = index;
+                    continue;
+                }
+
+                index++;
+            }
+
+            string tail = expression[start..].Trim();
+            if (!string.IsNullOrWhiteSpace(tail))
+                parts.Add(tail);
+
+            return parts;
+        }
+
+        private static bool IsAndAt(string expression, int index)
+        {
+            if (index < 0 || index + 3 > expression.Length)
+                return false;
+
+            if (!expression.AsSpan(index, 3).Equals("AND", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            bool leftBoundary = index == 0 || !char.IsLetterOrDigit(expression[index - 1]);
+            bool rightBoundary = index + 3 >= expression.Length || !char.IsLetterOrDigit(expression[index + 3]);
+            return leftBoundary && rightBoundary;
+        }
+
+        private static bool IsCurrentSourceLocalFilter(
+            string expression,
+            int currentJoinSourceIndex,
+            IReadOnlyList<ImportFromPart> fromParts)
+        {
+            if (!TryParseBinaryPredicateOperands(expression, out string leftOperand, out _, out string rightOperand))
+                return false;
+
+            bool leftIsIdentifier = ImportBuildUtilities.TryResolveSourceAndColumn(leftOperand, fromParts, out int leftSourceIndex, out _);
+            bool rightIsIdentifier = ImportBuildUtilities.TryResolveSourceAndColumn(rightOperand, fromParts, out int rightSourceIndex, out _);
+
+            if (leftIsIdentifier && !rightIsIdentifier)
+                return leftSourceIndex == currentJoinSourceIndex && IsLiteralOperand(rightOperand);
+
+            if (rightIsIdentifier && !leftIsIdentifier)
+                return rightSourceIndex == currentJoinSourceIndex && IsLiteralOperand(leftOperand);
+
+            return false;
+        }
+
+        private static bool TryParseBinaryPredicateOperands(
+            string expression,
+            out string leftOperand,
+            out string @operator,
+            out string rightOperand)
+        {
+            string candidate = StripOuterParentheses(expression);
+            Match match = Regex.Match(
+                candidate,
+                @"^\s*(?<left>.+?)\s*(?<op><>|!=|>=|<=|=|>|<)\s*(?<right>.+?)\s*$",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+            if (!match.Success)
+            {
+                leftOperand = string.Empty;
+                @operator = string.Empty;
+                rightOperand = string.Empty;
+                return false;
+            }
+
+            leftOperand = StripOuterParentheses(match.Groups["left"].Value.Trim());
+            @operator = match.Groups["op"].Value.Trim();
+            rightOperand = StripOuterParentheses(match.Groups["right"].Value.Trim());
+            return true;
+        }
+
+        private static bool IsLiteralOperand(string operand)
+        {
+            string trimmed = operand.Trim();
+            if (trimmed.Length == 0)
+                return false;
+
+            if (trimmed.StartsWith('\'') && trimmed.EndsWith('\'') && trimmed.Length >= 2)
+                return true;
+
+            if (trimmed.StartsWith('"') && trimmed.EndsWith('"') && trimmed.Length >= 2)
+                return true;
+
+            if (trimmed.StartsWith('@') || trimmed.StartsWith(':') || trimmed.StartsWith('$'))
+                return true;
+
+            if (trimmed.Equals("TRUE", StringComparison.OrdinalIgnoreCase)
+                || trimmed.Equals("FALSE", StringComparison.OrdinalIgnoreCase)
+                || trimmed.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return decimal.TryParse(trimmed, out _);
+        }
+
+        private static string StripOuterParentheses(string value)
+        {
+            string result = value?.Trim() ?? string.Empty;
+            while (result.Length >= 2 && result[0] == '(' && result[^1] == ')')
+            {
+                result = result[1..^1].Trim();
+            }
+
+            return result;
         }
 
         private static bool ShouldSwapJoinSides(int currentJoinSourceIndex, int leftSourceIndex, int rightSourceIndex)
@@ -504,6 +732,39 @@ public sealed class ImportModelToCanvasBuilder(CanvasViewModel canvas)
         tableNode.Parameters["table"] = shortName;
         tableNode.Parameters["source_table"] = fullName;
         tableNode.Parameters["from_table"] = fullName;
+    }
+
+    private static string NormalizeImportedSourceTable(string normalizedTable, string? alias)
+    {
+        string value = normalizedTable.Trim();
+        if (value.Length == 0)
+            return value;
+
+        if (value.Contains(' ', StringComparison.Ordinal)
+            && !value.Contains('"', StringComparison.Ordinal)
+            && !value.Contains('[', StringComparison.Ordinal)
+            && !value.Contains('`', StringComparison.Ordinal))
+        {
+            string[] segments = value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (segments.Length > 1)
+                value = segments[0];
+        }
+
+        if (!string.IsNullOrWhiteSpace(alias))
+        {
+            string aliasToken = alias.Trim();
+            if (value.EndsWith(" " + aliasToken, StringComparison.OrdinalIgnoreCase))
+                value = value[..(value.Length - aliasToken.Length)].TrimEnd();
+        }
+
+        Match embeddedAlias = Regex.Match(
+            value,
+            @"^(?<table>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\s+(?<alias>[A-Za-z_][A-Za-z0-9_]*)$",
+            RegexOptions.CultureInvariant);
+        if (embeddedAlias.Success)
+            return embeddedAlias.Groups["table"].Value;
+
+        return value;
     }
 
     private static (string FullName, IReadOnlyList<(string Name, PinDataType Type)> Columns) ResolveTableReference(

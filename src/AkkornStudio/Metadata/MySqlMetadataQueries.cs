@@ -14,6 +14,7 @@ public sealed class MySqlMetadataQueries : IMetadataQueryProvider
         FROM   INFORMATION_SCHEMA.TABLES
         WHERE  TABLE_TYPE = 'BASE TABLE'
           AND  TABLE_SCHEMA NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+          AND  (CREATE_OPTIONS IS NULL OR UPPER(CREATE_OPTIONS) NOT LIKE '%TEMPORARY%')
         ORDER  BY TABLE_SCHEMA, TABLE_NAME
     ";
 
@@ -32,9 +33,12 @@ public sealed class MySqlMetadataQueries : IMetadataQueryProvider
             WHERE  TABLE_SCHEMA = @schema AND TABLE_NAME = @table AND CONSTRAINT_NAME = 'PRIMARY'
         ) pk ON pk.COLUMN_NAME = c.COLUMN_NAME
         LEFT JOIN (
-            SELECT COLUMN_NAME, REFERENCED_TABLE_NAME
+            SELECT
+                COLUMN_NAME,
+                GROUP_CONCAT(DISTINCT REFERENCED_TABLE_NAME ORDER BY REFERENCED_TABLE_NAME SEPARATOR ',') AS REFERENCED_TABLE_NAME
             FROM   INFORMATION_SCHEMA.KEY_COLUMN_USAGE
             WHERE  TABLE_SCHEMA = @schema AND TABLE_NAME = @table AND REFERENCED_TABLE_NAME IS NOT NULL
+            GROUP  BY COLUMN_NAME
         ) fk_ref ON fk_ref.COLUMN_NAME = c.COLUMN_NAME
         WHERE  c.TABLE_SCHEMA = @schema AND c.TABLE_NAME = @table
         ORDER  BY c.ORDINAL_POSITION

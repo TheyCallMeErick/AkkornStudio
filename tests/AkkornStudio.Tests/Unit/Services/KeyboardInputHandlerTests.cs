@@ -474,7 +474,7 @@ public class KeyboardInputHandlerTests
     }
 
     [Fact]
-    public void F5_ExecutesCommandPaletteShortcut_WhenAvailable()
+    public void F5_DoesNotExecuteCommandPaletteShortcut_WhenRunPreviewIsDisabled()
     {
         var canvas = new CanvasViewModel();
         bool executed = false;
@@ -491,12 +491,12 @@ public class KeyboardInputHandlerTests
 
         bool handled = handler.HandleShortcut(Avalonia.Input.Key.F5, Avalonia.Input.KeyModifiers.None);
 
-        Assert.True(handled);
-        Assert.True(executed);
+        Assert.False(handled);
+        Assert.False(executed);
     }
 
     [Fact]
-    public void F5_ExecutesCommandPaletteCommand_ByActionIdEvenWhenDisplayedShortcutDiffers()
+    public void F5_DoesNotExecuteCommandPaletteCommand_ByActionIdWhenRunPreviewIsDisabled()
     {
         var canvas = new CanvasViewModel();
         bool executed = false;
@@ -514,8 +514,8 @@ public class KeyboardInputHandlerTests
 
         bool handled = handler.HandleShortcut(Avalonia.Input.Key.F5, Avalonia.Input.KeyModifiers.None);
 
-        Assert.True(handled);
-        Assert.True(executed);
+        Assert.False(handled);
+        Assert.False(executed);
     }
 
     [Fact]

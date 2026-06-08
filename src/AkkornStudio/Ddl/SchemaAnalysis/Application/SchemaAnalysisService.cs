@@ -163,7 +163,7 @@ public sealed class SchemaAnalysisService
             })
             .ToList();
 
-        SchemaAnalysisSummary summary = BuildSummary(finalIssues);
+        SchemaAnalysisSummary summary = BuildSummary(finalIssues, metadata);
         DateTimeOffset completedAtUtc = DateTimeOffset.UtcNow;
         SchemaAnalysisPartialState partialState = BuildPartialState(
             executionAggregate.TimedOut,
@@ -540,7 +540,7 @@ public sealed class SchemaAnalysisService
             PartialState: new SchemaAnalysisPartialState(false, "NONE", 0, OrderedRuleCodes.Length),
             Issues: [],
             Diagnostics: OrderDiagnostics(diagnostics),
-            Summary: BuildSummary([])
+            Summary: BuildSummary([], metadata)
         );
     }
 
@@ -584,8 +584,11 @@ public sealed class SchemaAnalysisService
         };
     }
 
-    private static SchemaAnalysisSummary BuildSummary(IReadOnlyList<SchemaIssue> issues)
+    private static SchemaAnalysisSummary BuildSummary(IReadOnlyList<SchemaIssue> issues, DbMetadata metadata)
     {
+        var detector = new SchemaPatternDetector();
+        var patterns = detector.DetectPatterns(metadata);
+
         Dictionary<SchemaRuleCode, int> perRule = issues
             .GroupBy(static issue => issue.RuleCode)
             .ToDictionary(static group => group.Key, static group => group.Count());
@@ -595,13 +598,26 @@ public sealed class SchemaAnalysisService
             .GroupBy(static issue => string.IsNullOrWhiteSpace(issue.SchemaName) ? issue.TableName! : $"{issue.SchemaName}.{issue.TableName}")
             .ToDictionary(static group => group.Key, static group => group.Count(), StringComparer.Ordinal);
 
+        double score = 100.0;
+        int criticalCount = issues.Count(i => i.Severity == SchemaIssueSeverity.Critical);
+        int warningCount = issues.Count(i => i.Severity == SchemaIssueSeverity.Warning);
+        score -= (criticalCount * 5.0) + (warningCount * 2.0);
+        score = Math.Max(0.0, score);
+
+        int quickWinCount = issues.Count(i => i.Suggestions.Count > 0);
+        Dictionary<string, double> areaScores = new();
+
         return new SchemaAnalysisSummary(
             TotalIssues: issues.Count,
             InfoCount: issues.Count(static issue => issue.Severity == SchemaIssueSeverity.Info),
-            WarningCount: issues.Count(static issue => issue.Severity == SchemaIssueSeverity.Warning),
-            CriticalCount: issues.Count(static issue => issue.Severity == SchemaIssueSeverity.Critical),
+            WarningCount: warningCount,
+            CriticalCount: criticalCount,
+            QuickWinCount: quickWinCount,
+            OverallScore: score,
             PerRuleCount: perRule,
-            PerTableCount: perTable
+            PerTableCount: perTable,
+            AreaScores: areaScores,
+            ObservedPatterns: patterns
         );
     }
 

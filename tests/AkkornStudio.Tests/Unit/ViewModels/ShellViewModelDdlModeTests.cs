@@ -159,7 +159,7 @@ public class ShellViewModelDdlModeTests
     }
 
     [Fact]
-    public void EnsureDdlCanvas_InheritsMetadataAndConnection_FromQueryCanvasContext()
+    public void EnsureDdlCanvas_DoesNotInheritMetadataAndConnection_FromQueryCanvasContext()
     {
         var vm = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
 
@@ -177,12 +177,12 @@ public class ShellViewModelDdlModeTests
 
         CanvasViewModel ddlCanvas = vm.EnsureDdlCanvas();
 
-        Assert.Same(metadata, ddlCanvas.DatabaseMetadata);
-        Assert.Same(config, ddlCanvas.ActiveConnectionConfig);
+        Assert.Null(ddlCanvas.DatabaseMetadata);
+        Assert.Null(ddlCanvas.ActiveConnectionConfig);
     }
 
     [Fact]
-    public void EnsureDdlCanvas_WhenAlreadyCreated_SynchronizesMetadataFromQueryCanvas()
+    public void EnsureDdlCanvas_WhenAlreadyCreated_DoesNotSynchronizeMetadataFromQueryCanvas()
     {
         var vm = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
 
@@ -205,9 +205,53 @@ public class ShellViewModelDdlModeTests
         CanvasViewModel ensuredDdl = vm.EnsureDdlCanvas();
 
         Assert.Same(ddlCanvas, ensuredDdl);
-        Assert.Same(metadata, ensuredDdl.DatabaseMetadata);
-        Assert.Same(config, ensuredDdl.ActiveConnectionConfig);
-        Assert.True(liveDdl.RunSchemaAnalysisCommand.CanExecute(null));
+        Assert.Null(ensuredDdl.DatabaseMetadata);
+        Assert.Null(ensuredDdl.ActiveConnectionConfig);
+        Assert.False(liveDdl.RunSchemaAnalysisCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void SqlEditor_InheritsActiveConnectionContext_FromActiveCanvas()
+    {
+        // Per-tab model: a tab has one connection shared by its modes, so the SQL editor inherits
+        // the active canvas's connection/metadata (instead of starting empty/independent). Query and
+        // DDL still own separate managers; switching to SQL surfaces the live connection.
+        var vm = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
+
+        CanvasViewModel queryCanvas = vm.EnsureCanvas();
+        CanvasViewModel ddlCanvas = vm.EnsureDdlCanvas();
+
+        queryCanvas.SetDatabaseContext(
+            CreateMetadata(),
+            new ConnectionConfig(
+                Provider: DatabaseProvider.Postgres,
+                Host: "query-host",
+                Port: 5432,
+                Database: "query_db",
+                Username: "query_user",
+                Password: "pwd"));
+
+        ddlCanvas.SetDatabaseContext(
+            CreateMetadata(),
+            new ConnectionConfig(
+                Provider: DatabaseProvider.SqlServer,
+                Host: "ddl-host",
+                Port: 1433,
+                Database: "ddl_db",
+                Username: "ddl_user",
+                Password: "pwd"));
+
+        vm.ActivateDocument(AkkornStudio.UI.Services.Workspace.Models.WorkspaceDocumentType.SqlEditor);
+        SqlEditorViewModel sqlEditor = Assert.IsType<SqlEditorViewModel>(vm.ActiveSqlEditorDocument);
+
+        // Query and DDL keep independent connection managers.
+        Assert.NotSame(queryCanvas.ConnectionManager, ddlCanvas.ConnectionManager);
+
+        // The SQL editor inherits the active canvas connection so its connection/metadata fill in.
+        Assert.Same(queryCanvas.ConnectionManager, sqlEditor.SharedConnectionManager);
+        ConnectionConfig? toolsConfig = sqlEditor.GetActiveConnectionConfigForTools();
+        Assert.NotNull(toolsConfig);
+        Assert.Equal("query-host", toolsConfig!.Host);
     }
 
     private static DbMetadata CreateMetadata() =>

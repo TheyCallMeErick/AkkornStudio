@@ -10,16 +10,11 @@
   <UserControl.Styles>
     <!-- Result item default -->
     <Style Selector="Border.result-item">
-      <Setter Property="Background"    Value="Transparent"/>
-      <Setter Property="CornerRadius"  Value="{StaticResource RadiusSM}"/>
-      <Setter Property="Padding"       Value="10,7"/>
-      <Setter Property="Margin"        Value="4,1"/>
-      <Setter Property="Cursor"        Value="Hand"/>
-      <Setter Property="Transitions">
-        <Transitions>
-          <BrushTransition Property="Background" Duration="0:0:0.08"/>
-        </Transitions>
-      </Setter>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
+      <Setter Property="Padding" Value="10,7"/>
+      <Setter Property="Margin" Value="4,1"/>
+      <Setter Property="Cursor" Value="Hand"/>
     </Style>
     <Style Selector="Border.result-item:pointerover">
       <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
@@ -31,17 +26,12 @@
 
   <!-- ══ Floating panel ═════════════════════════════════════════════════════ -->
   <Border Width="340"
-          CornerRadius="{StaticResource RadiusLG}"
-          Background="{StaticResource Bg1Brush}"
-          BorderBrush="{StaticResource BorderSubtleBrush}"
-          BorderThickness="1"
-          BoxShadow="{StaticResource ShadowXL}">
+          Classes="surface-floating">
 
     <StackPanel>
 
       <!-- ── Search input ──────────────────────────────────────────────────── -->
-      <Border Background="{StaticResource Bg2Brush}"
-              CornerRadius="{StaticResource RadiusLGTop}"
+      <Border Classes="surface-floating-header"
               Padding="12,10">
 
         <Grid ColumnDefinitions="Auto,*,Auto">
@@ -56,16 +46,13 @@
 
           <!-- Text input -->
           <TextBox Grid.Column="1"
+                   Classes="field"
                    Text="{Binding Query, Mode=TwoWay}"
                    Watermark="{Binding [search.watermark], Source={x:Static loc:LocalizationService.Instance}}"
-                   FontSize="{StaticResource FontSizeLabel}"
-                   Background="Transparent"
-                   BorderThickness="0"
-                   CaretBrush="{StaticResource AccentPrimaryHoverBrush}"
-                   Foreground="{StaticResource TextPrimaryBrush}"
                    Name="SearchInput">
             <TextBox.Styles>
-              <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+              <Style Selector="TextBox /template/ Border#PART_BorderElement">
+                <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="BorderBrush" Value="Transparent"/>
               </Style>
             </TextBox.Styles>
@@ -73,8 +60,7 @@
 
           <!-- Keyboard shortcut badge -->
           <Border Grid.Column="2"
-                  Background="{StaticResource BorderSubtleBrush}"
-                  CornerRadius="{StaticResource RadiusXS}"
+                  Classes="kbd-chip"
                   Padding="5,2"
                   VerticalAlignment="Center">
             <TextBlock Text="{Binding [search.shortcut], Source={x:Static loc:LocalizationService.Instance}}"
@@ -226,24 +212,23 @@
       </Border>
 
       <!-- ── Footer keyboard hints ─────────────────────────────────────────── -->
-      <Border Background="{StaticResource Bg1Brush}"
-              CornerRadius="{StaticResource RadiusLGBottom}"
+      <Border Classes="surface-floating-footer"
               Padding="12,7">
         <StackPanel Orientation="Horizontal" Spacing="16">
           <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Background="{StaticResource Bg3Brush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1">
+            <Border Classes="kbd-chip" Padding="4,1">
               <TextBlock Text="↑↓" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
             </Border>
             <TextBlock Text="{Binding [common.navigate], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Background="{StaticResource Bg3Brush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1">
+            <Border Classes="kbd-chip" Padding="4,1">
               <TextBlock Text="↵" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
             </Border>
             <TextBlock Text="{Binding [search.spawn], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="4">
-            <Border Background="{StaticResource Bg3Brush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1">
+            <Border Classes="kbd-chip" Padding="4,1">
               <TextBlock Text="{Binding [common.esc], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}"/>
             </Border>
             <TextBlock Text="{Binding [common.close], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>

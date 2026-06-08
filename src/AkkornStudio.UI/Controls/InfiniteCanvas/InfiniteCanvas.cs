@@ -37,15 +37,20 @@ public sealed partial class InfiniteCanvas : Panel
         ClipToBoundsProperty.OverrideDefaultValue<InfiniteCanvas>(true);
     }
 
-    private readonly DotGridBackground _grid = new() { IsHitTestVisible = false };
-    private readonly CanvasControl _scene = new();
+    private readonly InfiniteCanvasCoreControl _core = new();
     private readonly BezierWireLayer _wires = new();
+    private readonly CanvasViewportController _viewportController = new();
+    private readonly CanvasViewportSelectionAdornerController _selectionAdornerController = new();
+    private readonly CanvasViewportSelectionNavigationController _selectionNavigationController = new();
+    private readonly CanvasViewportGesturePolicy _gesturePolicy = CanvasViewportGesturePolicy.InfiniteCanvasDefault;
+    private DotGridBackground _grid => _core.GridBackground;
+    private CanvasControl _scene => _core.SceneCanvas;
+    private CanvasControl _overlay => _core.OverlayCanvas;
 
     private PinDragInteraction? _pinDrag;
     private double _zoom = 1.0;
     private Point _panOffset;
     private bool _isPanning;
-    private Point _panStart;
     private bool _isApplyingViewportFromCanvas;
     private bool _isSpacePanArmed;
     private bool _contextMenuPending;
@@ -94,17 +99,19 @@ public sealed partial class InfiniteCanvas : Panel
     private ConnectionViewModel? _dragBreakpointWire;
     private int _dragBreakpointIndex = -1;
     private Point _dragBreakpointInitialPosition;
+    private UndoRedoStack? _observedUndoRedo;
+    private Action? _undoCommandExecutionCompletedHandler;
+    private bool _wireSyncDeferredByCommandBatch;
 
     public InfiniteCanvas()
     {
         // Transparent background makes the entire panel surface hit-testable,
         // so middle-mouse panning and rubber-band work even on empty canvas areas.
         Background = Brushes.Transparent;
-        _scene.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Relative);
-        Children.Add(_grid);
-        Children.Add(_scene);
+        _wires.IsHitTestVisible = false;
+        Children.Add(_core);
         _scene.Children.Add(_wires);
-        Children.Add(_guides);
+        _overlay.Children.Add(_guides);
         PointerWheelChanged += OnWheel;
         PointerPressed += OnPressed;
         PointerMoved += OnMoved;
@@ -178,48 +185,23 @@ public sealed partial class InfiniteCanvas : Panel
 
     protected override Size MeasureOverride(Size s)
     {
-        _grid.Measure(s);
-        _scene.Measure(Size.Infinity);
+        _core.Measure(s);
         Log($"    MeasureOverride: Size={s}, PanOffset={_panOffset}");
         return s;
     }
 
     protected override Size ArrangeOverride(Size s)
     {
-        _grid.Arrange(new Rect(s));
-        _grid.Width = s.Width;
-        _grid.Height = s.Height;
-        _grid.Zoom = _zoom;
-        _grid.PanOffset = _panOffset;
-
-        _scene.RenderTransform = new TransformGroup
-        {
-            Children =
-            [
-                new ScaleTransform(_zoom, _zoom),
-                new TranslateTransform(_panOffset.X, _panOffset.Y),
-            ],
-        };
-        _scene.Arrange(
-            new Rect(
-                // Keep scene arranged at origin; pan/zoom must be applied only via RenderTransform.
-                // Applying pan both in Arrange origin and TranslateTransform causes visual reset on layout passes.
-                new Point(0, 0),
-                new Size(20000, 20000)
-            )
-        );
+        _core.Arrange(new Rect(s));
 
         foreach (NodeControl nc in _scene.Children.OfType<NodeControl>())
             if (nc.DataContext is NodeViewModel vm)
             {
                 Canvas.SetLeft(nc, vm.Position.X);
                 Canvas.SetTop(nc, vm.Position.Y);
-                nc.Measure(Size.Infinity);
-                nc.Arrange(new Rect(new Point(vm.Position.X, vm.Position.Y), nc.DesiredSize));
             }
 
         _wires.Arrange(new Rect(new Size(20000, 20000)));
-        _guides.Arrange(new Rect(s));
         _guides.Width = s.Width;
         _guides.Height = s.Height;
         _guides.Zoom = _zoom;
@@ -240,6 +222,7 @@ public sealed partial class InfiniteCanvas : Panel
     private void Rebuild()
     {
         Log($">>> REBUILD started");
+        DetachUndoRedoExecutionObserver();
         foreach (NodeControl? nc in _scene.Children.OfType<NodeControl>().ToList())
             _scene.Children.Remove(nc);
         _nodeControlCache.Clear();
@@ -247,8 +230,12 @@ public sealed partial class InfiniteCanvas : Panel
         if (ViewModel is null)
         {
             Log($"    ViewModel is null, exiting rebuild");
+            _core.Viewport = null;
             return;
         }
+
+        AttachUndoRedoExecutionObserver(ViewModel.UndoRedo);
+        _core.Viewport = ViewModel;
         _pinDrag = new PinDragInteraction(ViewModel, _scene);
         ViewModel.Nodes.CollectionChanged += (_, e) =>
         {
@@ -367,8 +354,16 @@ public sealed partial class InfiniteCanvas : Panel
                         Canvas.SetLeft(capturedNc, capturedVm.Position.X);
                         Canvas.SetTop(capturedNc, capturedVm.Position.Y);
                         Log($"    Canvas position set for {capturedVm.Title}");
-                        RequestWireSync();
-                        Log($"    RequestWireSync queued for position change");
+                        if (ViewModel?.UndoRedo.IsCommandExecutionInProgress == true)
+                        {
+                            _wireSyncDeferredByCommandBatch = true;
+                            Log("    RequestWireSync deferred until command batch completion");
+                        }
+                        else
+                        {
+                            RequestWireSync();
+                            Log($"    RequestWireSync queued for position change");
+                        }
                         InvalidateArrange();
                         Log($"    InvalidateArrange called for position change");
                     }
@@ -499,6 +494,35 @@ public sealed partial class InfiniteCanvas : Panel
 
     public void InvalidateWires() => SyncWires();
 
+    private void AttachUndoRedoExecutionObserver(UndoRedoStack undoRedo)
+    {
+        if (ReferenceEquals(_observedUndoRedo, undoRedo))
+            return;
+
+        DetachUndoRedoExecutionObserver();
+
+        _observedUndoRedo = undoRedo;
+        _undoCommandExecutionCompletedHandler = () =>
+        {
+            if (!_wireSyncDeferredByCommandBatch)
+                return;
+
+            _wireSyncDeferredByCommandBatch = false;
+            RequestWireSync();
+        };
+        _observedUndoRedo.CommandExecutionCompleted += _undoCommandExecutionCompletedHandler;
+    }
+
+    private void DetachUndoRedoExecutionObserver()
+    {
+        if (_observedUndoRedo is not null && _undoCommandExecutionCompletedHandler is not null)
+            _observedUndoRedo.CommandExecutionCompleted -= _undoCommandExecutionCompletedHandler;
+
+        _observedUndoRedo = null;
+        _undoCommandExecutionCompletedHandler = null;
+        _wireSyncDeferredByCommandBatch = false;
+    }
+
     private void SyncTransform()
     {
         if (ViewModel is null)
@@ -509,19 +533,8 @@ public sealed partial class InfiniteCanvas : Panel
 
         // Apply immediately (not only on next layout pass) to avoid transient
         // or missed viewport states during fast wheel interactions.
-        _scene.RenderTransform = new TransformGroup
-        {
-            Children =
-            [
-                new ScaleTransform(_zoom, _zoom),
-                new TranslateTransform(_panOffset.X, _panOffset.Y),
-            ],
-        };
-
         InvalidateArrange();
-        _grid.Zoom = _zoom;
-        _grid.PanOffset = _panOffset;
-        _grid.InvalidateVisual();
+        _core.SyncViewport();
         _wires.InvalidateVisual();
     }
 
@@ -539,11 +552,6 @@ public sealed partial class InfiniteCanvas : Panel
         {
             if (!_nodeControlCache.TryGetValue(node, out NodeControl? nc))
                 continue;
-
-            // CRITICAL: Force re-measure/arrange to ensure pins have correct coordinates
-            // This is essential for TranslatePoint to return accurate positions
-            nc.Measure(Size.Infinity);
-            nc.Arrange(new Rect(new Point(node.Position.X, node.Position.Y), nc.DesiredSize));
 
             // Primary path: PinShapeControl is the active pin visual in current templates.
             foreach (PinShapeControl pinControl in nc.GetLogicalDescendants().OfType<PinShapeControl>())
@@ -593,4 +601,3 @@ public sealed partial class InfiniteCanvas : Panel
         return updatedPins.Count;
     }
 }
-

@@ -14,6 +14,8 @@ namespace AkkornStudio.UI;
 public partial class MainWindow
 {
     private bool _isSyncingEditorSafetySettings;
+    private bool _isSyncingEditorResultDateTimeSettings;
+    private bool _isSyncingProjectConventionSettings;
 
     private void SettingsBackdrop_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -41,6 +43,8 @@ public partial class MainWindow
         GetSettingsModule().OpenSettings(keepStartVisible);
         SyncLanguageComboSelection();
         SyncEditorSafetySettingsToggles();
+        SyncEditorResultDateTimeSettingsControls();
+        SyncProjectConventionSettingsControls();
         EnsureKeyboardShortcutsSettingsPanel();
     }
 
@@ -83,8 +87,9 @@ public partial class MainWindow
     private void SettingsToggleSnapBtn_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         EnsureCanvasInitialized();
-        CurrentVm.ToggleSnapCommand.Execute(null);
-        SetSettingsStatus(LF("settings.status.snapUpdated", "Snap atualizado: {0}.", CurrentVm.SnapToGridLabel), isError: false);
+        CanvasViewModel activeCanvas = ResolveActiveDiagramCanvasStrict();
+        activeCanvas.ToggleSnapCommand.Execute(null);
+        SetSettingsStatus(LF("settings.status.snapUpdated", "Snap atualizado: {0}.", activeCanvas.SnapToGridLabel), isError: false);
         e.Handled = true;
     }
 
@@ -220,6 +225,160 @@ public partial class MainWindow
             top1000WithoutWhereEnabled ? "ON" : "OFF",
             protectMutationWithoutWhereEnabled ? "ON" : "OFF");
         SetSettingsStatus(status, isError: false);
+    }
+
+    private void SyncEditorResultDateTimeSettingsControls()
+    {
+        ComboBox? dateOrderCombo = this.FindControl<ComboBox>("SettingsEditorResultDateOrderCombo");
+        ComboBox? separatorCombo = this.FindControl<ComboBox>("SettingsEditorResultDateSeparatorCombo");
+        CheckBox? preferRawToggle = this.FindControl<CheckBox>("SettingsEditorResultPreferRawToggle");
+        if (dateOrderCombo is null || separatorCombo is null || preferRawToggle is null)
+            return;
+
+        SqlEditorResultDateTimeDisplaySettings settings = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
+
+        _isSyncingEditorResultDateTimeSettings = true;
+        SelectComboBoxItemByTag(dateOrderCombo, settings.DateOrder);
+        SelectComboBoxItemByTag(separatorCombo, settings.DateSeparator);
+        preferRawToggle.IsChecked = settings.PreferRawValues;
+        _isSyncingEditorResultDateTimeSettings = false;
+    }
+
+    private void SettingsEditorResultDateTime_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        ApplyEditorResultDateTimeSettingsFromControls();
+        e.Handled = true;
+    }
+
+    private void ApplyEditorResultDateTimeSettingsFromControls()
+    {
+        if (_isSyncingEditorResultDateTimeSettings)
+            return;
+
+        ComboBox? dateOrderCombo = this.FindControl<ComboBox>("SettingsEditorResultDateOrderCombo");
+        ComboBox? separatorCombo = this.FindControl<ComboBox>("SettingsEditorResultDateSeparatorCombo");
+        CheckBox? preferRawToggle = this.FindControl<CheckBox>("SettingsEditorResultPreferRawToggle");
+        if (dateOrderCombo is null || separatorCombo is null || preferRawToggle is null)
+            return;
+
+        string dateOrder = (dateOrderCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "YMD";
+        string separator = (separatorCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "-";
+
+        var settings = new SqlEditorResultDateTimeDisplaySettings
+        {
+            DateOrder = dateOrder,
+            DateSeparator = separator,
+            PreferRawValues = preferRawToggle.IsChecked == true,
+        };
+
+        AppSettingsStore.SaveSqlEditorResultDateTimeDisplaySettings(settings);
+        SetSettingsStatus(
+            $"Resultados do editor atualizados: ordem {dateOrder}, separador '{separator}', modo {(settings.PreferRawValues ? "raw" : "formatado")}.",
+            isError: false);
+    }
+
+    private void SyncProjectConventionSettingsControls()
+    {
+        ComboBox? namingCombo = this.FindControl<ComboBox>("SettingsProjectNamingConventionCombo");
+        ComboBox? wireCombo = this.FindControl<ComboBox>("SettingsProjectWireCurveModeCombo");
+        CheckBox? enforceToggle = this.FindControl<CheckBox>("SettingsProjectEnforceAliasToggle");
+        CheckBox? warnReservedToggle = this.FindControl<CheckBox>("SettingsProjectWarnReservedToggle");
+        TextBox? maxAliasTextBox = this.FindControl<TextBox>("SettingsProjectMaxAliasLengthTextBox");
+        if (namingCombo is null || wireCombo is null || enforceToggle is null || warnReservedToggle is null || maxAliasTextBox is null)
+            return;
+
+        ProjectConventionSettings settings = CurrentShell.CurrentProjectConventionSettings;
+        _isSyncingProjectConventionSettings = true;
+        SelectComboBoxItemByTag(namingCombo, settings.NamingConvention);
+        SelectComboBoxItemByTag(wireCombo, settings.DefaultWireCurveMode);
+        enforceToggle.IsChecked = settings.EnforceAliasNaming;
+        warnReservedToggle.IsChecked = settings.WarnOnReservedKeywords;
+        maxAliasTextBox.Text = settings.MaxAliasLength.ToString();
+        _isSyncingProjectConventionSettings = false;
+
+        CurrentShell.ApplyProjectConventionSettings(settings);
+    }
+
+    private void SelectComboBoxItemByTag(ComboBox comboBox, string? tagValue)
+    {
+        if (comboBox.Items is null || string.IsNullOrWhiteSpace(tagValue))
+            return;
+
+        foreach (object? option in comboBox.Items)
+        {
+            if (option is ComboBoxItem item
+                && item.Tag is string itemTag
+                && string.Equals(itemTag, tagValue, StringComparison.OrdinalIgnoreCase))
+            {
+                comboBox.SelectedItem = item;
+                return;
+            }
+        }
+    }
+
+    private void SettingsProjectNamingConventionCombo_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        ApplyProjectConventionSettingsFromControls();
+        e.Handled = true;
+    }
+
+    private void SettingsProjectWireCurveModeCombo_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        ApplyProjectConventionSettingsFromControls();
+        e.Handled = true;
+    }
+
+    private void SettingsProjectEnforceAliasToggle_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        ApplyProjectConventionSettingsFromControls();
+        e.Handled = true;
+    }
+
+    private void SettingsProjectWarnReservedToggle_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        ApplyProjectConventionSettingsFromControls();
+        e.Handled = true;
+    }
+
+    private void SettingsProjectMaxAliasLengthTextBox_Changed(object? sender, TextChangedEventArgs e)
+    {
+        ApplyProjectConventionSettingsFromControls();
+        e.Handled = true;
+    }
+
+    private void ApplyProjectConventionSettingsFromControls()
+    {
+        if (_isSyncingProjectConventionSettings)
+            return;
+
+        ComboBox? namingCombo = this.FindControl<ComboBox>("SettingsProjectNamingConventionCombo");
+        ComboBox? wireCombo = this.FindControl<ComboBox>("SettingsProjectWireCurveModeCombo");
+        CheckBox? enforceToggle = this.FindControl<CheckBox>("SettingsProjectEnforceAliasToggle");
+        CheckBox? warnReservedToggle = this.FindControl<CheckBox>("SettingsProjectWarnReservedToggle");
+        TextBox? maxAliasTextBox = this.FindControl<TextBox>("SettingsProjectMaxAliasLengthTextBox");
+        if (namingCombo is null || wireCombo is null || enforceToggle is null || warnReservedToggle is null || maxAliasTextBox is null)
+            return;
+
+        string namingConvention = (namingCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "snake_case";
+        string defaultWireCurveMode = (wireCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Bezier";
+        bool enforceAliasNaming = enforceToggle.IsChecked == true;
+        bool warnOnReservedKeywords = warnReservedToggle.IsChecked == true;
+        int maxAliasLength = int.TryParse(maxAliasTextBox.Text, out int parsedMaxAliasLength)
+            ? Math.Max(0, parsedMaxAliasLength)
+            : 64;
+
+        var settings = new ProjectConventionSettings
+        {
+            NamingConvention = namingConvention,
+            EnforceAliasNaming = enforceAliasNaming,
+            WarnOnReservedKeywords = warnOnReservedKeywords,
+            MaxAliasLength = maxAliasLength,
+            DefaultWireCurveMode = defaultWireCurveMode,
+        };
+
+        AppSettingsStore.SaveProjectConventionSettings(settings);
+        CurrentShell.ApplyProjectConventionSettings(settings);
+        SetSettingsStatus("Projeto atualizado: convenções e wire style aplicados globalmente.", isError: false);
     }
 
     private void SetSettingsStatus(string message, bool isError)

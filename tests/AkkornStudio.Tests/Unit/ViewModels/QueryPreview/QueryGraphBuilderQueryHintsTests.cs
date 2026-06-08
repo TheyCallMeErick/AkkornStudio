@@ -39,7 +39,7 @@ public class QueryGraphBuilderQueryHintsTests
     }
 
     [Fact]
-    public void BuildSql_PostgresWithQueryHints_EmitsSelectCommentHint()
+    public void BuildSql_PostgresWithQueryHints_ReturnsWarningAndSkipsHint()
     {
         var canvas = new CanvasViewModel();
         canvas.Nodes.Clear();
@@ -61,9 +61,8 @@ public class QueryGraphBuilderQueryHintsTests
 
         (string sql, List<string> errors) = sut.BuildSql();
 
-        Assert.Empty(errors);
-        Assert.Contains("/*+", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("SeqScan(orders)", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(errors, e => e.Contains("not supported", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain("/*+", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OPTION (", sql, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -150,7 +149,6 @@ public class QueryGraphBuilderQueryHintsTests
         Assert.DoesNotContain("OPTION (", sql, StringComparison.OrdinalIgnoreCase);
     }
 }
-
 
 
 

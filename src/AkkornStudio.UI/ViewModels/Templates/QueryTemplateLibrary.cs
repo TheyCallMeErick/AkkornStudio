@@ -10,7 +10,9 @@ public sealed record QueryTemplate(
     string Description,
     string Category,
     string Tags,
-    Action<CanvasViewModel> Build
+    Action<CanvasViewModel> Build,
+    bool IsUserCreated = false,
+    string? Id = null
 );
 
 // ── Template library ──────────────────────────────────────────────────────────
@@ -59,7 +61,13 @@ public static class QueryTemplateLibrary
         string toPin
     )
     {
-        PinViewModel fp = from.OutputPins.First(p => p.Name == fromPin);
+        PinViewModel? fp = from.OutputPins.FirstOrDefault(p => p.Name == fromPin);
+        if (fp is null)
+        {
+            throw new InvalidOperationException(
+                $"Template wiring failed: source pin '{fromPin}' not found on node '{from.Type}' ({from.Id})."
+            );
+        }
 
         // ResultOutput.columns expects a ColumnSet. Legacy templates still project scalar
         // pins directly there, so reroute to ResultOutput.column when needed.
@@ -73,7 +81,14 @@ public static class QueryTemplateLibrary
             resolvedToPin = "column";
         }
 
-        PinViewModel tp = to.InputPins.First(p => p.Name == resolvedToPin);
+        PinViewModel? tp = to.InputPins.FirstOrDefault(p => p.Name == resolvedToPin);
+        if (tp is null)
+        {
+            throw new InvalidOperationException(
+                $"Template wiring failed: destination pin '{resolvedToPin}' not found on node '{to.Type}' ({to.Id})."
+            );
+        }
+
         return new ConnectionViewModel(fp, default, default) { ToPin = tp };
     }
 

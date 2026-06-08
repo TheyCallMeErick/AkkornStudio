@@ -5,4 +5,8 @@ public enum WorkspaceDocumentType
     QueryCanvas,
     DdlCanvas,
     SqlEditor,
+    SqlResult,
+    ErDiagram,
+    DdlSchemaCompare,
+    DdlSchemaAnalysis,
 }

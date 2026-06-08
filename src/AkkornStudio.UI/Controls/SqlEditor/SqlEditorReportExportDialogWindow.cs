@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
 using AkkornStudio.UI.Services.Localization;
@@ -79,14 +80,28 @@ public sealed class SqlEditorReportExportDialogWindow : Window
 
     private Control BuildContent()
     {
-        var typeCombo = new ComboBox
+        ComboBox MakeComboBox<T>(IEnumerable<T> items, T selectedItem, Action<object?> onChanged, Func<T, string>? display = null)
         {
-            ItemsSource = _vm.ReportTypes,
-            SelectedItem = _vm.SelectedType,
-            MinWidth = 280,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-        };
-        typeCombo.SelectionChanged += (_, _) => _vm.SelectedType = typeCombo.SelectedItem as SqlEditorReportTypeOption;
+            var combo = new ComboBox
+            {
+                ItemsSource = items.ToList(),
+                SelectedItem = selectedItem,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                MinWidth = 240,
+            };
+
+            if (display is not null)
+                combo.ItemTemplate = new FuncDataTemplate<T>((item, _) => new TextBlock { Text = display(item) });
+
+            combo.SelectionChanged += (_, _) => onChanged(combo.SelectedItem);
+            return combo;
+        }
+
+        var typeCombo = MakeComboBox(
+            _vm.ReportTypes,
+            _vm.SelectedType!,
+            item => _vm.SelectedType = item as SqlEditorReportTypeOption,
+            item => item.Label);
 
         var fileNameBox = new TextBox
         {
@@ -110,6 +125,12 @@ public sealed class SqlEditorReportExportDialogWindow : Window
                 _vm.Title = titleBox.Text ?? string.Empty;
         };
 
+        string selectedTitleTransform = "title";
+        string selectedFileNameTransform = "slug";
+
+        void SyncTitleBox() => titleBox.Text = _vm.Title;
+        void SyncFileNameBox() => fileNameBox.Text = _vm.FileName;
+
         var descriptionBox = new TextBox
         {
             Text = _vm.Description,
@@ -124,6 +145,80 @@ public sealed class SqlEditorReportExportDialogWindow : Window
                 _vm.Description = descriptionBox.Text ?? string.Empty;
         };
 
+        var textTransformItems = new[]
+        {
+            new KeyValuePair<string, string>(L("sqlEditor.export.transform.titleCase", "Title Case"), "title"),
+            new KeyValuePair<string, string>(L("sqlEditor.export.transform.upper", "UPPERCASE"), "upper"),
+            new KeyValuePair<string, string>(L("sqlEditor.export.transform.lower", "lowercase"), "lower"),
+            new KeyValuePair<string, string>(L("sqlEditor.export.transform.sentence", "Sentence case"), "sentence"),
+            new KeyValuePair<string, string>(L("sqlEditor.export.transform.slug", "slug-case"), "slug"),
+        };
+
+        var titleTransformCombo = MakeComboBox(
+            textTransformItems,
+            textTransformItems[0],
+            item => { if (item is KeyValuePair<string, string> pair) selectedTitleTransform = pair.Value; },
+            item => item.Key);
+
+        var fileNameTransformCombo = MakeComboBox(
+            textTransformItems,
+            textTransformItems.Single(item => item.Value == "slug"),
+            item => { if (item is KeyValuePair<string, string> pair) selectedFileNameTransform = pair.Value; },
+            item => item.Key);
+
+        var titleActionsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                titleTransformCombo,
+                new Button
+                {
+                    Content = L("sqlEditor.export.transform.applyToTitle", "Aplicar no titulo"),
+                    Padding = new Thickness(12, 8),
+                    MinWidth = 140,
+                }
+            }
+        };
+        ((Button)titleActionsPanel.Children[1]!).Click += (_, _) =>
+        {
+            _vm.ApplyTitleTransform(selectedTitleTransform);
+            SyncTitleBox();
+        };
+
+        var fileNameActionsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                fileNameTransformCombo,
+                new Button
+                {
+                    Content = L("sqlEditor.export.transform.applyToFile", "Aplicar no arquivo"),
+                    Padding = new Thickness(12, 8),
+                    MinWidth = 140,
+                },
+                new Button
+                {
+                    Content = L("sqlEditor.export.transform.slugFromTitle", "Slug do titulo"),
+                    Padding = new Thickness(12, 8),
+                    MinWidth = 132,
+                }
+            }
+        };
+        ((Button)fileNameActionsPanel.Children[1]!).Click += (_, _) =>
+        {
+            _vm.ApplyFileNameTransform(selectedFileNameTransform);
+            SyncFileNameBox();
+        };
+        ((Button)fileNameActionsPanel.Children[2]!).Click += (_, _) =>
+        {
+            _vm.SlugifyTitleIntoFileName();
+            SyncFileNameBox();
+        };
+
         var includeSchemaCheck = new CheckBox
         {
             Content = L("sqlEditor.export.option.includeSchema", "Incluir schema de saida"),
@@ -132,53 +227,108 @@ public sealed class SqlEditorReportExportDialogWindow : Window
         };
         includeSchemaCheck.IsCheckedChanged += (_, _) => _vm.IncludeSchema = includeSchemaCheck.IsChecked ?? false;
 
-        var includeNodeDetailsCheck = new CheckBox
+        var includeSqlCheck = new CheckBox
         {
-            Content = L("sqlEditor.export.option.includeNodeDetails", "Incluir placeholders de no/conexao no JSON"),
-            IsChecked = _vm.IncludeNodeDetails,
-            IsVisible = _vm.ShowIncludeNodeDetails,
+            Content = L("sqlEditor.export.option.includeSql", "Incluir SQL no artefato"),
+            IsChecked = _vm.IncludeSql,
+            IsVisible = _vm.ShowSqlOptions,
         };
-        includeNodeDetailsCheck.IsCheckedChanged += (_, _) => _vm.IncludeNodeDetails = includeNodeDetailsCheck.IsChecked ?? false;
+        includeSqlCheck.IsCheckedChanged += (_, _) => _vm.IncludeSql = includeSqlCheck.IsChecked ?? false;
 
-        var includeMetadataCheck = new CheckBox
+        var includeLineageCheck = new CheckBox
         {
-            Content = L("sqlEditor.export.option.includeMetadata", "Incluir metadados opcionais"),
-            IsChecked = _vm.IncludeMetadata,
-            IsVisible = _vm.ShowIncludeMetadata,
+            Content = L("sqlEditor.export.option.includeLineage", "Incluir linhagem quando houver dados"),
+            IsChecked = _vm.IncludeLineage,
+            IsVisible = _vm.ShowLineageOptions,
         };
-        includeMetadataCheck.IsCheckedChanged += (_, _) => _vm.IncludeMetadata = includeMetadataCheck.IsChecked ?? false;
+        includeLineageCheck.IsCheckedChanged += (_, _) => _vm.IncludeLineage = includeLineageCheck.IsChecked ?? false;
 
-        var useDashForEmptyCheck = new CheckBox
+        var metadataItems = new[]
         {
-            Content = L("sqlEditor.export.option.useDashForEmpty", "Usar '-' para campos vazios"),
-            IsChecked = _vm.UseDashForEmptyFields,
-            IsVisible = _vm.ShowUseDashForEmptyFields,
+            new KeyValuePair<string, SqlEditorReportMetadataLevel>(L("sqlEditor.export.metadata.none", "Nenhum"), SqlEditorReportMetadataLevel.None),
+            new KeyValuePair<string, SqlEditorReportMetadataLevel>(L("sqlEditor.export.metadata.essential", "Essencial"), SqlEditorReportMetadataLevel.Essential),
+            new KeyValuePair<string, SqlEditorReportMetadataLevel>(L("sqlEditor.export.metadata.complete", "Completo"), SqlEditorReportMetadataLevel.Complete),
         };
-        useDashForEmptyCheck.IsCheckedChanged += (_, _) => _vm.UseDashForEmptyFields = useDashForEmptyCheck.IsChecked ?? false;
+        var metadataCombo = MakeComboBox(
+            metadataItems,
+            metadataItems.Single(item => item.Value.Equals(_vm.MetadataLevel)),
+            item => { if (item is KeyValuePair<string, SqlEditorReportMetadataLevel> pair) _vm.MetadataLevel = pair.Value; },
+            item => item.Key);
 
-        var optionsPanel = new StackPanel
+        var emptyValueItems = new[]
+        {
+            new KeyValuePair<string, SqlEditorReportEmptyValueDisplayMode>(L("sqlEditor.export.empty.blank", "Em branco"), SqlEditorReportEmptyValueDisplayMode.Blank),
+            new KeyValuePair<string, SqlEditorReportEmptyValueDisplayMode>(L("sqlEditor.export.empty.dash", "Traco"), SqlEditorReportEmptyValueDisplayMode.Dash),
+            new KeyValuePair<string, SqlEditorReportEmptyValueDisplayMode>(L("sqlEditor.export.empty.null", "Literal null"), SqlEditorReportEmptyValueDisplayMode.NullLiteral),
+        };
+        var emptyValueCombo = MakeComboBox(
+            emptyValueItems,
+            emptyValueItems.Single(item => item.Value.Equals(_vm.EmptyValueDisplayMode)),
+            item => { if (item is KeyValuePair<string, SqlEditorReportEmptyValueDisplayMode> pair) _vm.EmptyValueDisplayMode = pair.Value; },
+            item => item.Key);
+
+        var metadataPanel = new StackPanel
+        {
+            Spacing = 6,
+            Children =
+            {
+                metadataCombo,
+                new TextBlock
+                {
+                    Text = L("sqlEditor.export.metadata.hint", "Escolha o nivel de contexto tecnico embutido."),
+                    Foreground = ResolveBrush("TextMutedBrush", UiColorConstants.C_8B95A8),
+                    FontSize = ResolveFontSize("FontSizeCaption", 11),
+                    TextWrapping = TextWrapping.Wrap,
+                },
+            },
+        };
+        metadataPanel.IsVisible = _vm.ShowMetadataOptions;
+
+        var emptyValuePanel = new StackPanel
+        {
+            Spacing = 6,
+            Children =
+            {
+                emptyValueCombo,
+                new TextBlock
+                {
+                    Text = L("sqlEditor.export.empty.hint", "Controla como campos vazios aparecem no HTML e no JSON."),
+                    Foreground = ResolveBrush("TextMutedBrush", UiColorConstants.C_8B95A8),
+                    FontSize = ResolveFontSize("FontSizeCaption", 11),
+                    TextWrapping = TextWrapping.Wrap,
+                },
+            },
+        };
+        emptyValuePanel.IsVisible = _vm.ShowOptions;
+
+        var contentOptionsPanel = new StackPanel
         {
             Spacing = 8,
-            Children = { includeSchemaCheck, includeMetadataCheck, useDashForEmptyCheck, includeNodeDetailsCheck },
+            Children = { includeSchemaCheck, includeSqlCheck, includeLineageCheck },
             IsVisible = _vm.ShowOptions,
         };
+        var descriptionSection = section(L("sqlEditor.export.dialog.section.description", "DESCRICAO"), descriptionBox);
+        descriptionSection.IsVisible = true;
 
         _vm.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(SqlEditorReportExportDialogViewModel.ShowIncludeNodeDetails))
-                includeNodeDetailsCheck.IsVisible = _vm.ShowIncludeNodeDetails;
-
             if (e.PropertyName == nameof(SqlEditorReportExportDialogViewModel.ShowOptions))
-                optionsPanel.IsVisible = _vm.ShowOptions;
+            {
+                contentOptionsPanel.IsVisible = _vm.ShowOptions;
+                emptyValuePanel.IsVisible = _vm.ShowOptions;
+            }
 
             if (e.PropertyName == nameof(SqlEditorReportExportDialogViewModel.ShowIncludeSchema))
                 includeSchemaCheck.IsVisible = _vm.ShowIncludeSchema;
 
-            if (e.PropertyName == nameof(SqlEditorReportExportDialogViewModel.ShowIncludeMetadata))
-                includeMetadataCheck.IsVisible = _vm.ShowIncludeMetadata;
+            if (e.PropertyName == nameof(SqlEditorReportExportDialogViewModel.ShowSqlOptions))
+                includeSqlCheck.IsVisible = _vm.ShowSqlOptions;
 
-            if (e.PropertyName == nameof(SqlEditorReportExportDialogViewModel.ShowUseDashForEmptyFields))
-                useDashForEmptyCheck.IsVisible = _vm.ShowUseDashForEmptyFields;
+            if (e.PropertyName == nameof(SqlEditorReportExportDialogViewModel.ShowLineageOptions))
+                includeLineageCheck.IsVisible = _vm.ShowLineageOptions;
+
+            if (e.PropertyName == nameof(SqlEditorReportExportDialogViewModel.ShowMetadataOptions))
+                metadataPanel.IsVisible = _vm.ShowMetadataOptions;
         };
 
         Button cancelButton = new()
@@ -324,10 +474,20 @@ public sealed class SqlEditorReportExportDialogWindow : Window
             Children =
             {
                 section(L("sqlEditor.export.dialog.section.reportType", "TIPO DE RELATORIO"), typeInfoPanel),
-                section(L("sqlEditor.export.dialog.section.fileName", "NOME DO ARQUIVO"), fileNameBox),
-                section(L("sqlEditor.export.dialog.section.reportTitle", "TITULO"), titleBox),
-                section(L("sqlEditor.export.dialog.section.description", "DESCRICAO"), descriptionBox),
-                section(L("sqlEditor.export.dialog.section.options", "OPCOES"), optionsPanel),
+                section(L("sqlEditor.export.dialog.section.fileName", "NOME DO ARQUIVO"), new StackPanel
+                {
+                    Spacing = 8,
+                    Children = { fileNameBox, fileNameActionsPanel },
+                }),
+                section(L("sqlEditor.export.dialog.section.reportTitle", "TITULO"), new StackPanel
+                {
+                    Spacing = 8,
+                    Children = { titleBox, titleActionsPanel },
+                }),
+                descriptionSection,
+                section(L("sqlEditor.export.dialog.section.metadataLevel", "METADADOS"), metadataPanel),
+                section(L("sqlEditor.export.dialog.section.emptyValueMode", "CAMPOS VAZIOS"), emptyValuePanel),
+                section(L("sqlEditor.export.dialog.section.options", "OPCOES"), contentOptionsPanel),
             },
         };
         var formScroll = new ScrollViewer

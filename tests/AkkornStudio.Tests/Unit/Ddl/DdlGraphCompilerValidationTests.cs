@@ -257,6 +257,96 @@ public class DdlGraphCompilerValidationTests
     }
 
     [Fact]
+    public void CompileWithDiagnostics_AlterViewOutputWithoutViewInput_ReturnsError()
+    {
+        NodeGraph graph = new()
+        {
+            Nodes =
+            [
+                new NodeInstance("out", NodeType.AlterViewOutput, new Dictionary<string, string>(), new Dictionary<string, string>()),
+                new NodeInstance("view", NodeType.ViewDefinition, new Dictionary<string, string>(), new Dictionary<string, string>
+                {
+                    ["Schema"] = "public",
+                    ["ViewName"] = "v_orders",
+                    ["SelectSql"] = "SELECT id FROM public.orders",
+                }),
+            ],
+            Connections = [],
+        };
+
+        DdlCompileResult result = new DdlGraphCompiler(graph, DatabaseProvider.Postgres).CompileWithDiagnostics();
+
+        Assert.Contains(result.Diagnostics, d => d.Code == "E-DDL-ALTERVIEW-OUTPUT-NOT-CONNECTED" && d.Severity == DdlDiagnosticSeverity.Error);
+        Assert.True(result.HasErrors);
+        Assert.Empty(result.Statements);
+    }
+
+    [Fact]
+    public void CompileWithDiagnostics_AlterViewOutputWithViewInput_ReturnsStatementWithoutErrors()
+    {
+        NodeGraph graph = new()
+        {
+            Nodes =
+            [
+                new NodeInstance("out", NodeType.AlterViewOutput, new Dictionary<string, string>(), new Dictionary<string, string>()),
+                new NodeInstance("view", NodeType.ViewDefinition, new Dictionary<string, string>(), new Dictionary<string, string>
+                {
+                    ["Schema"] = "public",
+                    ["ViewName"] = "v_orders",
+                    ["SelectSql"] = "SELECT id FROM public.orders",
+                }),
+            ],
+            Connections = [new Connection("view", "view", "out", "view")],
+        };
+
+        DdlCompileResult result = new DdlGraphCompiler(graph, DatabaseProvider.Postgres).CompileWithDiagnostics();
+
+        Assert.False(result.HasErrors);
+        Assert.Single(result.Statements);
+        Assert.DoesNotContain(result.Diagnostics, d => d.Code == "E-DDL-ALTERVIEW-OUTPUT-VIEW");
+    }
+
+    [Fact]
+    public void CompileWithDiagnostics_AlterViewOutputWithWrongInputType_ReturnsError()
+    {
+        NodeGraph graph = new()
+        {
+            Nodes =
+            [
+                new NodeInstance("out", NodeType.AlterViewOutput, new Dictionary<string, string>(), new Dictionary<string, string>()),
+                new NodeInstance("table", NodeType.TableDefinition, new Dictionary<string, string>(), new Dictionary<string, string>
+                {
+                    ["SchemaName"] = "public",
+                    ["TableName"] = "orders",
+                }),
+            ],
+            Connections = [new Connection("table", "table", "out", "view")],
+        };
+
+        DdlCompileResult result = new DdlGraphCompiler(graph, DatabaseProvider.Postgres).CompileWithDiagnostics();
+
+        Assert.Contains(result.Diagnostics, d => d.Code == "E-DDL-ALTERVIEW-OUTPUT-TYPE");
+        Assert.True(result.HasErrors);
+        Assert.Empty(result.Statements);
+    }
+
+    [Fact]
+    public void CompileWithDiagnostics_AlterViewOutputWithMissingSourceNode_ReturnsCompileError()
+    {
+        NodeGraph graph = new()
+        {
+            Nodes = [new NodeInstance("out", NodeType.AlterViewOutput, new Dictionary<string, string>(), new Dictionary<string, string>())],
+            Connections = [new Connection("missing", "view", "out", "view")],
+        };
+
+        DdlCompileResult result = new DdlGraphCompiler(graph, DatabaseProvider.Postgres).CompileWithDiagnostics();
+
+        Assert.Contains(result.Diagnostics, d => d.Code == "E-DDL-COMPILE-ALTERVIEW");
+        Assert.True(result.HasErrors);
+        Assert.Empty(result.Statements);
+    }
+
+    [Fact]
     public void CompileWithDiagnostics_ViewDefinitionWithoutSelect_ReturnsError()
     {
         var nodes = new List<NodeInstance>

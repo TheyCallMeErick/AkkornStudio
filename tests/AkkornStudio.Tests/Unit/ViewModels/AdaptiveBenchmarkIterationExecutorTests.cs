@@ -6,6 +6,30 @@ namespace AkkornStudio.Tests.Unit.ViewModels;
 
 public sealed class AdaptiveBenchmarkIterationExecutorTests
 {
+    private static void DeleteFileWithRetry(string path, int attempts = 5, int delayMs = 50)
+    {
+        for (int attempt = 1; attempt <= attempts; attempt++)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+                return;
+            }
+            catch (IOException)
+            {
+                if (attempt < attempts)
+                    Thread.Sleep(delayMs);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                if (attempt < attempts)
+                    Thread.Sleep(delayMs);
+            }
+        }
+        // Best-effort cleanup only.
+    }
+
     [Fact]
     public async Task ExecuteIterationAsync_UsesFallback_WhenConnectionIsUnavailable()
     {
@@ -51,7 +75,7 @@ public sealed class AdaptiveBenchmarkIterationExecutorTests
         Assert.True(latency >= 0);
         Assert.Equal(0, fallback.CallCount);
 
-        File.Delete(dbPath);
+        DeleteFileWithRetry(dbPath);
     }
 
     private sealed class CountingFallbackExecutor(double latencyMs) : IBenchmarkIterationExecutor

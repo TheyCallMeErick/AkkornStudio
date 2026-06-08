@@ -40,8 +40,8 @@ public sealed class ConnectionValidationService : IConnectionValidationService
                 "Timeout must be greater than zero."));
         }
 
-        bool isSqlite = ConnectionContractMapper.TryParseProvider(details.Provider, out DatabaseProvider provider)
-            && provider == DatabaseProvider.SQLite;
+        bool providerParsed = ConnectionContractMapper.TryParseProvider(details.Provider, out DatabaseProvider provider);
+        bool isSqlite = providerParsed && provider == DatabaseProvider.SQLite;
 
         if (isSqlite)
         {
@@ -87,6 +87,16 @@ public sealed class ConnectionValidationService : IConnectionValidationService
                 ConnectionContractMapper.UseSslKey,
                 "ssl.unsupported",
                 "SSL was requested, but the selected provider typically does not use SSL in this mode."));
+        }
+
+        if (providerParsed
+            && provider == DatabaseProvider.SqlServer
+            && GetBool(fields, ConnectionContractMapper.TrustServerCertificateKey, true))
+        {
+            warnings.Add(new ConnectionValidationMessageDto(
+                ConnectionContractMapper.TrustServerCertificateKey,
+                "trustServerCertificate.enabled",
+                "TrustServerCertificate is enabled. This weakens TLS certificate validation and should be used only in trusted environments."));
         }
 
         return new ConnectionValidationResultDto(errors.Count == 0, errors, warnings);

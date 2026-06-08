@@ -1,54 +1,584 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ervm="using:AkkornStudio.UI.ViewModels.ErDiagram"
              xmlns:erc="using:AkkornStudio.UI.Controls.ErDiagram"
+             xmlns:ctrl="using:AkkornStudio.UI.Controls"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             xmlns:shapes="clr-namespace:Avalonia.Controls.Shapes;assembly=Avalonia.Controls"
              x:Class="AkkornStudio.UI.Controls.ErDiagram.ErCanvasControl"
              x:DataType="ervm:ErCanvasViewModel">
 
-  <Grid RowDefinitions="Auto,*" Background="{StaticResource Bg0Brush}">
+  <UserControl.Styles>
+    <Style Selector="ToggleButton.focus-toggle">
+      <Setter Property="BorderBrush" Value="#2C3B57"/>
+      <Setter Property="Background" Value="#0E182A"/>
+      <Setter Property="Foreground" Value="#9CA3AF"/>
+    </Style>
+    <Style Selector="ToggleButton.focus-toggle:checked">
+      <Setter Property="BorderBrush" Value="#3B82F6"/>
+      <Setter Property="Background" Value="#16294A"/>
+      <Setter Property="Foreground" Value="#E8EAED"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*" Background="#060A12">
     <Border Grid.Row="0"
-            Background="{StaticResource Bg1Brush}"
-            BorderBrush="{StaticResource BorderSubtleBrush}"
-            BorderThickness="0,0,0,1"
-            Padding="12,8">
+            Padding="8,6"
+            Background="#09101E"
+            BorderBrush="#152035"
+            BorderThickness="0,0,0,1">
       <DockPanel LastChildFill="False">
-        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="16">
-          <TextBlock Classes="txt-label"
-                     Foreground="{StaticResource TextPrimaryBrush}"
-                     Text="{Binding EntityCount, StringFormat=Entidades: {0}}"/>
-          <TextBlock Classes="txt-label"
-                     Foreground="{StaticResource TextPrimaryBrush}"
-                     Text="{Binding EdgeCount, StringFormat=Relações: {0}}"/>
+
+        <!-- Left: stats -->
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+          <Border Background="#0F1829" BorderBrush="#1A2B42" BorderThickness="1" CornerRadius="5" Padding="8,3" Margin="0,0,6,0">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <mi:MaterialIcon Kind="TableLarge" Width="11" Height="11" Foreground="#3B82F6" VerticalAlignment="Center"/>
+              <TextBlock FontSize="11" Foreground="#5D7FA8" Text="{Binding EntityCount, StringFormat={}{0} entidades}"/>
+            </StackPanel>
+          </Border>
+          <Border Background="#0F1829" BorderBrush="#1A2B42" BorderThickness="1" CornerRadius="5" Padding="8,3">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <mi:MaterialIcon Kind="VectorPolyline" Width="11" Height="11" Foreground="#22C55E" VerticalAlignment="Center"/>
+              <TextBlock FontSize="11" Foreground="#5D7FA8" Text="{Binding EdgeCount, StringFormat={}{0} relações}"/>
+            </StackPanel>
+          </Border>
         </StackPanel>
 
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <TextBlock Classes="txt-body"
-                     Foreground="{StaticResource TextSecondaryBrush}"
-                     Text="Incluir Views"
-                     VerticalAlignment="Center"/>
-          <CheckBox IsChecked="{Binding IncludeViews}" VerticalAlignment="Center"/>
+        <!-- Right: controls -->
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <!-- Search -->
+          <TextBox Width="160"
+                   Watermark="Buscar tabela..."
+                   Text="{Binding SearchTerm}"
+                   FontSize="11"/>
+          <Button Classes="tb compact" Command="{Binding FindEntityCommand}" Padding="6,3">
+            <mi:MaterialIcon Kind="Magnify" Width="12" Height="12"/>
+          </Button>
+
+          <Border Width="1" Height="16" Background="#1A2B42" Margin="2,0"/>
+
+          <!-- Layout + density -->
+          <Button Classes="tb compact" Command="{Binding AutoLayoutCommand}" Padding="6,3" ToolTip.Tip="Auto layout">
+            <mi:MaterialIcon Kind="AutoFix" Width="12" Height="12"/>
+          </Button>
+          <Button Classes="tb compact" Command="{Binding FitToScreenCommand}" Padding="6,3" ToolTip.Tip="Fit to screen">
+            <mi:MaterialIcon Kind="FitToPageOutline" Width="12" Height="12"/>
+          </Button>
+          <ComboBox Width="90"
+                    ItemsSource="{Binding DensityOptions}"
+                    SelectedItem="{Binding SelectedDensity}"
+                    FontSize="11"/>
+
+          <!-- Views toggle -->
+          <Border Background="#0F1829" BorderBrush="#1A2B42" BorderThickness="1" CornerRadius="5" Padding="6,3">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <CheckBox IsChecked="{Binding IncludeViews}" VerticalAlignment="Center" Width="14" Height="14"/>
+              <TextBlock FontSize="11" Foreground="#5D7FA8" Text="Views" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Border>
+
+          <Border Width="1" Height="16" Background="#1A2B42" Margin="2,0"/>
+
+          <!-- Zoom display -->
+          <Border Background="#0D1525" BorderBrush="#1A2B42" BorderThickness="1" CornerRadius="5" Padding="7,3">
+            <TextBlock FontSize="11" Foreground="#4A6A94" Text="{Binding ZoomDisplay}" MinWidth="34" TextAlignment="Center"/>
+          </Border>
+
+          <Border Width="1" Height="16" Background="#1A2B42" Margin="2,0"/>
+
+          <!-- Selection actions -->
+          <Button Classes="tb compact"
+                  Click="CenterSelection_Click"
+                  IsVisible="{Binding HasSelectionDetails}"
+                  Padding="6,3"
+                  ToolTip.Tip="Centralizar seleção">
+            <mi:MaterialIcon Kind="ImageFilterCenterFocus" Width="12" Height="12"/>
+          </Button>
+          <Button Classes="tb compact"
+                  Click="FitSelection_Click"
+                  IsVisible="{Binding HasSelectionDetails}"
+                  Padding="6,3"
+                  ToolTip.Tip="Enquadrar seleção">
+            <mi:MaterialIcon Kind="Fullscreen" Width="12" Height="12"/>
+          </Button>
+          <Button Classes="tb compact"
+                  Command="{Binding DeleteSelectionCommand}"
+                  IsEnabled="{Binding HasSelectionDetails}"
+                  IsVisible="{Binding HasSelectionDetails}"
+                  Padding="6,3"
+                  ToolTip.Tip="Remover selecionados">
+            <mi:MaterialIcon Kind="Delete" Width="12" Height="12"/>
+          </Button>
+
+          <Border Width="1" Height="16" Background="#1A2B42" Margin="2,0"/>
+
+          <!-- Focus/filter -->
+          <ToggleButton Classes="tb compact focus-toggle"
+                        IsChecked="{Binding IsFocusModeEnabled}"
+                        Padding="6,3"
+                        ToolTip.Tip="Focus Mode: dimmer nodes não relacionados">
+            <mi:MaterialIcon Kind="CrosshairsGps" Width="12" Height="12"/>
+          </ToggleButton>
+          <Button Classes="tb compact"
+                  Command="{Binding HideUnrelatedEntitiesCommand}"
+                  Padding="6,3"
+                  ToolTip.Tip="Ocultar nodes não relacionados">
+            <mi:MaterialIcon Kind="FilterVariant" Width="12" Height="12"/>
+          </Button>
+          <Button Classes="tb compact"
+                  Command="{Binding ShowAllEntitiesCommand}"
+                  Padding="6,3"
+                  ToolTip.Tip="Mostrar todos os nodes">
+            <mi:MaterialIcon Kind="EyeOutline" Width="12" Height="12"/>
+          </Button>
+
+          <Border Width="1" Height="16" Background="#1A2B42" Margin="2,0"/>
+
+          <!-- Undo/redo -->
+          <Button Classes="tb compact" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" Padding="6,3" ToolTip.Tip="Desfazer (Ctrl+Z)">
+            <mi:MaterialIcon Kind="Undo" Width="12" Height="12"/>
+          </Button>
+          <Button Classes="tb compact" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}" Padding="6,3" ToolTip.Tip="Refazer (Ctrl+Y)">
+            <mi:MaterialIcon Kind="Redo" Width="12" Height="12"/>
+          </Button>
         </StackPanel>
       </DockPanel>
     </Border>
 
-    <ScrollViewer Grid.Row="1"
-                  HorizontalScrollBarVisibility="Auto"
-                  VerticalScrollBarVisibility="Auto">
-      <Canvas MinWidth="1000" MinHeight="700" Background="{StaticResource Bg0Brush}">
-        <ItemsControl ItemsSource="{Binding Entities}">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-              <Canvas/>
-            </ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
+    <Grid Grid.Row="1" ColumnDefinitions="*,310">
+      <Grid Grid.Column="0" Margin="0">
+        <ctrl:InfiniteCanvasCoreControl x:Name="ViewportSurface"
+                                        Viewport="{Binding}"
+                                        Focusable="True"
+                                        Background="#060A12"
+                                        PointerWheelChanged="Viewport_PointerWheelChanged"
+                                        PointerPressed="Viewport_PointerPressed"
+                                        PointerMoved="Viewport_PointerMoved"
+                                        PointerReleased="Viewport_PointerReleased">
+          <ctrl:InfiniteCanvasCoreControl.SceneContent>
+            <Canvas x:Name="SceneContentCanvas"
+                    x:DataType="ervm:ErCanvasViewModel"
+                    DataContext="{Binding DataContext, ElementName=ViewportSurface}"
+                    Background="Transparent"
+                    PointerPressed="CanvasBackground_PointerPressed">
+              <Canvas.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Ocultar nodes não relacionados"
+                            Command="{Binding HideUnrelatedEntitiesCommand}"/>
+                  <MenuItem Header="Mostrar todos os nodes"
+                            Command="{Binding ShowAllEntitiesCommand}"/>
+                </ContextMenu>
+              </Canvas.ContextMenu>
+              <ItemsControl x:Name="EdgeItems"
+                            ItemsSource="{Binding Edges}"
+                            Width="{Binding Width, ElementName=SceneContentCanvas}"
+                            Height="{Binding Height, ElementName=SceneContentCanvas}"
+                            ClipToBounds="False">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <Canvas/>
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
 
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="ervm:ErEntityNodeViewModel">
-              <erc:ErEntityControl Canvas.Left="{Binding X}" Canvas.Top="{Binding Y}"/>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </Canvas>
-    </ScrollViewer>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="ervm:ErRelationEdgeViewModel">
+                    <Canvas IsVisible="{Binding !IsHidden}">
+                      <!-- Hit area (invisible, wide for easier selection) -->
+                      <shapes:Polyline Points="{Binding RoutePoints}"
+                                       Stroke="{Binding HitStroke}"
+                                       StrokeThickness="14"
+                                       PointerPressed="Edge_PointerPressed"
+                                       PointerEntered="Edge_PointerEntered"
+                                       PointerExited="Edge_PointerExited"
+                                       ToolTip.Tip="{Binding TooltipText}"/>
+
+                      <!-- Wire line -->
+                      <shapes:Polyline Points="{Binding RoutePoints}"
+                                       Stroke="{Binding StrokeColor}"
+                                       StrokeThickness="{Binding StrokeThickness}"
+                                       Opacity="{Binding StrokeOpacity}"
+                                       ToolTip.Tip="{Binding TooltipText}"/>
+
+                      <!-- Start dot (child / FK side) -->
+                      <Ellipse Canvas.Left="{Binding StartDotLeft}"
+                               Canvas.Top="{Binding StartDotTop}"
+                               Width="{Binding DotSize}"
+                               Height="{Binding DotSize}"
+                               Fill="{Binding StrokeColor}"
+                               Opacity="{Binding StrokeOpacity}"
+                               IsHitTestVisible="False"/>
+
+                      <!-- End dot (parent / referenced side) -->
+                      <Ellipse Canvas.Left="{Binding EndDotLeft}"
+                               Canvas.Top="{Binding EndDotTop}"
+                               Width="{Binding DotSize}"
+                               Height="{Binding DotSize}"
+                               Fill="{Binding StrokeColor}"
+                               Stroke="#060A12"
+                               StrokeThickness="1.5"
+                               Opacity="{Binding StrokeOpacity}"
+                               IsHitTestVisible="False"/>
+
+                      <!-- Cardinality label (shown when selected or hovered) -->
+                      <Border Canvas.Left="{Binding LabelX}"
+                              Canvas.Top="{Binding LabelY}"
+                              Background="#0A1220"
+                              BorderBrush="{Binding StrokeColor}"
+                              BorderThickness="1"
+                              CornerRadius="4"
+                              Padding="5,2"
+                              Opacity="{Binding StrokeOpacity}"
+                              IsVisible="{Binding IsSelected}">
+                        <TextBlock FontSize="10"
+                                   FontWeight="SemiBold"
+                                   Foreground="#C0D4F0"
+                                   Text="{Binding Cardinality}"/>
+                      </Border>
+                    </Canvas>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <ItemsControl x:Name="EntityItems"
+                            ItemsSource="{Binding Entities}"
+                            Width="{Binding Width, ElementName=SceneContentCanvas}"
+                            Height="{Binding Height, ElementName=SceneContentCanvas}"
+                            ClipToBounds="False">
+                <ItemsControl.Styles>
+                  <Style Selector="ItemsControl#EntityItems > ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{ReflectionBinding Content.X, RelativeSource={RelativeSource Self}}"/>
+                    <Setter Property="Canvas.Top" Value="{ReflectionBinding Content.Y, RelativeSource={RelativeSource Self}}"/>
+                  </Style>
+                </ItemsControl.Styles>
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <Canvas/>
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="ervm:ErEntityNodeViewModel">
+                    <erc:ErEntityControl IsVisible="{Binding !IsHidden}"/>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Canvas>
+          </ctrl:InfiniteCanvasCoreControl.SceneContent>
+
+          <ctrl:InfiniteCanvasCoreControl.OverlayContent>
+            <Canvas x:DataType="ervm:ErCanvasViewModel"
+                    DataContext="{Binding DataContext, ElementName=ViewportSurface}"
+                    IsHitTestVisible="False">
+              <ctrl:CanvasMarqueeAdorner x:Name="SelectionMarquee"
+                                         Fill="{StaticResource SelectedOverlayBrush}"
+                                         Stroke="{StaticResource BorderFocusBrush}"
+                                         StrokeThickness="1"/>
+            </Canvas>
+          </ctrl:InfiniteCanvasCoreControl.OverlayContent>
+        </ctrl:InfiniteCanvasCoreControl>
+
+        <!-- Schema overview (bottom-left) -->
+        <Border IsVisible="{Binding IsMinimapVisible}"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                Margin="12"
+                CornerRadius="8"
+                BorderBrush="#1A2B42"
+                BorderThickness="1"
+                Background="#09101EEE"
+                Padding="10,8">
+          <StackPanel Spacing="6">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <mi:MaterialIcon Kind="TableLarge" Width="11" Height="11" Foreground="#3B82F6" VerticalAlignment="Center"/>
+              <TextBlock Classes="txt-meta" Foreground="#4A6A94" Text="{Binding EntityCount, StringFormat={}{0} entidades}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <mi:MaterialIcon Kind="VectorPolyline" Width="11" Height="11" Foreground="#22C55E" VerticalAlignment="Center"/>
+              <TextBlock Classes="txt-meta" Foreground="#4A6A94" Text="{Binding EdgeCount, StringFormat={}{0} relações}"/>
+            </StackPanel>
+            <TextBlock Classes="txt-meta" Foreground="#2A3A52" Text="{Binding ZoomDisplay, StringFormat=Zoom: {0}}"/>
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <Border Grid.Column="1"
+              Margin="8"
+              Background="#0B1220"
+              BorderBrush="#1E2D47"
+              BorderThickness="1"
+              CornerRadius="10"
+              ClipToBounds="True">
+        <Grid RowDefinitions="Auto,*,Auto">
+
+          <!-- Panel header -->
+          <Border Grid.Row="0"
+                  Background="#0F1829"
+                  BorderBrush="#1E2D47"
+                  BorderThickness="0,0,0,1"
+                  Padding="12,10">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <mi:MaterialIcon Kind="VectorPolyline" Width="13" Height="13" Foreground="#3B82F6" VerticalAlignment="Center"/>
+                <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="#9DB4CF" LetterSpacing="1" Text="ER PANEL"/>
+              </StackPanel>
+              <TextBlock Grid.Column="1"
+                         Classes="txt-meta"
+                         Foreground="#4A5A74"
+                         Text="{Binding StatusMessage}"
+                         TextTrimming="CharacterEllipsis"
+                         MaxWidth="140"
+                         VerticalAlignment="Center"/>
+            </Grid>
+          </Border>
+
+          <!-- Scrollable content -->
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="0">
+
+              <!-- Technical warnings -->
+              <StackPanel IsVisible="{Binding HasTechnicalWarnings}" Margin="10,10,10,0" Spacing="4">
+                <ItemsControl ItemsSource="{Binding TechnicalWarnings}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border Background="#1C1408" BorderBrush="#7C5A12" BorderThickness="1" CornerRadius="6" Padding="8,5" Margin="0,0,0,3">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <mi:MaterialIcon Kind="AlertOutline" Width="11" Height="11" Foreground="#D4952A" VerticalAlignment="Center"/>
+                          <TextBlock Classes="txt-meta" Foreground="#D4952A" Text="{Binding .}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <!-- Entity selection details -->
+              <StackPanel IsVisible="{Binding HasSelectedEntityMetadata}" Spacing="0">
+
+                <!-- Entity header strip -->
+                <Border Background="#0D1729" BorderBrush="#1E2D47" BorderThickness="0,0,0,1" Padding="12,10">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                      <TextBlock Classes="txt-meta" Foreground="#4A6A94" Text="{Binding SelectedEntityObjectType}"/>
+                      <TextBlock FontSize="14" FontWeight="SemiBold" Foreground="#EAF0FA"
+                                 Text="{Binding SelectionTitle}"
+                                 TextTrimming="CharacterEllipsis"/>
+                      <TextBlock Classes="txt-meta" Foreground="#5E7A9C" Text="{Binding SelectionSubtitle}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Border Grid.Column="1"
+                            Background="#172440"
+                            BorderBrush="#2B4070"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="6,2"
+                            VerticalAlignment="Top">
+                      <TextBlock Classes="txt-meta"
+                                 FontWeight="SemiBold"
+                                 Foreground="#7AAAD8"
+                                 Text="{Binding SelectedEntityObjectType}"/>
+                    </Border>
+                  </Grid>
+                </Border>
+
+                <!-- Stats row -->
+                <Border Background="#080F1C" BorderBrush="#1E2D47" BorderThickness="0,0,0,1" Padding="12,8">
+                  <Grid ColumnDefinitions="*,*,*">
+                    <!-- Columns stat -->
+                    <StackPanel Grid.Column="0" HorizontalAlignment="Center" Spacing="1">
+                      <TextBlock FontSize="16" FontWeight="Bold" Foreground="#E8F0FC"
+                                 Text="{Binding SelectedEntityColumnCount}"
+                                 HorizontalAlignment="Center"/>
+                      <TextBlock Classes="txt-meta" Foreground="#4A6A94" Text="colunas" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                    <!-- PK stat -->
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Center" Spacing="1">
+                      <TextBlock FontSize="16" FontWeight="Bold" Foreground="#FCD34D"
+                                 Text="{Binding SelectedEntityPrimaryKeyCount}"
+                                 HorizontalAlignment="Center"/>
+                      <TextBlock Classes="txt-meta" Foreground="#7C6020" Text="PK" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                    <!-- FK stat -->
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center" Spacing="1">
+                      <TextBlock FontSize="16" FontWeight="Bold" Foreground="#FB923C"
+                                 Text="{Binding SelectedEntityForeignKeyCount}"
+                                 HorizontalAlignment="Center"/>
+                      <TextBlock Classes="txt-meta" Foreground="#7C4518" Text="FK" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+
+                <!-- Metadata details -->
+                <Border Background="#0A1320" Padding="12,10">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="txt-meta" Foreground="#4A5A74" Text="{Binding SelectedEntityQualifiedName}" TextWrapping="Wrap"/>
+
+                    <StackPanel Spacing="3">
+                      <TextBlock Classes="txt-meta" Foreground="#5E7A9C" Text="{Binding SelectedEntityNullabilityStats}" TextWrapping="Wrap"/>
+                      <TextBlock Classes="txt-meta" Foreground="#5E7A9C" Text="{Binding SelectedEntityRelationshipStats}" TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <!-- PK columns -->
+                    <Border Background="#1C1A08" BorderBrush="#4A3A10" BorderThickness="1" CornerRadius="5" Padding="8,5"
+                            IsVisible="{Binding HasSelectedEntityPrimaryKeys}">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="txt-meta" FontWeight="SemiBold" Foreground="#7C6020" Text="PRIMARY KEY"/>
+                        <TextBlock Classes="txt-mono-small" FontFamily="{StaticResource MonoFont}"
+                                   Foreground="#FDE68A"
+                                   Text="{Binding SelectedEntityPrimaryKeyColumns}"
+                                   TextWrapping="Wrap"/>
+                      </StackPanel>
+                    </Border>
+
+                    <!-- FK columns -->
+                    <Border Background="#1C1108" BorderBrush="#4A2A10" BorderThickness="1" CornerRadius="5" Padding="8,5"
+                            IsVisible="{Binding HasSelectedEntityForeignKeys}">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="txt-meta" FontWeight="SemiBold" Foreground="#7C4010" Text="FOREIGN KEYS"/>
+                        <TextBlock Classes="txt-mono-small" FontFamily="{StaticResource MonoFont}"
+                                   Foreground="#FDBA74"
+                                   Text="{Binding SelectedEntityForeignKeyColumns}"
+                                   TextWrapping="Wrap"/>
+                      </StackPanel>
+                    </Border>
+
+                    <!-- Indexed columns -->
+                    <Border Background="#0C1528" BorderBrush="#1E3258" BorderThickness="1" CornerRadius="5" Padding="8,5"
+                            IsVisible="{Binding HasSelectedEntityIndexes}">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="txt-meta" FontWeight="SemiBold" Foreground="#2A5080" Text="INDEXES"/>
+                        <TextBlock Classes="txt-mono-small" FontFamily="{StaticResource MonoFont}"
+                                   Foreground="#BFDBFE"
+                                   Text="{Binding SelectedEntityIndexedColumns}"
+                                   TextWrapping="Wrap"/>
+                      </StackPanel>
+                    </Border>
+                  </StackPanel>
+                </Border>
+
+                <!-- Action buttons for entity -->
+                <Border Background="#080F1C" BorderBrush="#1E2D47" BorderThickness="0,1,0,0" Padding="10,8">
+                  <StackPanel Spacing="5">
+                    <Button Classes="tb compact"
+                            Click="CopyDefinition_Click"
+                            IsVisible="{Binding HasSingleEntitySelection}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="8,5">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <mi:MaterialIcon Kind="ContentCopy" Width="11" Height="11" VerticalAlignment="Center"/>
+                        <TextBlock Text="Copiar definition"/>
+                      </StackPanel>
+                    </Button>
+                    <Button Classes="tb compact"
+                            Command="{Binding EditSelectedDefinitionInSqlEditorCommand}"
+                            IsVisible="{Binding CanEditSelectedViewDefinition}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="8,5">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <mi:MaterialIcon Kind="CodeBraces" Width="11" Height="11" VerticalAlignment="Center"/>
+                        <TextBlock Text="Editar view no SQL"/>
+                      </StackPanel>
+                    </Button>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+
+              <!-- Edge / relationship selection -->
+              <StackPanel IsVisible="{Binding HasSelectionJoinPredicate}" Spacing="0">
+                <Border Background="#0D1729" BorderBrush="#1E2D47" BorderThickness="0,0,0,1" Padding="12,10">
+                  <StackPanel Spacing="3">
+                    <TextBlock Classes="txt-meta" Foreground="#4A6A94" Text="Relacionamento selecionado"/>
+                    <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="#EAF0FA"
+                               Text="{Binding SelectionTitle}" TextWrapping="Wrap"/>
+                    <TextBlock Classes="txt-meta" Foreground="#5E7A9C" Text="{Binding SelectionBody}" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Border>
+
+                <Border Background="#0C1828" BorderBrush="#1E2D47" BorderThickness="0,0,0,1" Padding="12,10">
+                  <TextBlock FontFamily="{StaticResource MonoFont}"
+                             FontSize="11"
+                             Foreground="#7A9FD4"
+                             Text="{Binding SelectionJoinPredicate}"
+                             TextWrapping="Wrap"/>
+                </Border>
+
+                <Border Background="#080F1C" Padding="10,8">
+                  <Button Classes="tb compact"
+                          Command="{Binding OpenSelectionInQueryCommand}"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Left"
+                          Padding="8,5">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <mi:MaterialIcon Kind="OpenInNew" Width="11" Height="11" VerticalAlignment="Center"/>
+                      <TextBlock Text="Open in Query"/>
+                    </StackPanel>
+                  </Button>
+                </Border>
+              </StackPanel>
+
+              <!-- No selection state -->
+              <Border IsVisible="{Binding !HasSelectionDetails}" Padding="12,20">
+                <StackPanel Spacing="6" HorizontalAlignment="Center">
+                  <mi:MaterialIcon Kind="VectorPolyline" Width="28" Height="28" Foreground="#1E2D47" HorizontalAlignment="Center"/>
+                  <TextBlock Classes="txt-meta" Foreground="#344A68" Text="Selecione uma entidade" HorizontalAlignment="Center"/>
+                  <TextBlock Classes="txt-meta" Foreground="#2A3A52" Text="ou relacionamento" HorizontalAlignment="Center"/>
+                </StackPanel>
+              </Border>
+
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- Bottom actions -->
+          <Border Grid.Row="2"
+                  Background="#080F1C"
+                  BorderBrush="#1E2D47"
+                  BorderThickness="0,1,0,0"
+                  Padding="10,8">
+            <StackPanel Spacing="5">
+              <!-- Dirty warning -->
+              <Border Background="#0C1828"
+                      BorderBrush="#2B4070"
+                      BorderThickness="1"
+                      CornerRadius="5"
+                      Padding="8,5"
+                      IsVisible="{Binding IsDirty}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="CircleSmall" Width="14" Height="14" Foreground="#F59E0B" VerticalAlignment="Center"/>
+                  <TextBlock Classes="txt-meta" Foreground="#9CA3AF" Text="Alterações pendentes"/>
+                </StackPanel>
+              </Border>
+
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="5">
+                <Button Grid.Column="0"
+                        Classes="tb compact"
+                        Command="{Binding SyncToDdlCommand}"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Padding="0,5">
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="DatabaseSync" Width="11" Height="11" VerticalAlignment="Center"/>
+                    <TextBlock Text="Sync DDL"/>
+                  </StackPanel>
+                </Button>
+                <Button Grid.Column="1"
+                        Classes="tb compact"
+                        Command="{Binding RefreshCommand}"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Padding="0,5">
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <mi:MaterialIcon Kind="Refresh" Width="11" Height="11" VerticalAlignment="Center"/>
+                    <TextBlock Text="Refresh"/>
+                  </StackPanel>
+                </Button>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+        </Grid>
+      </Border>
+    </Grid>
   </Grid>
 </UserControl>
+

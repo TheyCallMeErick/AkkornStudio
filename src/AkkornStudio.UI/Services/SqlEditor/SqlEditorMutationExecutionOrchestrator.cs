@@ -80,6 +80,7 @@ public sealed class SqlEditorMutationExecutionOrchestrator
                 StatementSql = sql,
                 Success = false,
                 ErrorMessage = L("sqlEditor.error.mutationConfirmationRequired", "Mutation confirmation required."),
+                ErrorCategory = SqlExecutionErrorCategory.Validation,
                 ExecutedAt = DateTimeOffset.UtcNow,
             },
             ConfirmationState = new SqlEditorMutationConfirmationState

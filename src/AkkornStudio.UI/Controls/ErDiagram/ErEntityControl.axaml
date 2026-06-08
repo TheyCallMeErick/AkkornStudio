@@ -1,80 +1,364 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ervm="using:AkkornStudio.UI.ViewModels.ErDiagram"
+             xmlns:mi="using:Material.Icons.Avalonia"
              x:Class="AkkornStudio.UI.Controls.ErDiagram.ErEntityControl"
              x:DataType="ervm:ErEntityNodeViewModel">
 
-  <Border Width="220"
-          CornerRadius="{StaticResource RadiusMD}"
-          Background="{StaticResource Bg1Brush}"
-          BorderBrush="{StaticResource BorderBrush}"
-          BorderThickness="1">
-    <Grid RowDefinitions="36,*">
-      <Border Grid.Row="0"
-              Background="{StaticResource Bg2Brush}"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="0,0,0,1"
-              CornerRadius="{StaticResource RadiusMD}, {StaticResource RadiusMD}, 0, 0"
-              Padding="10,0">
-        <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-          <TextBlock Grid.Column="0"
-                     Classes="txt-label"
-                     Foreground="{StaticResource TextPrimaryBrush}"
-                     Text="{Binding DisplayName}"
-                     TextTrimming="CharacterEllipsis"
-                     VerticalAlignment="Center"/>
+  <UserControl.Styles>
+    <Style Selector="ToggleButton.erd-node-tab">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0,0,0,2"/>
+      <Setter Property="Padding" Value="2,8,2,6"/>
+      <Setter Property="Foreground" Value="#75819A"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="CornerRadius" Value="0"/>
+    </Style>
+    <Style Selector="ToggleButton.erd-node-tab:pointerover">
+      <Setter Property="Foreground" Value="#D8DEEA"/>
+    </Style>
+    <Style Selector="ToggleButton.erd-node-tab:checked">
+      <Setter Property="Foreground" Value="#F1F5FB"/>
+      <Setter Property="BorderBrush" Value="#3B82F6"/>
+    </Style>
 
-          <Border Grid.Column="1"
-                  IsVisible="{Binding IsView}"
-                  Background="{StaticResource ControlActiveBgBrush}"
-                  CornerRadius="{StaticResource RadiusPill}"
-                  Padding="8,2"
-                  VerticalAlignment="Center">
-            <TextBlock Text="VIEW"
-                       FontSize="{StaticResource FontSizeCaption}"
-                       Foreground="{StaticResource TextAccentBrush}"/>
-          </Border>
-        </Grid>
-      </Border>
+    <Style Selector="Border.erd-col-row">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="CornerRadius" Value="0"/>
+      <Setter Property="Padding" Value="0,2"/>
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.08"/>
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Border.erd-col-row:pointerover">
+      <Setter Property="Background" Value="#0F1E34"/>
+    </Style>
+  </UserControl.Styles>
 
-      <ItemsControl Grid.Row="1" ItemsSource="{Binding Columns}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="ervm:ErColumnRowViewModel">
-            <Grid ColumnDefinitions="Auto,8,*,8,Auto"
-                  Height="22"
-                  Margin="10,0"
-                  VerticalAlignment="Center">
-              <Border Grid.Column="0"
-                      MinWidth="24"
-                      Background="{StaticResource Bg3Brush}"
-                      CornerRadius="{StaticResource RadiusPill}"
-                      Padding="6,1"
-                      IsVisible="{Binding HasBadge}"
-                      VerticalAlignment="Center">
-                <TextBlock Text="{Binding Badge}"
-                           FontSize="{StaticResource FontSizeCaption}"
-                           Foreground="{StaticResource TextSecondaryBrush}"
-                           HorizontalAlignment="Center"/>
+  <Grid PointerPressed="Root_PointerPressed"
+        PointerMoved="Root_PointerMoved"
+        PointerReleased="Root_PointerReleased"
+        PointerCaptureLost="Root_PointerCaptureLost"
+        PointerEntered="Root_PointerEntered"
+        PointerExited="Root_PointerExited">
+
+    <Border Width="420"
+            CornerRadius="10"
+            ClipToBounds="True"
+            Background="{Binding NodeBackground}"
+            BorderBrush="{Binding NodeBorderBrush}"
+            BorderThickness="{Binding NodeBorderThickness}"
+            Opacity="{Binding NodeOpacity}">
+      <Grid RowDefinitions="Auto,Auto,*">
+        <Border Grid.Row="0"
+                Background="{Binding HeaderBackground}"
+                CornerRadius="10,10,0,0"
+                BorderBrush="#273247"
+                BorderThickness="0,0,0,1"
+                Padding="0">
+          <Grid ColumnDefinitions="52,*">
+            <Border Grid.Column="0" Background="{Binding HeaderAccentBrush}">
+              <mi:MaterialIcon Kind="{Binding ObjectKindIconKind}"
+                               Width="24"
+                               Height="24"
+                               Foreground="#F8FAFC"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+            </Border>
+
+            <Grid Grid.Column="1" Margin="10,8" RowDefinitions="Auto,Auto" RowSpacing="5">
+              <Grid Grid.Row="0" ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                <TextBlock Grid.Column="0"
+                           Classes="txt-meta"
+                           Foreground="{Binding HeaderSchemaBrush}"
+                           Text="{Binding DisplaySchema}"
+                           TextTrimming="CharacterEllipsis"/>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                  <ProgressBar Width="16"
+                               Height="2"
+                               IsIndeterminate="True"
+                               Foreground="#3B82F6"
+                               Background="Transparent"
+                               IsVisible="{Binding IsHoverFocusPending}"/>
+
+                  <Border Background="{Binding ObjectTypeBadgeBackground}"
+                          CornerRadius="999"
+                          Padding="7,1"
+                          VerticalAlignment="Center">
+                    <TextBlock Classes="txt-meta"
+                               Foreground="{Binding ObjectTypeBadgeForeground}"
+                               Text="{Binding ObjectTypeLabel}"/>
+                  </Border>
+                </StackPanel>
+              </Grid>
+
+              <Grid Grid.Row="1" ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                <TextBlock Grid.Column="0"
+                           Classes="txt-node-title"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="{Binding HeaderTitleBrush}"
+                           Text="{Binding DisplayName}"
+                           TextTrimming="CharacterEllipsis"/>
+
+                <TextBlock Grid.Column="1"
+                           Classes="txt-meta"
+                           Foreground="{Binding HeaderMetaBrush}"
+                           Text="{Binding MetaSummary}"/>
+              </Grid>
+            </Grid>
+          </Grid>
+        </Border>
+
+        <Border Grid.Row="1"
+                IsVisible="{Binding ShowTabs}"
+                BorderBrush="#152030"
+                BorderThickness="0,0,0,1"
+                Padding="4,0"
+                Background="#0C1525">
+          <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+            <ToggleButton Classes="erd-node-tab"
+                          IsChecked="{Binding IsColumnsTabSelected}">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <mi:MaterialIcon Kind="TableColumn" Width="11" Height="11" VerticalAlignment="Center"/>
+                <TextBlock Text="Columns"/>
+              </StackPanel>
+            </ToggleButton>
+            <ToggleButton Classes="erd-node-tab"
+                          IsChecked="{Binding IsCreateTabSelected}">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <mi:MaterialIcon Kind="CodeBrackets" Width="11" Height="11" VerticalAlignment="Center"/>
+                <TextBlock Text="DDL"/>
+              </StackPanel>
+            </ToggleButton>
+            <ToggleButton Classes="erd-node-tab"
+                          IsChecked="{Binding IsDependenciesTabSelected}">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <mi:MaterialIcon Kind="SourceBranch" Width="11" Height="11" VerticalAlignment="Center"/>
+                <TextBlock Text="Deps"/>
+              </StackPanel>
+            </ToggleButton>
+          </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="2" IsVisible="{Binding ShowDetailsArea}">
+          <Border IsVisible="{Binding IsColumnsTabSelected}">
+            <Grid RowDefinitions="Auto,*">
+              <Border Grid.Row="0"
+                      Background="#07101E"
+                      BorderBrush="#0E1C2E"
+                      BorderThickness="0,0,0,1"
+                      Padding="0,4">
+                <Grid ColumnDefinitions="14,8,Auto,10,*,10,190,8,14">
+                  <TextBlock Grid.Column="2" Classes="txt-meta" Foreground="#2E4A6A" LetterSpacing="0.5" Text="KEY"/>
+                  <TextBlock Grid.Column="4" Classes="txt-meta" Foreground="#2E4A6A" LetterSpacing="0.5" Text="NAME"/>
+                  <TextBlock Grid.Column="6" Classes="txt-meta" Foreground="#2E4A6A" LetterSpacing="0.5" Text="TYPE"/>
+                </Grid>
               </Border>
 
-              <TextBlock Grid.Column="2"
-                         Classes="txt-body"
-                         Foreground="{StaticResource TextPrimaryBrush}"
-                         Text="{Binding ColumnName}"
-                         TextTrimming="CharacterEllipsis"
-                         VerticalAlignment="Center"/>
+              <Grid Grid.Row="1" RowDefinitions="*,Auto">
+                <ScrollViewer Grid.Row="0"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                  <ItemsControl ItemsSource="{Binding VisibleColumns}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="ervm:ErColumnRowViewModel">
+                        <Border Classes="erd-col-row"
+                                Margin="0,1"
+                                PointerEntered="ColumnRow_PointerEntered"
+                                PointerExited="ColumnRow_PointerExited">
+                          <Grid ColumnDefinitions="14,8,Auto,10,*,10,190,8,14"
+                                Height="23"
+                                VerticalAlignment="Center">
+                            <Border Grid.ColumnSpan="9"
+                                    Background="#1D2C47"
+                                    IsVisible="{Binding IsRelationEndpointHighlighted}"
+                                    Opacity="0.38"/>
 
-              <TextBlock Grid.Column="4"
-                         FontFamily="{StaticResource MonoFont}"
-                         FontSize="{StaticResource FontSizeCaption}"
-                         Foreground="{StaticResource TextMutedBrush}"
-                         Text="{Binding DataType}"
-                         TextTrimming="CharacterEllipsis"
-                         VerticalAlignment="Center"/>
+                            <Ellipse Grid.Column="0"
+                                     Width="8"
+                                     Height="8"
+                                     Fill="#A7B7D4"
+                                     Stroke="#D6E0F0"
+                                     StrokeThickness="0.8"
+                                     VerticalAlignment="Center"
+                                     HorizontalAlignment="Center"
+                                     IsVisible="{Binding HasInboundRelation}"/>
+
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                              <Border CornerRadius="999"
+                                      Padding="6,1"
+                                      Background="#382D1A"
+                                      BorderBrush="#A98036"
+                                      BorderThickness="1"
+                                      IsVisible="{Binding HasPrimaryKeyBadge}">
+                                <StackPanel Orientation="Horizontal" Spacing="3">
+                                  <mi:MaterialIcon Kind="Key" Width="10" Height="10" Foreground="#FCD34D"/>
+                                  <TextBlock Classes="txt-meta" Foreground="#FDE68A" Text="PK"/>
+                                </StackPanel>
+                              </Border>
+
+                              <Border CornerRadius="999"
+                                      Padding="6,1"
+                                      Background="#3C2614"
+                                      BorderBrush="#A85F24"
+                                      BorderThickness="1"
+                                      IsVisible="{Binding HasForeignKeyBadge}">
+                                <StackPanel Orientation="Horizontal" Spacing="3">
+                                  <mi:MaterialIcon Kind="LinkVariant" Width="10" Height="10" Foreground="#FB923C"/>
+                                  <TextBlock Classes="txt-meta" Foreground="#FDBA74" Text="FK"/>
+                                </StackPanel>
+                              </Border>
+
+                              <Border CornerRadius="999"
+                                      Padding="6,1"
+                                      Background="#1C2F4F"
+                                      BorderBrush="#3B82F6"
+                                      BorderThickness="1"
+                                      IsVisible="{Binding HasIndexBadge}">
+                                <StackPanel Orientation="Horizontal" Spacing="3">
+                                  <mi:MaterialIcon Kind="Magnify" Width="10" Height="10" Foreground="#60A5FA"/>
+                                  <TextBlock Classes="txt-meta" Foreground="#BFDBFE" Text="IX"/>
+                                </StackPanel>
+                              </Border>
+
+                              <Border CornerRadius="999"
+                                      Padding="6,1"
+                                      Background="#1A2740"
+                                      BorderBrush="#32435F"
+                                      BorderThickness="1"
+                                      IsVisible="{Binding HasNoKeyBadge}">
+                                <TextBlock Classes="txt-meta" Foreground="#B7C2D8" Text="COL"/>
+                              </Border>
+                            </StackPanel>
+
+                            <TextBlock Grid.Column="4"
+                                       Classes="txt-body"
+                                       Foreground="{Binding NameBrush}"
+                                       FontWeight="{Binding NameWeight}"
+                                       Text="{Binding ColumnName}"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"/>
+
+                            <StackPanel Grid.Column="6"
+                                        Orientation="Horizontal"
+                                        Spacing="6"
+                                        VerticalAlignment="Center">
+                              <TextBlock Classes="txt-mono-small"
+                                         FontFamily="{StaticResource MonoFont}"
+                                         Foreground="{Binding TypeBrush}"
+                                         Text="{Binding DataType}"
+                                         TextTrimming="CharacterEllipsis"
+                                         MaxWidth="130"/>
+
+                              <Border CornerRadius="999"
+                                      Padding="5,1"
+                                      Background="{Binding NullabilityBackground}"
+                                      BorderBrush="{Binding NullabilityBorderBrush}"
+                                      BorderThickness="1">
+                                <StackPanel Orientation="Horizontal" Spacing="3">
+                                  <mi:MaterialIcon Kind="CheckCircleOutline"
+                                                   Width="10"
+                                                   Height="10"
+                                                   Foreground="#4A8A40"
+                                                   IsVisible="{Binding !IsNullable}"/>
+                                  <mi:MaterialIcon Kind="MinusCircleOutline"
+                                                   Width="10"
+                                                   Height="10"
+                                                   Foreground="#5A5A5A"
+                                                   IsVisible="{Binding IsNullable}"/>
+                                  <TextBlock Classes="txt-meta"
+                                             FontSize="10"
+                                             Foreground="{Binding NullabilityBrush}"
+                                             Text="{Binding NullabilityBadgeText}"/>
+                                </StackPanel>
+                              </Border>
+                            </StackPanel>
+
+                            <Ellipse Grid.Column="8"
+                                     Width="8"
+                                     Height="8"
+                                     Fill="#6FAEE7"
+                                     Stroke="#D6E0F0"
+                                     StrokeThickness="0.8"
+                                     VerticalAlignment="Center"
+                                     HorizontalAlignment="Center"
+                                     IsVisible="{Binding HasOutboundRelation}"/>
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+
+                <Border Grid.Row="1"
+                        IsVisible="{Binding HasHiddenColumns}"
+                        Padding="10,4"
+                        BorderBrush="#273247"
+                        BorderThickness="0,1,0,0"
+                        Background="#0D1525">
+                  <TextBlock Classes="txt-meta"
+                             Foreground="#64748B"
+                             Text="{Binding HiddenColumnCount, StringFormat=+{0} columns hidden in this density}"/>
+                </Border>
+              </Grid>
             </Grid>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </Grid>
-  </Border>
+          </Border>
+
+          <Border IsVisible="{Binding IsCreateTabSelected}"
+                  Background="#060C18"
+                  Padding="10,8">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto">
+              <TextBlock Classes="txt-mono-small"
+                         FontFamily="{StaticResource MonoFont}"
+                         FontSize="11"
+                         Foreground="#5A8AAA"
+                         Text="{Binding CreateStatementSql}"
+                         TextWrapping="NoWrap"/>
+            </ScrollViewer>
+          </Border>
+
+          <Border IsVisible="{Binding IsDependenciesTabSelected}"
+                  Background="#080E1A"
+                  Padding="0,6">
+            <Grid RowDefinitions="Auto,*">
+              <Border Grid.Row="0" Padding="10,0,10,6" BorderBrush="#152030" BorderThickness="0,0,0,1">
+                <TextBlock Classes="txt-meta" Foreground="#2E4A6A" Text="RELACIONAMENTOS"/>
+              </Border>
+
+              <ScrollViewer Grid.Row="1"
+                            Margin="0,4,0,0"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Dependencies}"
+                              IsVisible="{Binding HasDependencies}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border Padding="10,4,10,4" BorderBrush="#0E1C2E" BorderThickness="0,0,0,1">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <mi:MaterialIcon Kind="ArrowRightThin" Width="10" Height="10" Foreground="#1E3A5A" VerticalAlignment="Center"/>
+                          <TextBlock Classes="txt-mono-small"
+                                     FontFamily="{StaticResource MonoFont}"
+                                     FontSize="11"
+                                     Foreground="#4A7AA0"
+                                     Text="{Binding .}"
+                                     TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Grid>
+          </Border>
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
 </UserControl>

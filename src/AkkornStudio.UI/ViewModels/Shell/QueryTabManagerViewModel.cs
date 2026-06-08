@@ -46,7 +46,7 @@ public sealed class QueryTabManagerViewModel : ViewModelBase
         bool isDirty,
         IReadOnlyList<ExplainHistoryState>? explainHistory = null)
     {
-        if (!TryGetActive(out QueryTabState active))
+        if (!TryGetActive(out QueryTabState? active) || active is null)
             return;
 
         active.SnapshotJson = snapshotJson;
@@ -57,7 +57,7 @@ public sealed class QueryTabManagerViewModel : ViewModelBase
 
     public void SyncActiveMetadata(string? currentFilePath, bool isDirty)
     {
-        if (!TryGetActive(out QueryTabState active))
+        if (!TryGetActive(out QueryTabState? active) || active is null)
             return;
 
         active.CurrentFilePath = currentFilePath;
@@ -83,7 +83,7 @@ public sealed class QueryTabManagerViewModel : ViewModelBase
 
     public void ResetActive(string snapshotJson)
     {
-        if (!TryGetActive(out QueryTabState active))
+        if (!TryGetActive(out QueryTabState? active) || active is null)
             return;
 
         active.SnapshotJson = snapshotJson;
@@ -127,12 +127,12 @@ public sealed class QueryTabManagerViewModel : ViewModelBase
         return newActive;
     }
 
-    private bool TryGetActive(out QueryTabState tab)
+    private bool TryGetActive(out QueryTabState? tab)
     {
         QueryTabState? found = GetTab(ActiveTabIndex);
         if (found is null)
         {
-            tab = null!;
+            tab = null;
             return false;
         }
 

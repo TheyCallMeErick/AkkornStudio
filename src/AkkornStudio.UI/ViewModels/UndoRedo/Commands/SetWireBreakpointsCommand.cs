@@ -7,20 +7,46 @@ public sealed class SetWireBreakpointsCommand(
     string description
 ) : ICanvasCommand
 {
-    private readonly ConnectionViewModel _wire = wire;
-    private readonly IReadOnlyList<WireBreakpoint> _before = before;
-    private readonly IReadOnlyList<WireBreakpoint> _after = after;
-    public string Description { get; } = description;
+    private readonly ConnectionViewModel _wire = wire ?? throw new ArgumentNullException(nameof(wire));
+    private readonly IReadOnlyList<WireBreakpoint> _before =
+        before ?? throw new ArgumentNullException(nameof(before));
+    private readonly IReadOnlyList<WireBreakpoint> _after =
+        after ?? throw new ArgumentNullException(nameof(after));
+    public string Description { get; } = description ?? throw new ArgumentNullException(nameof(description));
 
     public void Execute(CanvasViewModel canvas)
     {
-        _wire.SetBreakpoints(_after);
-        canvas.IsDirty = true;
+        ApplyBreakpoints(canvas, _after);
     }
 
     public void Undo(CanvasViewModel canvas)
     {
-        _wire.SetBreakpoints(_before);
-        canvas.IsDirty = true;
+        ApplyBreakpoints(canvas, _before);
+    }
+
+    private void ApplyBreakpoints(CanvasViewModel canvas, IReadOnlyList<WireBreakpoint> target)
+    {
+        if (!canvas.Connections.Contains(_wire))
+            return;
+
+        List<WireBreakpoint> previous = [.. _wire.Breakpoints];
+        try
+        {
+            _wire.SetBreakpoints(target);
+            canvas.IsDirty = true;
+        }
+        catch
+        {
+            try
+            {
+                _wire.SetBreakpoints(previous);
+            }
+            catch
+            {
+                // keep original exception as primary failure
+            }
+
+            throw;
+        }
     }
 }

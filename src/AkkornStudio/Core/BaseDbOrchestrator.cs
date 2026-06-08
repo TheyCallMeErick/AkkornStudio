@@ -24,6 +24,8 @@ public abstract class BaseDbOrchestrator(
     private bool _disposed;
     private readonly ILogger<BaseDbOrchestrator> _logger = logger ?? NullLogger<BaseDbOrchestrator>.Instance;
     private readonly int _defaultPreviewMaxRows = PreviewExecutionOptions.ResolveDefaultMaxRows(previewOptions);
+    private readonly int _maxPreviewCellBytes = ResolveMaxCellBytes(previewOptions);
+    private readonly long _maxPreviewPayloadBytes = ResolveMaxPayloadBytes(previewOptions);
 
     /// <summary>
     /// Gets the provider kind for the concrete orchestrator implementation.
@@ -114,11 +116,22 @@ public abstract class BaseDbOrchestrator(
         IReadOnlyList<(string Schema, string Table)> tables = await FetchTablesAsync(conn, ct);
 
         var tableSchemas = new List<TableSchema>(tables.Count);
-        foreach ((string schema, string table) in tables)
+        for (int index = 0; index < tables.Count; index++)
         {
+            (string schema, string table) = tables[index];
             ct.ThrowIfCancellationRequested();
-            IReadOnlyList<ColumnSchema> columns = await FetchColumnsAsync(conn, schema, table, ct);
-            tableSchemas.Add(new TableSchema(schema, table, columns));
+
+            string normalizedSchema = schema?.Trim() ?? string.Empty;
+            string normalizedTable = table?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(normalizedTable))
+            {
+                throw new InvalidOperationException(
+                    $"Provider '{Provider}' returned an invalid table name at index {index}.");
+            }
+
+            IReadOnlyList<ColumnSchema> columns = await FetchColumnsAsync(conn, normalizedSchema, normalizedTable, ct);
+            ct.ThrowIfCancellationRequested();
+            tableSchemas.Add(new TableSchema(normalizedSchema, normalizedTable, columns));
         }
 
         return new DatabaseSchema(Config.Database, Provider, tableSchemas);
@@ -144,12 +157,13 @@ public abstract class BaseDbOrchestrator(
                 await using DbCommand cmd = conn.CreateCommand();
                 cmd.Transaction = tx;
                 int resolvedMaxRows = maxRows > 0 ? maxRows : _defaultPreviewMaxRows;
-                cmd.CommandText = GetDialect().WrapWithPreviewLimit(sql, resolvedMaxRows);
+                cmd.CommandText = PreviewExecutionOptions.IsUnlimitedRequested(maxRows)
+                    ? sql
+                    : GetDialect().WrapWithPreviewLimit(sql, resolvedMaxRows);
                 cmd.CommandTimeout = Config.TimeoutSeconds;
 
                 await using DbDataReader reader = await cmd.ExecuteReaderAsync(ct);
-                var dt = new DataTable();
-                dt.Load(reader);
+                DataTable dt = await LoadPreviewTableWithGuardsAsync(reader, ct);
 
                 sw.Stop();
                 return new PreviewResult(
@@ -251,4 +265,117 @@ public abstract class BaseDbOrchestrator(
     }
 
     protected virtual ValueTask DisposeAsyncCore() => ValueTask.CompletedTask;
+
+    private async Task<DataTable> LoadPreviewTableWithGuardsAsync(
+        DbDataReader reader,
+        CancellationToken ct
+    )
+    {
+        var dt = new DataTable();
+        for (int i = 0; i < reader.FieldCount; i++)
+            dt.Columns.Add(reader.GetName(i), typeof(object));
+
+        long payloadBytes = 0;
+        while (await reader.ReadAsync(ct))
+        {
+            var row = new object[reader.FieldCount];
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                if (await reader.IsDBNullAsync(i, ct))
+                {
+                    row[i] = DBNull.Value;
+                    continue;
+                }
+
+                object value = reader.GetValue(i);
+                object guardedValue = GuardCellValue(value, i);
+                payloadBytes += EstimateValueSizeBytes(guardedValue);
+
+                if (payloadBytes > _maxPreviewPayloadBytes)
+                {
+                    throw new InvalidOperationException(
+                        $"Preview payload exceeded {_maxPreviewPayloadBytes} bytes. Narrow your SELECT columns or reduce preview size."
+                    );
+                }
+
+                row[i] = guardedValue;
+            }
+
+            dt.Rows.Add(row);
+        }
+
+        return dt;
+    }
+
+    private object GuardCellValue(object value, int columnIndex)
+    {
+        if (value is string text)
+        {
+            int byteCount = System.Text.Encoding.UTF8.GetByteCount(text);
+            if (byteCount > _maxPreviewCellBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Preview cell at column index {columnIndex} exceeded {_maxPreviewCellBytes} bytes."
+                );
+            }
+
+            return text;
+        }
+
+        if (value is byte[] bytes)
+        {
+            if (bytes.Length > _maxPreviewCellBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Preview binary cell at column index {columnIndex} exceeded {_maxPreviewCellBytes} bytes."
+                );
+            }
+
+            return bytes;
+        }
+
+        return value;
+    }
+
+    private static long EstimateValueSizeBytes(object value)
+    {
+        return value switch
+        {
+            DBNull => 0,
+            string text => System.Text.Encoding.UTF8.GetByteCount(text),
+            byte[] bytes => bytes.LongLength,
+            bool => sizeof(bool),
+            byte => sizeof(byte),
+            sbyte => sizeof(sbyte),
+            short => sizeof(short),
+            ushort => sizeof(ushort),
+            int => sizeof(int),
+            uint => sizeof(uint),
+            long => sizeof(long),
+            ulong => sizeof(ulong),
+            float => sizeof(float),
+            double => sizeof(double),
+            decimal => sizeof(decimal),
+            DateTime => sizeof(long),
+            DateTimeOffset => sizeof(long) * 2,
+            Guid => 16,
+            _ => System.Text.Encoding.UTF8.GetByteCount(value.ToString() ?? string.Empty),
+        };
+    }
+
+    private static int ResolveMaxCellBytes(IOptions<PreviewExecutionOptions>? previewOptions)
+    {
+        int configured = previewOptions?.Value.MaxCellBytes ?? 0;
+        return configured > 0
+            ? configured
+            : PreviewExecutionOptions.BuiltInDefaultMaxCellBytes;
+    }
+
+    private static long ResolveMaxPayloadBytes(IOptions<PreviewExecutionOptions>? previewOptions)
+    {
+        long configured = previewOptions?.Value.MaxPayloadBytes ?? 0;
+        return configured > 0
+            ? configured
+            : PreviewExecutionOptions.BuiltInDefaultMaxPayloadBytes;
+    }
 }

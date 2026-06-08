@@ -4,6 +4,7 @@
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
     <AssemblyName>AkkornStudio.Tests</AssemblyName>
     <RootNamespace>AkkornStudio.Tests</RootNamespace>
+    <NoWarn>$(NoWarn);xUnit2029;xUnit2031</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using AkkornStudio.UI.Services.SqlEditor;
@@ -17,11 +18,31 @@ public sealed class AppSettings
     public List<SqlEditorSessionDraftEntry> SqlEditorSessionDrafts { get; set; } = [];
     public Dictionary<string, Dictionary<string, int>> SqlEditorCompletionFrequencyByProfile { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, List<SqlEditorHistoryEntry>> SqlEditorHistoryByProfile { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public ProjectConventionSettings ProjectConventions { get; set; } = new();
+    public SqlEditorResultDateTimeDisplaySettings SqlEditorResultDateTimeDisplay { get; set; } = new();
+}
+
+public sealed class ProjectConventionSettings
+{
+    public string NamingConvention { get; set; } = "snake_case";
+    public bool EnforceAliasNaming { get; set; } = true;
+    public bool WarnOnReservedKeywords { get; set; } = true;
+    public int MaxAliasLength { get; set; } = 64;
+    public string DefaultWireCurveMode { get; set; } = "Bezier";
+}
+
+public sealed class SqlEditorResultDateTimeDisplaySettings
+{
+    public string DateOrder { get; set; } = "YMD";
+    public string DateSeparator { get; set; } = "-";
+    public bool PreferRawValues { get; set; }
 }
 
 public static class AppSettingsStore
 {
     private static readonly ILogger _logger = NullLogger.Instance;
+    private static readonly AsyncLocal<string?> SettingsPathOverrideAsyncLocal = new();
+    public static event EventHandler<SqlEditorResultDateTimeDisplaySettings>? SqlEditorResultDateTimeDisplaySettingsChanged;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -31,7 +52,11 @@ public static class AppSettingsStore
         AllowTrailingCommas = true,
     };
 
-    public static string? SettingsPathOverride { get; set; }
+    public static string? SettingsPathOverride
+    {
+        get => SettingsPathOverrideAsyncLocal.Value;
+        set => SettingsPathOverrideAsyncLocal.Value = value;
+    }
 
     private static string SettingsPath => SettingsPathOverride ?? Path.Combine(
         global::AkkornStudio.UI.AppConstants.AppDataDirectory,
@@ -54,6 +79,11 @@ public static class AppSettingsStore
             settings.SqlEditorSessionDrafts ??= [];
             settings.SqlEditorCompletionFrequencyByProfile ??= new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
             settings.SqlEditorHistoryByProfile ??= new Dictionary<string, List<SqlEditorHistoryEntry>>(StringComparer.OrdinalIgnoreCase);
+            settings.ProjectConventions ??= new ProjectConventionSettings();
+            settings.ProjectConventions.NamingConvention = NormalizeNamingConvention(settings.ProjectConventions.NamingConvention);
+            settings.ProjectConventions.MaxAliasLength = Math.Max(0, settings.ProjectConventions.MaxAliasLength);
+            settings.ProjectConventions.DefaultWireCurveMode = NormalizeWireCurveMode(settings.ProjectConventions.DefaultWireCurveMode);
+            settings.SqlEditorResultDateTimeDisplay = NormalizeSqlEditorResultDateTimeDisplaySettings(settings.SqlEditorResultDateTimeDisplay);
             return settings;
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
@@ -240,5 +270,120 @@ public static class AppSettingsStore
         AppSettings settings = Load();
         if (settings.SqlEditorHistoryByProfile.Remove(profileId))
             Save(settings);
+    }
+
+    public static ProjectConventionSettings LoadProjectConventionSettings()
+    {
+        AppSettings settings = Load();
+        ProjectConventionSettings source = settings.ProjectConventions ?? new ProjectConventionSettings();
+        return new ProjectConventionSettings
+        {
+            NamingConvention = NormalizeNamingConvention(source.NamingConvention),
+            EnforceAliasNaming = source.EnforceAliasNaming,
+            WarnOnReservedKeywords = source.WarnOnReservedKeywords,
+            MaxAliasLength = Math.Max(0, source.MaxAliasLength),
+            DefaultWireCurveMode = NormalizeWireCurveMode(source.DefaultWireCurveMode),
+        };
+    }
+
+    public static void SaveProjectConventionSettings(ProjectConventionSettings projectSettings)
+    {
+        ArgumentNullException.ThrowIfNull(projectSettings);
+        AppSettings settings = Load();
+        settings.ProjectConventions = new ProjectConventionSettings
+        {
+            NamingConvention = NormalizeNamingConvention(projectSettings.NamingConvention),
+            EnforceAliasNaming = projectSettings.EnforceAliasNaming,
+            WarnOnReservedKeywords = projectSettings.WarnOnReservedKeywords,
+            MaxAliasLength = Math.Max(0, projectSettings.MaxAliasLength),
+            DefaultWireCurveMode = NormalizeWireCurveMode(projectSettings.DefaultWireCurveMode),
+        };
+        Save(settings);
+    }
+
+    public static SqlEditorResultDateTimeDisplaySettings LoadSqlEditorResultDateTimeDisplaySettings()
+    {
+        AppSettings settings = Load();
+        return CloneSqlEditorResultDateTimeDisplaySettings(settings.SqlEditorResultDateTimeDisplay);
+    }
+
+    public static void SaveSqlEditorResultDateTimeDisplaySettings(SqlEditorResultDateTimeDisplaySettings? displaySettings)
+    {
+        AppSettings settings = Load();
+        SqlEditorResultDateTimeDisplaySettings current = NormalizeSqlEditorResultDateTimeDisplaySettings(settings.SqlEditorResultDateTimeDisplay);
+        SqlEditorResultDateTimeDisplaySettings next = NormalizeSqlEditorResultDateTimeDisplaySettings(displaySettings);
+        settings.SqlEditorResultDateTimeDisplay = next;
+        Save(settings);
+
+        if (!AreEqualSqlEditorResultDateTimeDisplaySettings(current, next))
+            SqlEditorResultDateTimeDisplaySettingsChanged?.Invoke(null, CloneSqlEditorResultDateTimeDisplaySettings(next));
+    }
+
+    private static string NormalizeNamingConvention(string? value)
+    {
+        return value switch
+        {
+            "snake_case" => "snake_case",
+            "camelCase" => "camelCase",
+            "PascalCase" => "PascalCase",
+            "SCREAMING_SNAKE_CASE" => "SCREAMING_SNAKE_CASE",
+            _ => "snake_case",
+        };
+    }
+
+    private static string NormalizeWireCurveMode(string? value)
+    {
+        return value switch
+        {
+            "Bezier" => "Bezier",
+            "Straight" => "Straight",
+            "Orthogonal" => "Orthogonal",
+            _ => "Bezier",
+        };
+    }
+
+    private static SqlEditorResultDateTimeDisplaySettings CloneSqlEditorResultDateTimeDisplaySettings(SqlEditorResultDateTimeDisplaySettings? source)
+    {
+        SqlEditorResultDateTimeDisplaySettings normalized = NormalizeSqlEditorResultDateTimeDisplaySettings(source);
+        return new SqlEditorResultDateTimeDisplaySettings
+        {
+            DateOrder = normalized.DateOrder,
+            DateSeparator = normalized.DateSeparator,
+            PreferRawValues = normalized.PreferRawValues,
+        };
+    }
+
+    private static SqlEditorResultDateTimeDisplaySettings NormalizeSqlEditorResultDateTimeDisplaySettings(SqlEditorResultDateTimeDisplaySettings? source)
+    {
+        source ??= new SqlEditorResultDateTimeDisplaySettings();
+        string normalizedOrder = (source.DateOrder ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "YMD" => "YMD",
+            "DMY" => "DMY",
+            "MDY" => "MDY",
+            _ => "YMD",
+        };
+
+        string normalizedSeparator = source.DateSeparator switch
+        {
+            "/" => "/",
+            _ => "-",
+        };
+
+        return new SqlEditorResultDateTimeDisplaySettings
+        {
+            DateOrder = normalizedOrder,
+            DateSeparator = normalizedSeparator,
+            PreferRawValues = source.PreferRawValues,
+        };
+    }
+
+    private static bool AreEqualSqlEditorResultDateTimeDisplaySettings(
+        SqlEditorResultDateTimeDisplaySettings left,
+        SqlEditorResultDateTimeDisplaySettings right)
+    {
+        return string.Equals(left.DateOrder, right.DateOrder, StringComparison.Ordinal)
+            && string.Equals(left.DateSeparator, right.DateSeparator, StringComparison.Ordinal)
+            && left.PreferRawValues == right.PreferRawValues;
     }
 }

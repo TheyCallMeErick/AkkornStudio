@@ -6,6 +6,18 @@ namespace AkkornStudio.UI.ViewModels.UndoRedo.Commands;
 
 public sealed class AutoLayoutCommand : ICanvasCommand
 {
+    private static readonly HashSet<NodeType> OutputNodeTypes =
+    [
+        NodeType.ResultOutput,
+        NodeType.HtmlExport,
+        NodeType.JsonExport,
+        NodeType.CsvExport,
+        NodeType.ExcelExport,
+        NodeType.CreateTableOutput,
+        NodeType.AlterTableOutput,
+        NodeType.CreateIndexOutput,
+    ];
+
     private readonly List<(NodeViewModel Node, Point OldPos, Point NewPos)> _moves = [];
 
     public string Description => $"Auto Layout ({_moves.Count} node(s) repositioned)";
@@ -30,23 +42,24 @@ public sealed class AutoLayoutCommand : ICanvasCommand
     public void Execute(CanvasViewModel canvas)
     {
         foreach ((NodeViewModel node, Point _, Point newPos) in _moves)
+        {
+            if (!canvas.Nodes.Contains(node))
+                continue;
+
             node.Position = newPos;
+        }
     }
 
     public void Undo(CanvasViewModel canvas)
     {
         foreach ((NodeViewModel node, Point oldPos, Point _) in _moves)
+        {
+            if (!canvas.Nodes.Contains(node))
+                continue;
+
             node.Position = oldPos;
+        }
     }
 
-    private static bool IsOutputNode(NodeViewModel n) =>
-        n.Type
-            is NodeType.ResultOutput
-                or NodeType.HtmlExport
-                or NodeType.JsonExport
-                or NodeType.CsvExport
-                or NodeType.ExcelExport
-                or NodeType.CreateTableOutput
-                or NodeType.AlterTableOutput
-                or NodeType.CreateIndexOutput;
+    private static bool IsOutputNode(NodeViewModel n) => OutputNodeTypes.Contains(n.Type);
 }

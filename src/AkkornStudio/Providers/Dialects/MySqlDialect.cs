@@ -1,6 +1,7 @@
 namespace AkkornStudio.Providers.Dialects;
 
 using AkkornStudio.Core;
+using AkkornStudio.Metadata;
 using AkkornStudio.QueryEngine;
 
 /// <summary>
@@ -67,7 +68,7 @@ public sealed class MySqlDialect : ISqlDialect
 
     public string WrapWithPreviewLimit(string baseQuery, int maxRows)
     {
-        return $"SELECT * FROM ({baseQuery}) AS __preview LIMIT {maxRows}";
+        return $"SELECT * FROM (\n{TrimTrailingSemicolon(baseQuery)}\n) AS __preview LIMIT {maxRows}";
     }
 
     public string FormatPagination(int? limit, int? offset)
@@ -107,7 +108,7 @@ public sealed class MySqlDialect : ISqlDialect
     )
     {
         string quotedName = QuoteIdentifier(columnName);
-        string sqlType = string.IsNullOrWhiteSpace(dataType) ? "INT" : dataType.Trim();
+        string sqlType = NormalizeName(dataType, "data type");
         string nullability = isNullable ? "NULL" : "NOT NULL";
         string commentSql = string.IsNullOrWhiteSpace(columnComment)
             ? string.Empty
@@ -155,6 +156,37 @@ public sealed class MySqlDialect : ISqlDialect
             : $"CONSTRAINT {QuoteIdentifier(constraintName.Trim())} CHECK";
 
         return $"{prefix} ({expression.Trim()})";
+    }
+
+    public string EmitForeignKeyConstraint(
+        string? constraintName,
+        IReadOnlyList<string> childColumns,
+        string parentSchema,
+        string parentTable,
+        IReadOnlyList<string> parentColumns,
+        ReferentialAction onDelete,
+        ReferentialAction onUpdate
+    )
+    {
+        if (childColumns.Count == 0 || parentColumns.Count == 0 || childColumns.Count != parentColumns.Count)
+            throw new InvalidOperationException("Foreign key requires child/parent columns with matching non-zero cardinality.");
+
+        string[] normalizedChildColumns = NormalizeConstraintColumns(childColumns, "Foreign key child");
+        string[] normalizedParentColumns = NormalizeConstraintColumns(parentColumns, "Foreign key parent");
+        string normalizedParentTable = NormalizeName(parentTable, "foreign key parent table");
+        string? normalizedParentSchema = string.IsNullOrWhiteSpace(parentSchema) ? null : parentSchema.Trim();
+
+        string constraintClause = string.IsNullOrWhiteSpace(constraintName)
+            ? string.Empty
+            : $"CONSTRAINT {QuoteIdentifier(constraintName.Trim())} ";
+
+        string parentRef = string.IsNullOrWhiteSpace(normalizedParentSchema)
+            ? QuoteIdentifier(normalizedParentTable)
+            : $"{QuoteIdentifier(normalizedParentSchema)}.{QuoteIdentifier(normalizedParentTable)}";
+        string childColumnsSql = string.Join(", ", normalizedChildColumns.Select(QuoteIdentifier));
+        string parentColumnsSql = string.Join(", ", normalizedParentColumns.Select(QuoteIdentifier));
+
+        return $"{constraintClause}FOREIGN KEY ({childColumnsSql}) REFERENCES {parentRef} ({parentColumnsSql}) ON DELETE {EmitReferentialAction(onDelete)} ON UPDATE {EmitReferentialAction(onUpdate)}";
     }
 
     public string EmitCreateTable(
@@ -211,7 +243,7 @@ public sealed class MySqlDialect : ISqlDialect
             : $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
         string keyList = string.Join(", ", keyColumns.Select(k =>
             k.IsExpression
-                ? $"(({k.ExpressionSql!.Trim()}))"
+                ? $"({k.ExpressionSql!.Trim()})"
                 : QuoteIdentifier(k.ColumnName!)));
 
         // MySQL does not support INCLUDE columns in CREATE INDEX.
@@ -239,8 +271,10 @@ public sealed class MySqlDialect : ISqlDialect
             ? QuoteIdentifier(view)
             : $"{QuoteIdentifier(schema)}.{QuoteIdentifier(view)}";
 
-        string prefix = orReplace ? "CREATE OR REPLACE VIEW" : "CREATE VIEW";
-        return $"{prefix} {qualified} AS\n{body};";
+        if (!orReplace)
+            return $"CREATE VIEW {qualified} AS\n{body};";
+
+        return $"DROP VIEW IF EXISTS {qualified};\nCREATE VIEW {qualified} AS\n{body};";
     }
 
     public string EmitAlterView(
@@ -256,7 +290,7 @@ public sealed class MySqlDialect : ISqlDialect
             ? QuoteIdentifier(view)
             : $"{QuoteIdentifier(schema)}.{QuoteIdentifier(view)}";
 
-        return $"CREATE OR REPLACE VIEW {qualified} AS\n{body};";
+        return $"DROP VIEW IF EXISTS {qualified};\nCREATE VIEW {qualified} AS\n{body};";
     }
 
     public string EmitAlterTableAddColumn(string schemaName, string tableName, string columnFragment)
@@ -336,6 +370,30 @@ public sealed class MySqlDialect : ISqlDialect
         string.IsNullOrWhiteSpace(value)
             ? throw new InvalidOperationException($"{label} is required.")
             : value.Trim();
+
+    private static string[] NormalizeConstraintColumns(IReadOnlyList<string> columns, string label)
+    {
+        var normalized = new string[columns.Count];
+        for (int i = 0; i < columns.Count; i++)
+        {
+            string value = columns[i];
+            if (string.IsNullOrWhiteSpace(value))
+                throw new InvalidOperationException($"{label} columns must not contain blank names.");
+            normalized[i] = value.Trim();
+        }
+
+        return normalized;
+    }
+
+    private static string EmitReferentialAction(ReferentialAction action) =>
+        action switch
+        {
+            ReferentialAction.Cascade => "CASCADE",
+            ReferentialAction.SetNull => "SET NULL",
+            ReferentialAction.SetDefault => "SET DEFAULT",
+            ReferentialAction.Restrict => "RESTRICT",
+            _ => "NO ACTION",
+        };
 
     private static string TrimTrailingSemicolon(string sql)
     {

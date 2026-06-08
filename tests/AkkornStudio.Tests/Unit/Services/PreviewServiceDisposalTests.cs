@@ -21,6 +21,7 @@ public class PreviewServiceDisposalTests
     {
         Assert.NotNull(typeof(PreviewService).GetMethod(nameof(PreviewService.Wire)));
         Assert.NotNull(typeof(PreviewService).GetMethod(nameof(PreviewService.RunPreviewAsync)));
+        Assert.NotNull(typeof(PreviewService).GetMethod(nameof(PreviewService.NotifyConnectionContextChanged)));
         Assert.NotNull(typeof(PreviewService).GetMethod(nameof(PreviewService.Dispose)));
     }
 

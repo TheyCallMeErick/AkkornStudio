@@ -489,6 +489,8 @@ public class QueryGraphBuilderJoinTests
         Assert.DoesNotContain("Connect columns via Column List", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(errors, e =>
             e.Contains("Connect columns via Column List", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, e =>
+            e.Contains("SELECT * projection detected", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("select", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("orders", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("*", sql, StringComparison.OrdinalIgnoreCase);
@@ -516,10 +518,46 @@ public class QueryGraphBuilderJoinTests
 
         (string sql, List<string> errors) = sut.BuildSql();
 
-        Assert.Empty(errors);
+        Assert.Contains(errors, e =>
+            e.Contains("SELECT * projection detected", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("select", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("orders", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("*", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildSql_ExplicitCrossJoinWithoutCondition_EmitsGuardrailWarning()
+    {
+        var canvas = new CanvasViewModel();
+        canvas.Nodes.Clear();
+        canvas.Connections.Clear();
+
+        NodeViewModel orders = Table("public.orders", "id", "customer_id");
+        NodeViewModel customers = Table("public.customers", "id");
+        NodeViewModel join = Node(NodeType.Join);
+        join.Parameters["join_type"] = "CROSS";
+        NodeViewModel columnList = Node(NodeType.ColumnList);
+        NodeViewModel result = Node(NodeType.ResultOutput);
+
+        Connect(canvas, orders, "id", join, "left");
+        Connect(canvas, customers, "id", join, "right");
+        Connect(canvas, orders, "id", columnList, "columns");
+        Connect(canvas, columnList, "result", result, "columns");
+
+        canvas.Nodes.Add(orders);
+        canvas.Nodes.Add(customers);
+        canvas.Nodes.Add(join);
+        canvas.Nodes.Add(columnList);
+        canvas.Nodes.Add(result);
+
+        var sut = new QueryGraphBuilder(canvas, DatabaseProvider.Postgres);
+
+        (string sql, List<string> errors) = sut.BuildSql();
+
+        Assert.Contains(errors, e =>
+            e.Contains("CROSS JOIN", StringComparison.OrdinalIgnoreCase)
+            && e.Contains("Cartesian product", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("cross join", sql, StringComparison.OrdinalIgnoreCase);
     }
 
     private static void AddDuplicateOutputPin(NodeViewModel node, string pinName, PinDataType dataType)
@@ -542,7 +580,5 @@ public class QueryGraphBuilderJoinTests
         node.InputPins.Add(pin);
     }
 }
-
-
 
 

@@ -27,6 +27,22 @@ public sealed class Nf1HintMultiValuedRuleTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_IncludesPrimaryKeyEvidence_WhenSinglePrimaryKeyExists()
+    {
+        DbMetadata metadata = CreateMetadata(
+            new ColumnMetadata("tags", "text", "text", false, false, false, false, false, 2, DefaultValue: "a,b", Comment: "Tags"),
+            includePrimaryKey: true
+        );
+
+        SchemaRuleExecutionResult result = await _rule.ExecuteAsync(CreateContext(metadata));
+
+        SchemaIssue issue = Assert.Single(result.Issues);
+        Assert.Contains(issue.Evidence, evidence => evidence.Key == "primaryKeyColumn" && evidence.Value == "id");
+        Assert.Contains(issue.Evidence, evidence => evidence.Key == "primaryKeyNativeType" && evidence.Value == "integer");
+        Assert.Contains(issue.Evidence, evidence => evidence.Key == "columnNativeType" && evidence.Value == "text");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Emits_WhenJsonContextAndRelationalContextExist()
     {
         DbMetadata metadata = CreateMetadata(
@@ -87,7 +103,8 @@ public sealed class Nf1HintMultiValuedRuleTests
 
     private static DbMetadata CreateMetadata(
         ColumnMetadata targetColumn,
-        bool includeOutboundFk = false
+        bool includeOutboundFk = false,
+        bool includePrimaryKey = false
     )
     {
         ForeignKeyRelation foreignKey = new(
@@ -109,6 +126,9 @@ public sealed class Nf1HintMultiValuedRuleTests
             EstimatedRowCount: 100,
             Columns:
             [
+                .. includePrimaryKey
+                    ? [new ColumnMetadata("id", "integer", "integer", false, true, false, false, true, 1, Comment: "Id")]
+                    : Array.Empty<ColumnMetadata>(),
                 targetColumn,
                 new ColumnMetadata("customer_id", "integer", "integer", false, false, includeOutboundFk, false, true, 2, Comment: "Customer"),
             ],

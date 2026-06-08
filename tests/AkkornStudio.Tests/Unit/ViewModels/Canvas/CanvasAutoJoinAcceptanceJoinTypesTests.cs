@@ -99,6 +99,51 @@ public class CanvasAutoJoinAcceptanceJoinTypesTests
         Assert.Single(canvas.Nodes, n => n.Type == NodeType.Join);
     }
 
+    [Fact]
+    public void OnJoinAccepted_WhenSuggestionAnchorBecomesStale_DoesNotApplyJoin()
+    {
+        var canvas = new CanvasViewModel();
+        canvas.Nodes.Clear();
+        canvas.Connections.Clear();
+
+        canvas.SpawnTableNode(
+            "public.orders",
+            [("id", PinDataType.Number), ("customer_id", PinDataType.Number)],
+            new Point(80, 80)
+        );
+        NodeViewModel originalCustomers = canvas.SpawnTableNode(
+            "public.customers",
+            [("id", PinDataType.Number)],
+            new Point(320, 180)
+        );
+
+        var suggestion = new JoinSuggestion(
+            ExistingTable: "public.orders",
+            NewTable: "public.customers",
+            JoinType: "INNER",
+            LeftColumn: "public.orders.customer_id",
+            RightColumn: "public.customers.id",
+            OnClause: "public.orders.customer_id = public.customers.id",
+            Score: 0.99,
+            Confidence: JoinConfidence.CatalogDefinedFk,
+            Rationale: "test"
+        );
+
+        InvokeShowSuggestions(canvas, [suggestion]);
+
+        canvas.Nodes.Remove(originalCustomers);
+        canvas.SpawnTableNode(
+            "public.customers",
+            [("id", PinDataType.Number)],
+            new Point(420, 220)
+        );
+
+        InvokeJoinAccepted(canvas, suggestion);
+
+        Assert.DoesNotContain(canvas.Nodes, n => n.Type == NodeType.Join);
+        Assert.Empty(canvas.Connections);
+    }
+
     private static void InvokeJoinAccepted(CanvasViewModel canvas, JoinSuggestion suggestion)
     {
         FieldInfo controllerField = typeof(CanvasViewModel)
@@ -111,6 +156,18 @@ public class CanvasAutoJoinAcceptanceJoinTypesTests
 
         method.Invoke(controller, [suggestion]);
     }
-}
 
+    private static void InvokeShowSuggestions(CanvasViewModel canvas, IReadOnlyList<JoinSuggestion> suggestions)
+    {
+        FieldInfo controllerField = typeof(CanvasViewModel)
+            .GetField("_autoJoinController", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        object? controller = controllerField.GetValue(canvas);
+        Assert.NotNull(controller);
+
+        MethodInfo method = controller.GetType()
+            .GetMethod("ShowAutoJoinSuggestionsMessage", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        method.Invoke(controller, [suggestions]);
+    }
+}
 

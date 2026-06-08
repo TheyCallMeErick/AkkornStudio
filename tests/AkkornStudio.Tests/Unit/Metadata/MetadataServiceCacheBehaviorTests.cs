@@ -156,6 +156,30 @@ public sealed class MetadataServiceCacheBehaviorTests
     }
 
     [Fact]
+    public async Task GetMetadataAsync_ActiveConnectionChanged_RebindsInspectorAndInvalidatesCache()
+    {
+        ConnectionConfig activeConfig = BuildConnectionConfig("db_a");
+        var factory = new SwitchingInspectorFactory();
+        IDatabaseInspector initialInspector = factory.Create(activeConfig);
+
+        using var sut = new MetadataService(
+            initialInspector,
+            inspectorFactory: factory,
+            connectionConfigResolver: () => activeConfig,
+            initialInspectorBindingConfig: activeConfig);
+
+        DbMetadata first = await sut.GetMetadataAsync();
+        Assert.Equal("db_a", first.DatabaseName);
+
+        activeConfig = activeConfig with { Database = "db_b" };
+        DbMetadata second = await sut.GetMetadataAsync();
+
+        Assert.Equal("db_b", second.DatabaseName);
+        Assert.Equal(2, factory.CreateCalls);
+        Assert.Equal(2, factory.TotalInspectCalls);
+    }
+
+    [Fact]
     public async Task SuggestJoinsAsync_UsesInjectedJoinEngine_WithTrackedCanvasTables()
     {
         var metadata = MetadataFixtures.EcommerceDb();
@@ -243,6 +267,50 @@ public sealed class MetadataServiceCacheBehaviorTests
 
         public Task<IReadOnlyList<ForeignKeyRelation>> GetForeignKeysAsync(CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<ForeignKeyRelation>>([]);
+    }
+
+    private sealed class SwitchingInspectorFactory : IDatabaseInspectorFactory
+    {
+        private readonly List<SwitchingInspector> _created = [];
+
+        public int CreateCalls => _created.Count;
+        public int TotalInspectCalls => _created.Sum(inspector => inspector.InspectCalls);
+
+        public IDatabaseInspector Create(ConnectionConfig config)
+        {
+            var inspector = new SwitchingInspector(config);
+            _created.Add(inspector);
+            return inspector;
+        }
+    }
+
+    private sealed class SwitchingInspector(ConnectionConfig config) : IDatabaseInspector
+    {
+        private int _inspectCalls;
+        public DatabaseProvider Provider => config.Provider;
+        public int InspectCalls => _inspectCalls;
+
+        public Task<DbMetadata> InspectAsync(CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _inspectCalls);
+            DbMetadata template = MetadataFixtures.EcommerceDb();
+            return Task.FromResult(template with
+            {
+                DatabaseName = config.Database,
+                Provider = config.Provider,
+                CapturedAt = DateTimeOffset.UtcNow,
+            });
+        }
+
+        public Task<TableMetadata> InspectTableAsync(string schema, string table, CancellationToken ct = default)
+        {
+            TableMetadata fallback = MetadataFixtures.EcommerceDb().FindTable(schema, table)
+                ?? new TableMetadata(schema, table, TableKind.Table, null, [], [], [], []);
+            return Task.FromResult(fallback);
+        }
+
+        public Task<IReadOnlyList<ForeignKeyRelation>> GetForeignKeysAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<ForeignKeyRelation>>([]);
     }
 
     private sealed class RecordingJoinSuggestionEngine : IJoinSuggestionEngine
@@ -337,4 +405,13 @@ public sealed class MetadataServiceCacheBehaviorTests
         public Task<IReadOnlyList<ForeignKeyRelation>> GetForeignKeysAsync(CancellationToken ct = default) =>
             Task.FromResult(_metadata.AllForeignKeys);
     }
+
+    private static ConnectionConfig BuildConnectionConfig(string database) =>
+        new(
+            Provider: DatabaseProvider.Postgres,
+            Host: "localhost",
+            Port: 5432,
+            Database: database,
+            Username: "tester",
+            Password: "secret");
 }

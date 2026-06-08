@@ -138,7 +138,7 @@ public class QueryDomainStrategyTests
     }
 
     [Fact]
-    public void TryHandleSchemaTableInsert_InDdlModeWithImporter_DoesNotSpawnQueryTable()
+    public void TryHandleSchemaTableInsert_InDdlModeWithImporter_StillSpawnsQueryTable()
     {
         var strategy = new QueryDomainStrategy();
         bool spawned = false;
@@ -152,8 +152,8 @@ public class QueryDomainStrategyTests
             () => spawned = true
         );
 
-        Assert.False(handled);
-        Assert.False(spawned);
+        Assert.True(handled);
+        Assert.True(spawned);
         Assert.False(imported);
     }
 

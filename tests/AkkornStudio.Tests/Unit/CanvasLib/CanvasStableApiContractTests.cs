@@ -8,7 +8,7 @@ namespace AkkornStudio.Tests.Unit.CanvasLib;
 public sealed class CanvasStableApiContractTests
 {
     private const string StableApiDocFingerprintPrefix = "Stable API v1 fingerprint:";
-    private const string ExpectedStableApiV1Fingerprint = "3D3DC30E3942372191355A09F8431CC94A1F3E7CC477E41DB9309C98F29B333A";
+    private const string ExpectedStableApiV1Fingerprint = "D8E962797F3337F8EECBE977C867830BCB548ABCEDF50487C4A806A5CE417225";
 
     [Fact]
     public void StableApiV1_RequiredTypesExistAndArePublic()

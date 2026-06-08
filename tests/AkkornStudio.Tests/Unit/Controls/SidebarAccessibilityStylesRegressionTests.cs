@@ -19,11 +19,12 @@ public class SidebarAccessibilityStylesRegressionTests
     [Fact]
     public void SidebarTemplate_DefinesFocusVisibleStyle_ForTabButtons()
     {
+        string styles = ReadAppStyles();
         string xaml = ReadSidebarXaml();
 
-        Assert.Contains("Style Selector=\"Button.tab-button:focus-visible\"", xaml);
-        Assert.Contains("Property=\"Border.BorderBrush\" Value=\"{StaticResource BorderActiveBrush}\"", xaml);
-        Assert.Contains("Style Selector=\"Button.tab-button:disabled\"", xaml);
+        Assert.Contains("Style Selector=\"Button.panel-tab:focus-visible\"", styles);
+        Assert.Contains("Style Selector=\"Button.panel-tab:disabled\"", styles);
+        Assert.Contains("Classes=\"panel-tab\"", xaml);
     }
 
     private static string ReadAppStyles()

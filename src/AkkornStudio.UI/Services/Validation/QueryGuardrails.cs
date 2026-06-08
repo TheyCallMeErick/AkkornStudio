@@ -15,8 +15,9 @@ public static partial class QueryGuardrails
         if (string.IsNullOrWhiteSpace(sql))
             return [];
 
+        string commentStripped = StripSqlCommentsPreservingStrings(sql);
         // Normalise for matching: collapse whitespace, upper-case
-        string normalised = MyRegex().Replace(sql.Trim(), " ").ToUpperInvariant();
+        string normalised = MyRegex().Replace(commentStripped.Trim(), " ").ToUpperInvariant();
 
         // Only run SELECT-specific rules on SELECT statements
         bool isSelect =
@@ -63,12 +64,7 @@ public static partial class QueryGuardrails
 
     private static void CheckSelectStar(string sql, List<GuardIssue> issues)
     {
-        // Match "SELECT *" or "SELECT DISTINCT *" but not "COUNT(*)"
-        bool hasStar =
-            sql.Contains("SELECT *")
-            || sql.Contains("SELECT DISTINCT *")
-            || sql.Contains("SELECT\n*")
-            || sql.Contains("SELECT\r\n*");
+        bool hasStar = SelectStarRegex().IsMatch(sql);
 
         if (hasStar)
             issues.Add(
@@ -112,4 +108,87 @@ public static partial class QueryGuardrails
 
     [System.Text.RegularExpressions.GeneratedRegex(@"\s+")]
     private static partial System.Text.RegularExpressions.Regex MyRegex();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\bSELECT\s*(?:DISTINCT\s*)?\*", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex SelectStarRegex();
+
+    private static string StripSqlCommentsPreservingStrings(string sql)
+    {
+        if (string.IsNullOrEmpty(sql))
+            return sql;
+
+        var sb = new System.Text.StringBuilder(sql.Length);
+        bool inSingleQuote = false;
+        bool inLineComment = false;
+        bool inBlockComment = false;
+
+        for (int i = 0; i < sql.Length; i++)
+        {
+            char current = sql[i];
+            char next = i + 1 < sql.Length ? sql[i + 1] : '\0';
+
+            if (inLineComment)
+            {
+                if (current is '\r' or '\n')
+                {
+                    inLineComment = false;
+                    sb.Append(current);
+                }
+
+                continue;
+            }
+
+            if (inBlockComment)
+            {
+                if (current == '*' && next == '/')
+                {
+                    inBlockComment = false;
+                    i++;
+                }
+
+                continue;
+            }
+
+            if (current == '\'' && !inSingleQuote)
+            {
+                inSingleQuote = true;
+                sb.Append(current);
+                continue;
+            }
+
+            if (current == '\'' && inSingleQuote)
+            {
+                // SQL-standard escaped quote: ''.
+                if (next == '\'')
+                {
+                    sb.Append(current);
+                    sb.Append(next);
+                    i++;
+                    continue;
+                }
+
+                inSingleQuote = false;
+                sb.Append(current);
+                continue;
+            }
+
+            if (!inSingleQuote && current == '-' && next == '-')
+            {
+                inLineComment = true;
+                i++;
+                continue;
+            }
+
+            if (!inSingleQuote && current == '/' && next == '*')
+            {
+                inBlockComment = true;
+                i++;
+                continue;
+            }
+
+            sb.Append(current);
+        }
+
+        return sb.ToString();
+    }
 }

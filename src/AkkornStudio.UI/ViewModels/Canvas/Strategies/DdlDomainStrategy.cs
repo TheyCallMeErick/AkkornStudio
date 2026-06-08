@@ -127,13 +127,12 @@ public sealed class DdlDomainStrategy : ICanvasDomainStrategy
         Action spawnQueryTableNode
     )
     {
-        if (isDdlModeActiveResolver?.Invoke() == true && importDdlTableAction is not null)
-        {
-            importDdlTableAction(table, position);
-            return true;
-        }
+        _ = isDdlModeActiveResolver;
+        _ = spawnQueryTableNode;
+        if (importDdlTableAction is null)
+            return false;
 
-        spawnQueryTableNode();
+        importDdlTableAction(table, position);
         return true;
     }
 

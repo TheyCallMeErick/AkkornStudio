@@ -49,6 +49,26 @@ public class ConnectionActivationWorkflowTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_WithMetadataAndNoCanvas_ReturnsConnected()
+    {
+        var workflow = new ConnectionActivationWorkflow();
+        var profile = BuildProfile();
+        var searchMenu = new SearchMenuViewModel();
+        DbMetadata metadata = BuildMetadata();
+
+        ConnectionActivationResult result = await workflow.ExecuteAsync(
+            profile,
+            searchMenu,
+            canvas: null,
+            loadMetadataAsync: (_, _, _) => Task.FromResult<DbMetadata?>(metadata),
+            ct: CancellationToken.None);
+
+        Assert.Equal(EConnectionActivationOutcome.Connected, result.Outcome);
+        Assert.Equal(metadata, result.Metadata);
+        Assert.False(result.ShouldOpenClearCanvasPrompt);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_WhenMetadataMissing_ReturnsMetadataUnavailable()
     {
         var workflow = new ConnectionActivationWorkflow();

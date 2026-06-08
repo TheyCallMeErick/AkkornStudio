@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Collections.Generic;
 using ClosedXML.Excel;
 using AkkornStudio.Core;
 using AkkornStudio.UI.Services.SqlEditor.Reports;
@@ -10,7 +9,7 @@ namespace AkkornStudio.Tests.Unit.Services.SqlEditor;
 public sealed class SqlEditorReportExportServiceTests
 {
     [Fact]
-    public async Task ExportAsync_HtmlFullFeature_ContainsSpecSectionsAndDataConstants()
+    public async Task ExportAsync_HtmlFullFeature_ContainsNewSectionsAndClientState()
     {
         string path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.html");
         try
@@ -22,33 +21,25 @@ public sealed class SqlEditorReportExportServiceTests
                 FilePath: path,
                 Title: "Users audit",
                 Description: "Execution report for support",
+                Profile: SqlEditorReportExportProfile.Technical,
+                MetadataLevel: SqlEditorReportMetadataLevel.Essential,
+                EmptyValueDisplayMode: SqlEditorReportEmptyValueDisplayMode.Blank,
                 IncludeSchema: true,
-                IncludeNodeDetails: false,
-                IncludeMetadata: false,
-                UseDashForEmptyFields: false);
+                IncludeSql: true,
+                IncludeLineage: false);
 
             string exportedPath = await sut.ExportAsync(context, request);
             string html = await File.ReadAllTextAsync(exportedPath);
 
-            Assert.Contains("id=\"s-meta\"", html, StringComparison.Ordinal);
-            Assert.Contains("id=\"s-quality\"", html, StringComparison.Ordinal);
-            Assert.Contains("id=\"s-nodes\"", html, StringComparison.Ordinal);
-            Assert.Contains("id=\"s-conns\"", html, StringComparison.Ordinal);
-            Assert.Contains("id=\"metadata-filter-col\"", html, StringComparison.Ordinal);
-            Assert.Contains("id=\"metadata-table\"", html, StringComparison.Ordinal);
-            Assert.Contains("\"includeMetadata\":false", html, StringComparison.Ordinal);
-            Assert.Contains("const HAS_SQL = true;", html, StringComparison.Ordinal);
-            Assert.Contains("const NODE_ROWS = null;", html, StringComparison.Ordinal);
-            Assert.Contains("const CONN_ROWS = null;", html, StringComparison.Ordinal);
-            Assert.Contains("Copy SQL", html, StringComparison.Ordinal);
-            Assert.Contains("Validation Summary", html, StringComparison.Ordinal);
-            Assert.Contains("Optional Metadata", html, StringComparison.Ordinal);
-            Assert.Contains("data-collapse-target=\"s-meta\"", html, StringComparison.Ordinal);
-            Assert.Contains("data-collapse-target=\"s-sql\"", html, StringComparison.Ordinal);
-            Assert.DoesNotContain("id=\"schema-search\"", html, StringComparison.Ordinal);
-            Assert.Contains("id=\"nodes-search\"", html, StringComparison.Ordinal);
-            Assert.Contains("id=\"conns-search\"", html, StringComparison.Ordinal);
-            Assert.Contains("class=\"pager\"", html, StringComparison.Ordinal);
+            Assert.Contains("id=\"app\"", html, StringComparison.Ordinal);
+            Assert.Contains("window.__AKKORN_REPORT__=", html, StringComparison.Ordinal);
+            Assert.Contains("\"rows\":[", html, StringComparison.Ordinal);
+            Assert.Contains("\"schema\":[", html, StringComparison.Ordinal);
+            Assert.Contains("\"metadata\":[", html, StringComparison.Ordinal);
+            Assert.Contains("\"lineageNodes\":[]", html, StringComparison.Ordinal);
+            Assert.Contains("\"lineageConnections\":[]", html, StringComparison.Ordinal);
+            Assert.Contains(".report-shell", html, StringComparison.Ordinal);
+            Assert.Contains(".mount(\"#app\")", html, StringComparison.Ordinal);
         }
         finally
         {
@@ -58,7 +49,7 @@ public sealed class SqlEditorReportExportServiceTests
     }
 
     [Fact]
-    public async Task ExportAsync_HtmlFullFeature_EscapesHeaderAndScriptBreakingSql()
+    public async Task ExportAsync_HtmlFullFeature_EscapesHeaderAndSqlPayload()
     {
         string path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.html");
         try
@@ -66,25 +57,29 @@ public sealed class SqlEditorReportExportServiceTests
             var sut = new SqlEditorReportExportService();
             SqlEditorReportExportContext context = BuildContext() with
             {
-                Sql = "SELECT '</script><script>alert(1)</script>' as payload, `x`, '$y';"
+                Sql = "SELECT '</script><script>alert(1)</script>' as payload;"
             };
             var request = new SqlEditorReportExportRequest(
                 ReportType: SqlEditorReportType.HtmlFullFeature,
                 FilePath: path,
                 Title: "<img src=x onerror=alert(1)>",
                 Description: "<b>unsafe</b>",
+                Profile: SqlEditorReportExportProfile.Technical,
+                MetadataLevel: SqlEditorReportMetadataLevel.Essential,
+                EmptyValueDisplayMode: SqlEditorReportEmptyValueDisplayMode.Dash,
                 IncludeSchema: true,
-                IncludeNodeDetails: false,
-                IncludeMetadata: false,
-                UseDashForEmptyFields: true);
+                IncludeSql: true,
+                IncludeLineage: false);
 
             string exportedPath = await sut.ExportAsync(context, request);
             string html = await File.ReadAllTextAsync(exportedPath);
 
             Assert.Contains("&lt;img src=x onerror=alert(1)&gt;", html, StringComparison.Ordinal);
             Assert.Contains("&lt;b&gt;unsafe&lt;/b&gt;", html, StringComparison.Ordinal);
+            Assert.Contains("window.__AKKORN_REPORT__=", html, StringComparison.Ordinal);
+            Assert.DoesNotContain("<title><img src=x onerror=alert(1)></title>", html, StringComparison.Ordinal);
+            Assert.DoesNotContain("</script><script>alert(1)</script>", html, StringComparison.Ordinal);
             Assert.Contains("<\\/script><script>alert(1)<\\/script>", html, StringComparison.Ordinal);
-            Assert.DoesNotContain("const SQL_TEXT = `SELECT '</script><script>alert(1)</script>'", html, StringComparison.Ordinal);
         }
         finally
         {
@@ -94,7 +89,7 @@ public sealed class SqlEditorReportExportServiceTests
     }
 
     [Fact]
-    public async Task ExportAsync_HtmlFullFeature_RendersNullForEmptyDescriptionWhenDashIsDisabled()
+    public async Task ExportAsync_HtmlFullFeature_DoesNotRenderDescriptionWhenEmpty()
     {
         string path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.html");
         try
@@ -106,15 +101,18 @@ public sealed class SqlEditorReportExportServiceTests
                 FilePath: path,
                 Title: "Users audit",
                 Description: string.Empty,
+                Profile: SqlEditorReportExportProfile.Technical,
+                MetadataLevel: SqlEditorReportMetadataLevel.Essential,
+                EmptyValueDisplayMode: SqlEditorReportEmptyValueDisplayMode.Blank,
                 IncludeSchema: true,
-                IncludeNodeDetails: false,
-                IncludeMetadata: false,
-                UseDashForEmptyFields: false);
+                IncludeSql: true,
+                IncludeLineage: false);
 
             string exportedPath = await sut.ExportAsync(context, request);
             string html = await File.ReadAllTextAsync(exportedPath);
 
-            Assert.Contains("<p class=\"description\">null</p>", html, StringComparison.Ordinal);
+            Assert.DoesNotContain("<div class=\"description\">", html, StringComparison.Ordinal);
+            Assert.DoesNotContain(">null<", html, StringComparison.Ordinal);
         }
         finally
         {
@@ -124,7 +122,7 @@ public sealed class SqlEditorReportExportServiceTests
     }
 
     [Fact]
-    public async Task ExportAsync_JsonContract_ContainsNormalizedMetaAndToggleData()
+    public async Task ExportAsync_JsonContract_UsesNewFlagsAndSchemaDetails()
     {
         string path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.json");
         try
@@ -136,10 +134,12 @@ public sealed class SqlEditorReportExportServiceTests
                 FilePath: path,
                 Title: "Users audit",
                 Description: "Execution report for support",
-                IncludeSchema: false,
-                IncludeNodeDetails: true,
-                IncludeMetadata: true,
-                UseDashForEmptyFields: false);
+                Profile: SqlEditorReportExportProfile.Audit,
+                MetadataLevel: SqlEditorReportMetadataLevel.Complete,
+                EmptyValueDisplayMode: SqlEditorReportEmptyValueDisplayMode.NullLiteral,
+                IncludeSchema: true,
+                IncludeSql: false,
+                IncludeLineage: true);
 
             string exportedPath = await sut.ExportAsync(context, request);
             string payload = await File.ReadAllTextAsync(exportedPath);
@@ -147,18 +147,15 @@ public sealed class SqlEditorReportExportServiceTests
             JsonElement root = document.RootElement;
             JsonElement meta = root.GetProperty("meta");
 
-            Assert.Equal("2.3", root.GetProperty("version").GetString());
-            Assert.True(root.GetProperty("hasSql").GetBoolean());
+            Assert.Equal("3.0", root.GetProperty("version").GetString());
+            Assert.False(root.GetProperty("hasSql").GetBoolean());
+            Assert.Equal(string.Empty, root.GetProperty("sql").GetString());
             Assert.Equal("warning", meta.GetProperty("summary").GetProperty("status").GetString());
-            Assert.False(meta.GetProperty("summary").GetProperty("success").GetBoolean());
-            Assert.Equal(2, meta.GetProperty("columnCount").GetInt32());
-            Assert.Equal(1, meta.GetProperty("warningCount").GetInt32());
-            Assert.Equal(0, meta.GetProperty("errorCount").GetInt32());
-            Assert.True(meta.GetProperty("hasSubquery").GetBoolean());
-            Assert.Equal(15, meta.GetProperty("metadata").GetArrayLength());
-            Assert.Equal(0, root.GetProperty("schema").GetArrayLength());
-            Assert.Equal(0, root.GetProperty("nodes").GetArrayLength());
-            Assert.Equal(0, root.GetProperty("connections").GetArrayLength());
+            Assert.Equal("Users audit", meta.GetProperty("title").GetString());
+            Assert.True(meta.GetProperty("includeMetadata").GetBoolean());
+            Assert.Equal(2, root.GetProperty("schema").GetArrayLength());
+            Assert.Single(root.GetProperty("nodes").EnumerateArray());
+            Assert.Single(root.GetProperty("connections").EnumerateArray());
         }
         finally
         {
@@ -180,10 +177,12 @@ public sealed class SqlEditorReportExportServiceTests
                 FilePath: path,
                 Title: "Users audit",
                 Description: string.Empty,
+                Profile: SqlEditorReportExportProfile.Technical,
+                MetadataLevel: SqlEditorReportMetadataLevel.None,
+                EmptyValueDisplayMode: SqlEditorReportEmptyValueDisplayMode.Blank,
                 IncludeSchema: false,
-                IncludeNodeDetails: false,
-                IncludeMetadata: false,
-                UseDashForEmptyFields: false);
+                IncludeSql: false,
+                IncludeLineage: false);
 
             string exportedPath = await sut.ExportAsync(context, request);
             string csv = await File.ReadAllTextAsync(exportedPath);
@@ -213,10 +212,12 @@ public sealed class SqlEditorReportExportServiceTests
                 FilePath: path,
                 Title: "Users audit",
                 Description: string.Empty,
+                Profile: SqlEditorReportExportProfile.Technical,
+                MetadataLevel: SqlEditorReportMetadataLevel.None,
+                EmptyValueDisplayMode: SqlEditorReportEmptyValueDisplayMode.Blank,
                 IncludeSchema: false,
-                IncludeNodeDetails: false,
-                IncludeMetadata: false,
-                UseDashForEmptyFields: false);
+                IncludeSql: false,
+                IncludeLineage: false);
 
             string exportedPath = await sut.ExportAsync(context, request);
 
@@ -250,6 +251,11 @@ public sealed class SqlEditorReportExportServiceTests
         return new SqlEditorReportExportContext(
             Sql: "SELECT u.id FROM users u WHERE EXISTS (SELECT 1 FROM users_archive a WHERE a.id = u.id)",
             SchemaColumns: ["id", "name"],
+            SchemaDetails:
+            [
+                new SqlEditorReportSchemaDetail("id", "number", 0, 2, "1", "1", "2"),
+                new SqlEditorReportSchemaDetail("name", "text", 0, 2, "Alice", "Alice", "Bob"),
+            ],
             ResultRows:
             [
                 new Dictionary<string, object?>
@@ -270,6 +276,14 @@ public sealed class SqlEditorReportExportServiceTests
                 ErrorMessage: null),
             Connection: connection,
             ActiveFilePath: "/tmp/report.sql",
-            TabTitle: "Users query");
+            TabTitle: "Users query",
+            NodeRows:
+            [
+                new SqlEditorReportLineageNode("table", "source", "users", "active"),
+            ],
+            ConnectionRows:
+            [
+                new SqlEditorReportLineageConnection("users", "id", "users_archive", "id", "integer"),
+            ]);
     }
 }

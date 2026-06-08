@@ -39,13 +39,49 @@ public sealed class SqlImportClauseParser(SqlImportCteRewriteService cteRewriteS
                 )
             );
             imported++;
+        }
 
-            report.Add(SqlImportReportFactory.Partial(
-                SqlImportDiagnosticCodes.FallbackRegexUsed,
-                "CTE rewrite fallback",
-                SqlImportDiagnosticMessages.CteRewriteFallbackReportNote
-            ));
-            partial++;
+        if (_cteRewriteService.TryRewriteSimpleFromSubquery(sql, out string rewrittenFromSubquerySql))
+        {
+            sql = rewrittenFromSubquerySql;
+            report.Add(
+                new ImportReportItem(
+                    "FROM sub-query",
+                    ImportItemStatus.Imported,
+                    "Simple FROM sub-query rewritten to supported import shape."
+                )
+            );
+            imported++;
+        }
+
+        if (_cteRewriteService.TryRewriteSimpleJoinSubqueries(sql, out string rewrittenJoinSubquerySql, out int rewrittenJoinSubqueryCount))
+        {
+            sql = rewrittenJoinSubquerySql;
+            report.Add(
+                new ImportReportItem(
+                    "JOIN sub-query",
+                    ImportItemStatus.Imported,
+                    rewrittenJoinSubqueryCount == 1
+                        ? "Simple JOIN sub-query rewritten to supported import shape."
+                        : $"{rewrittenJoinSubqueryCount} simple JOIN sub-queries rewritten to supported import shape."
+                )
+            );
+            imported++;
+        }
+
+        IReadOnlyList<SqlImportSetOperation> setOperations = [];
+        if (TryExtractUnionSetOperation(sql, out string leftOperandSql, out SqlImportSetOperation setOperation))
+        {
+            sql = leftOperandSql;
+            setOperations = [setOperation];
+            report.Add(
+                new ImportReportItem(
+                    setOperation.IsAll ? "UNION ALL" : "UNION",
+                    ImportItemStatus.Imported,
+                    "Set operation preserved as a graph Set Operation node."
+                )
+            );
+            imported++;
         }
 
         string qualifiedIdentifierPattern = SqlImportIdentifierNormalizer.QualifiedIdentifierPattern;
@@ -83,6 +119,16 @@ public sealed class SqlImportClauseParser(SqlImportCteRewriteService cteRewriteS
                     report.Add(SqlImportReportFactory.Partial(
                         SqlImportDiagnosticCodes.AstUnsupported,
                         "CTE name diagnostics",
+                        cteIssue
+                    ));
+                    partial++;
+                }
+
+                foreach (string cteIssue in _cteRewriteService.AnalyzeBlockedCteSafetyIssues(sql))
+                {
+                    report.Add(SqlImportReportFactory.Partial(
+                        SqlImportDiagnosticCodes.AstUnsupported,
+                        "CTE safety diagnostics",
                         cteIssue
                     ));
                     partial++;
@@ -304,7 +350,8 @@ public sealed class SqlImportClauseParser(SqlImportCteRewriteService cteRewriteS
             groupBy,
             havingClause,
             limitVal,
-            outerAliases
+            outerAliases,
+            setOperations
         );
 
         return new SqlImportParseResult(parsed, imported, partial, skipped, false);
@@ -351,5 +398,73 @@ public sealed class SqlImportClauseParser(SqlImportCteRewriteService cteRewriteS
 
         parts.Add(value[start..]);
         return parts;
+    }
+
+    private static bool TryExtractUnionSetOperation(
+        string sql,
+        out string leftOperandSql,
+        out SqlImportSetOperation setOperation)
+    {
+        leftOperandSql = sql;
+        setOperation = default;
+
+        int depth = 0;
+        bool inString = false;
+        for (int index = 0; index < sql.Length; index++)
+        {
+            char current = sql[index];
+            if (current == '\'')
+            {
+                bool escapedQuote = index + 1 < sql.Length && sql[index + 1] == '\'';
+                if (escapedQuote)
+                {
+                    index++;
+                    continue;
+                }
+
+                inString = !inString;
+                continue;
+            }
+
+            if (inString)
+                continue;
+
+            if (current == '(')
+            {
+                depth++;
+                continue;
+            }
+
+            if (current == ')')
+            {
+                depth = Math.Max(0, depth - 1);
+                continue;
+            }
+
+            if (depth != 0)
+                continue;
+
+            Match match = Regex.Match(
+                sql[index..],
+                @"^\s*UNION\b(?:\s+(ALL))?",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            if (!match.Success)
+                continue;
+
+            string left = sql[..index].Trim();
+            string right = sql[(index + match.Length)..].Trim();
+            if (string.IsNullOrWhiteSpace(left)
+                || string.IsNullOrWhiteSpace(right)
+                || !Regex.IsMatch(right.TrimStart('(', ' '), @"^SELECT\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            {
+                return false;
+            }
+
+            leftOperandSql = left;
+            setOperation = new SqlImportSetOperation("UNION", match.Groups[1].Success, right);
+            return true;
+        }
+
+        return false;
     }
 }

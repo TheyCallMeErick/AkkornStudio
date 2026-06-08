@@ -39,6 +39,87 @@ public class UndoRedoStackTests
         public ICanvasCommand? TryMerge(ICanvasCommand other) => null;
     }
 
+    private sealed class PartiallyFailingStateCommand(List<int> target, int value) : ICanvasCommand
+    {
+        public string Description => $"Failing add {value}";
+
+        public void Execute(CanvasViewModel canvas)
+        {
+            target.Add(value);
+            throw new InvalidOperationException("Simulated execute failure after side-effect.");
+        }
+
+        public void Undo(CanvasViewModel canvas)
+        {
+            int index = target.LastIndexOf(value);
+            if (index >= 0)
+                target.RemoveAt(index);
+        }
+
+        public ICanvasCommand? TryMerge(ICanvasCommand other) => null;
+    }
+
+    private sealed class MergeableCommand(string description, string mergeOnDescription) : ICanvasCommand
+    {
+        public string Description => description;
+
+        public void Execute(CanvasViewModel canvas) { }
+
+        public void Undo(CanvasViewModel canvas) { }
+
+        public ICanvasCommand? TryMerge(ICanvasCommand other)
+        {
+            return string.Equals(other.Description, mergeOnDescription, StringComparison.Ordinal)
+                ? new MockCommand("Merged")
+                : null;
+        }
+    }
+
+    private sealed class FailingUndoCommand : ICanvasCommand
+    {
+        public string Description => "Fail Undo";
+
+        public void Execute(CanvasViewModel canvas) { }
+
+        public void Undo(CanvasViewModel canvas) =>
+            throw new InvalidOperationException("Simulated undo failure.");
+
+        public ICanvasCommand? TryMerge(ICanvasCommand other) => null;
+    }
+
+    private sealed class FailingRedoCommand : ICanvasCommand
+    {
+        private int _executeCount;
+        public string Description => "Fail Redo";
+
+        public void Execute(CanvasViewModel canvas)
+        {
+            _executeCount++;
+            if (_executeCount > 1)
+                throw new InvalidOperationException("Simulated redo execute failure.");
+        }
+
+        public void Undo(CanvasViewModel canvas) { }
+
+        public ICanvasCommand? TryMerge(ICanvasCommand other) => null;
+    }
+
+    private sealed class ExecutionScopeProbeCommand(Func<bool> isExecutionInProgress) : ICanvasCommand
+    {
+        private readonly Func<bool> _isExecutionInProgress = isExecutionInProgress;
+        public string Description => "Probe Execution Scope";
+        public bool WasInProgressDuringExecute { get; private set; }
+        public bool WasInProgressDuringUndo { get; private set; }
+
+        public void Execute(CanvasViewModel canvas) =>
+            WasInProgressDuringExecute = _isExecutionInProgress();
+
+        public void Undo(CanvasViewModel canvas) =>
+            WasInProgressDuringUndo = _isExecutionInProgress();
+
+        public ICanvasCommand? TryMerge(ICanvasCommand other) => null;
+    }
+
     // â”€â”€ Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
@@ -118,6 +199,39 @@ public class UndoRedoStackTests
 
         stack.Redo();
         Assert.False(stack.CanRedo);
+    }
+
+    [Fact]
+    public void Undo_WhenCommandUndoThrows_RestoresUndoEntryAndKeepsRedoUnchanged()
+    {
+        var canvas = new CanvasViewModel();
+        var stack = new UndoRedoStack(canvas);
+
+        stack.Execute(new FailingUndoCommand());
+
+        Assert.Throws<InvalidOperationException>(() => stack.Undo());
+
+        Assert.True(stack.CanUndo);
+        Assert.False(stack.CanRedo);
+        Assert.Equal("Fail Undo", stack.UndoDescription);
+    }
+
+    [Fact]
+    public void Redo_WhenCommandExecuteThrows_RestoresRedoEntryAndKeepsUndoUnchanged()
+    {
+        var canvas = new CanvasViewModel();
+        var stack = new UndoRedoStack(canvas);
+
+        stack.Execute(new FailingRedoCommand());
+        stack.Undo();
+        Assert.True(stack.CanRedo);
+        Assert.False(stack.CanUndo);
+
+        Assert.Throws<InvalidOperationException>(() => stack.Redo());
+
+        Assert.True(stack.CanRedo);
+        Assert.False(stack.CanUndo);
+        Assert.Equal("Fail Redo", stack.RedoDescription);
     }
 
     [Fact]
@@ -256,6 +370,29 @@ public class UndoRedoStackTests
     }
 
     [Fact]
+    public void RollbackTransaction_RevertsPartiallyAppliedCommand_WhenExecuteFailsDuringTransaction()
+    {
+        var canvas = new CanvasViewModel();
+        var stack = new UndoRedoStack(canvas);
+        var values = new List<int>();
+
+        stack.BeginTransaction("Tx Failure");
+        stack.Execute(new StateCommand(values, 1));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            stack.Execute(new PartiallyFailingStateCommand(values, 2)));
+
+        // Side-effect happened before exception.
+        Assert.Equal([1, 2], values);
+
+        stack.RollbackTransaction();
+
+        Assert.Empty(values);
+        Assert.False(stack.InTransaction);
+        Assert.False(stack.CanUndo);
+    }
+
+    [Fact]
     public void Clear_ErasesAllHistory()
     {
         var canvas = new CanvasViewModel();
@@ -289,6 +426,21 @@ public class UndoRedoStackTests
         // Execute a new command should clear redo
         stack.Execute(new MockCommand("Third"));
         Assert.False(stack.CanRedo);
+    }
+
+    [Fact]
+    public void Execute_WhenTryMergeReturnsCommand_ReplacesTopUndoEntry()
+    {
+        var canvas = new CanvasViewModel();
+        var stack = new UndoRedoStack(canvas);
+
+        stack.Execute(new MergeableCommand("First", "Second"));
+        stack.Execute(new MockCommand("Second"));
+
+        Assert.True(stack.CanUndo);
+        Assert.Equal("Merged", stack.UndoDescription);
+        Assert.Single(stack.UndoHistory);
+        Assert.Equal("Merged", stack.UndoHistory[0]);
     }
 
     [Fact]
@@ -349,5 +501,51 @@ public class UndoRedoStackTests
         stack.Undo();
         Assert.Equal("Cmd218", stack.UndoDescription);
     }
-}
 
+    [Fact]
+    public void HistoryTrim_AddsDiagnosticsWarning_WhenOldEntriesAreDiscarded()
+    {
+        var canvas = new CanvasViewModel();
+        var stack = new UndoRedoStack(canvas);
+        int before = canvas.Diagnostics.SnapshotEntries().Count;
+
+        for (int i = 1; i <= 201; i++)
+            stack.Execute(new MockCommand($"Cmd{i:D3}"));
+
+        IReadOnlyList<AppDiagnosticEntry> entries = canvas.Diagnostics.SnapshotEntries();
+        Assert.True(entries.Count > before);
+        Assert.Contains(
+            entries,
+            e =>
+                e.Status == DiagnosticStatus.Warning
+                && e.Name.Contains("Undo/Redo", StringComparison.OrdinalIgnoreCase)
+                && (e.Details.Contains("limit", StringComparison.OrdinalIgnoreCase)
+                    || e.Details.Contains("limite", StringComparison.OrdinalIgnoreCase))
+                && e.Status == DiagnosticStatus.Warning
+        );
+    }
+
+    [Fact]
+    public void CommandExecutionScope_IsActiveDuringExecuteUndoRedo_AndCompletesAfterEachOperation()
+    {
+        var canvas = new CanvasViewModel();
+        var stack = new UndoRedoStack(canvas);
+        var probe = new ExecutionScopeProbeCommand(() => stack.IsCommandExecutionInProgress);
+        int completedCount = 0;
+        stack.CommandExecutionCompleted += () => completedCount++;
+
+        stack.Execute(probe);
+        Assert.True(probe.WasInProgressDuringExecute);
+        Assert.False(stack.IsCommandExecutionInProgress);
+        Assert.Equal(1, completedCount);
+
+        stack.Undo();
+        Assert.True(probe.WasInProgressDuringUndo);
+        Assert.False(stack.IsCommandExecutionInProgress);
+        Assert.Equal(2, completedCount);
+
+        stack.Redo();
+        Assert.False(stack.IsCommandExecutionInProgress);
+        Assert.Equal(3, completedCount);
+    }
+}

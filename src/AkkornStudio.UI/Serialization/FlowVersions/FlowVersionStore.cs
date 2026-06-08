@@ -20,7 +20,8 @@ public record FlowVersion(
     int NodeCount,
     int ConnectionCount,
     /// <summary>Full serialized canvas JSON (SavedCanvas).</summary>
-    string CanvasJson
+    string CanvasJson,
+    string ProjectKey = FlowVersionStore.DefaultProjectKey
 );
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -38,6 +39,7 @@ public record FlowVersion(
 public static class FlowVersionStore
 {
     public const int MaxVersions = 50;
+    public const string DefaultProjectKey = "global";
 
     public static event Action<string>? WarningRaised;
     private static readonly ILogger _logger = NullLogger.Instance;
@@ -79,6 +81,14 @@ public static class FlowVersionStore
         }
     }
 
+    public static List<FlowVersion> Load(string projectKey)
+    {
+        string normalizedProjectKey = NormalizeProjectKey(projectKey);
+        return Load()
+            .Where(version => string.Equals(NormalizeProjectKey(version.ProjectKey), normalizedProjectKey, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
     /// <summary>Overwrites the store with the given list.</summary>
     public static void Save(List<FlowVersion> versions)
     {
@@ -115,10 +125,25 @@ public static class FlowVersionStore
     /// </summary>
     public static void Add(FlowVersion version)
     {
+        Add(version, version.ProjectKey);
+    }
+
+    public static void Add(FlowVersion version, string projectKey)
+    {
+        string normalizedProjectKey = NormalizeProjectKey(projectKey);
         List<FlowVersion> all = Load();
-        all.Insert(0, version);
-        if (all.Count > MaxVersions)
-            all.RemoveRange(MaxVersions, all.Count - MaxVersions);
+        FlowVersion scopedVersion = version with { ProjectKey = normalizedProjectKey };
+        all.RemoveAll(v => v.Id == scopedVersion.Id);
+        all.Insert(0, scopedVersion);
+
+        HashSet<string> pruneIds = all
+            .Where(v => string.Equals(NormalizeProjectKey(v.ProjectKey), normalizedProjectKey, StringComparison.OrdinalIgnoreCase))
+            .Skip(MaxVersions)
+            .Select(v => v.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (pruneIds.Count > 0)
+            all.RemoveAll(v => pruneIds.Contains(v.Id));
+
         Save(all);
     }
 
@@ -128,5 +153,23 @@ public static class FlowVersionStore
         List<FlowVersion> all = Load();
         all.RemoveAll(v => v.Id == id);
         Save(all);
+    }
+
+    public static void Remove(string id, string projectKey)
+    {
+        string normalizedProjectKey = NormalizeProjectKey(projectKey);
+        List<FlowVersion> all = Load();
+        all.RemoveAll(v =>
+            v.Id == id
+            && string.Equals(NormalizeProjectKey(v.ProjectKey), normalizedProjectKey, StringComparison.OrdinalIgnoreCase));
+        Save(all);
+    }
+
+    public static string NormalizeProjectKey(string? projectKey)
+    {
+        if (string.IsNullOrWhiteSpace(projectKey))
+            return DefaultProjectKey;
+
+        return string.Join(" ", projectKey.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).Trim();
     }
 }

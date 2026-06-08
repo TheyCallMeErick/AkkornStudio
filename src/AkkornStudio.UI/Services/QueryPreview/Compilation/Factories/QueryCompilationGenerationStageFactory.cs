@@ -14,6 +14,7 @@ internal sealed class QueryCompilationGenerationStageFactory(
         new(
             new QueryCompilationSqlGenerator(_provider),
             _inlineBindingsForPreview,
+            new QueryExecutionParameterContextExtractor(),
             _mapGenerationErrors,
             (fallbackFromTable, fallbackJoins) => JoinResolver.FallbackSql(fallbackFromTable, [.. fallbackJoins]));
 }

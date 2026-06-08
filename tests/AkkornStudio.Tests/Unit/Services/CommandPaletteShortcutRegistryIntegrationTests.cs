@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using AkkornStudio.UI.Services;
 using AkkornStudio.UI.Services.CommandPalette;
 using AkkornStudio.UI.Services.Input.ShortcutRegistry;
+using AkkornStudio.UI.Services.Workspace.Models;
 using AkkornStudio.UI.ViewModels;
 
 namespace AkkornStudio.Tests.Unit.Services;
@@ -26,19 +27,14 @@ public sealed class CommandPaletteShortcutRegistryIntegrationTests
     }
 
     [Fact]
-    public void Refresh_AfterOverride_UpdatesDisplayedShortcut()
+    public void RunPreviewCommand_IsNotExposedInPalette()
     {
         var fixture = CreateFixture();
-        ShortcutUpdateResult update = fixture.Registry.TryOverride(ShortcutActionIds.RunPreview, "Ctrl+Alt+R");
-        Assert.True(update.Success);
-
         fixture.Service.Refresh();
         fixture.Service.ViewModel.Open();
-
-        PaletteCommandItem command = Assert.Single(
+        Assert.DoesNotContain(
             fixture.Service.ViewModel.Results,
             item => item.ActionId == ShortcutActionIds.RunPreview);
-        Assert.Equal("Ctrl+Alt+R", command.Shortcut);
     }
 
     [Fact]
@@ -56,6 +52,30 @@ public sealed class CommandPaletteShortcutRegistryIntegrationTests
             fixture.Service.ViewModel.Results,
             item => item.ActionId == ShortcutActionIds.TogglePreview);
         Assert.Equal("Ctrl+Alt+P", command.Shortcut);
+    }
+
+    [Fact]
+    public void OpenConnectionManagerCommand_UsesActiveDdlManager_WhenDdlModeIsActive()
+    {
+        var fixture = CreateFixture();
+        fixture.Shell.EnterCanvas();
+        fixture.Shell.ActivateDocument(WorkspaceDocumentType.DdlCanvas);
+
+        CanvasViewModel queryCanvas = fixture.Shell.EnsureCanvas();
+        CanvasViewModel ddlCanvas = fixture.Shell.EnsureDdlCanvas();
+
+        fixture.Service.Refresh();
+        fixture.Service.ViewModel.Open();
+        PaletteCommandItem command = Assert.Single(
+            fixture.Service.ViewModel.Results,
+            item => item.ActionId == ShortcutActionIds.OpenConnectionManager);
+
+        command.Execute();
+
+        Assert.False(queryCanvas.ConnectionManager.IsVisible);
+        Assert.True(ddlCanvas.ConnectionManager.IsVisible);
+        Assert.True(fixture.Shell.IsDdlConnectionManagerOverlayVisible);
+        Assert.False(fixture.Shell.IsQueryConnectionManagerOverlayVisible);
     }
 
     private static Fixture CreateFixture()
@@ -80,11 +100,12 @@ public sealed class CommandPaletteShortcutRegistryIntegrationTests
             preview,
             shortcutRegistry: registry);
 
-        return new Fixture(registry, new CommandPaletteService(factory));
+        return new Fixture(registry, new CommandPaletteService(factory), shell);
     }
 
     private sealed record Fixture(
         global::AkkornStudio.UI.Services.Input.ShortcutRegistry.ShortcutRegistry Registry,
-        CommandPaletteService Service);
+        CommandPaletteService Service,
+        ShellViewModel Shell);
 }
 

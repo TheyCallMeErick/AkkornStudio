@@ -30,6 +30,7 @@ public sealed class SqlEditorExecutionService
                 StatementSql = string.Empty,
                 Success = false,
                 ErrorMessage = L("sqlEditor.error.noStatementSelected", "No SQL statement selected for execution."),
+                ErrorCategory = SqlExecutionErrorCategory.Validation,
                 ExecutedAt = DateTimeOffset.UtcNow,
             };
         }
@@ -41,6 +42,7 @@ public sealed class SqlEditorExecutionService
                 StatementSql = sql.Trim(),
                 Success = false,
                 ErrorMessage = L("sqlEditor.error.noConnection", "No active database connection for SQL execution."),
+                ErrorCategory = SqlExecutionErrorCategory.Operational,
                 ExecutedAt = DateTimeOffset.UtcNow,
             };
         }
@@ -57,6 +59,9 @@ public sealed class SqlEditorExecutionService
                 Success = preview.Success,
                 Data = preview.Data,
                 ErrorMessage = preview.ErrorMessage,
+                ErrorCategory = preview.Success
+                    ? SqlExecutionErrorCategory.None
+                    : SqlExecutionErrorClassifier.Classify(preview.ErrorMessage),
                 RowsAffected = preview.RowsAffected,
                 ExecutionTime = preview.ExecutionTime ?? TimeSpan.Zero,
                 ExecutedAt = DateTimeOffset.UtcNow,
@@ -69,6 +74,7 @@ public sealed class SqlEditorExecutionService
                 StatementSql = statementSql,
                 Success = false,
                 ErrorMessage = L("sqlEditor.error.executionCanceled", "SQL execution was canceled."),
+                ErrorCategory = SqlExecutionErrorCategory.Cancelled,
                 ExecutedAt = DateTimeOffset.UtcNow,
             };
         }

@@ -34,7 +34,9 @@ public sealed record CastExpr(ISqlExpression Input, CastTargetType TargetType) :
             CastTargetType.Boolean => PinDataType.Boolean,
             CastTargetType.Date or CastTargetType.DateTime or CastTargetType.Timestamp =>
                 PinDataType.DateTime,
-            _ => PinDataType.Expression,
+            CastTargetType.Uuid => PinDataType.Expression,
+            _ => throw new InvalidOperationException(
+                $"Unsupported cast target type '{TargetType}'."),
         };
 
     public string Emit(EmitContext ctx)
@@ -64,6 +66,7 @@ public sealed record CastExpr(ISqlExpression Input, CastTargetType TargetType) :
             (CastTargetType.Timestamp, _) => "TIMESTAMPTZ",
             (CastTargetType.Uuid, DatabaseProvider.SqlServer) => "UNIQUEIDENTIFIER",
             (CastTargetType.Uuid, _) => "UUID",
-            _ => TargetType.ToString().ToUpperInvariant(),
+            _ => throw new InvalidOperationException(
+                $"Unsupported cast target type '{TargetType}' for provider '{p}'."),
         };
 }

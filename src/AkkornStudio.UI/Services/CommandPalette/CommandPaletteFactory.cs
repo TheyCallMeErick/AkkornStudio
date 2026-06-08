@@ -1,11 +1,14 @@
 using Avalonia;
 using Avalonia.Controls;
 using Material.Icons;
+using AkkornStudio.Core;
 using AkkornStudio.Nodes;
 using AkkornStudio.UI.Controls;
 using AkkornStudio.UI.Controls.Shell;
 using AkkornStudio.UI.Services.Input.ShortcutRegistry;
 using AkkornStudio.UI.Services.Localization;
+using AkkornStudio.UI.Extensions;
+using AkkornStudio.UI.Services.Workspace.Models;
 using AkkornStudio.UI.Services.Workspace.Preview;
 using AkkornStudio.UI.ViewModels;
 using AkkornStudio.UI.ViewModels.Shortcuts;
@@ -109,6 +112,29 @@ public class CommandPaletteFactory(
             // ── Snippets ──────────────────────────────────────────────────────
             new()
             {
+                Name = LN("Save Canvas as Template"),
+                Description = LD("Persist the current canvas as a reusable query template available from Start and Command Palette"),
+                Shortcut = "",
+                Icon = MaterialIconKind.ContentSaveCogOutline,
+                Tags = LTg("template save current canvas user custom reusable starter"),
+                Execute = () =>
+                {
+                    if (CurrentCanvas.Nodes.Count == 0)
+                    {
+                        CurrentShell.Toasts.ShowWarning(
+                            L("toast.templateSaveEmptyCanvas", "Adicione ao menos um node antes de salvar um template."));
+                        return;
+                    }
+
+                    string name = CreateUserTemplateName(CurrentCanvas);
+                    UserQueryTemplate template = QueryTemplateCatalog.SaveFromCanvas(CurrentCanvas, name);
+                    CurrentShell.Toasts.ShowSuccess(
+                        L("toast.templateSaved", "Template salvo."),
+                        template.Name);
+                },
+            },
+            new()
+            {
                 Name = LN("Save Selection as Snippet"),
                 Description = LD("Save the selected nodes as a reusable snippet — insert it later via the node search menu (⇧A)"),
                 Shortcut = "",
@@ -177,12 +203,43 @@ public class CommandPaletteFactory(
             // ── Connection ────────────────────────────────────────────────────
             new()
             {
+                Name = "Refresh ER Diagram",
+                Description = "Rebuild the ER document from the active metadata snapshot",
+                Shortcut = "",
+                Icon = MaterialIconKind.Reload,
+                Tags = "er diagram entity relationship refresh metadata schema rebuild",
+                Execute = () => CurrentShell.ActivateDocument(WorkspaceDocumentType.ErDiagram),
+            },
+            new()
+            {
+                Name = "Open Selected Join in ER Diagram",
+                Description = "Jump from the selected Query join node to the matching ER relationship",
+                Shortcut = "",
+                Icon = MaterialIconKind.RelationManyToMany,
+                Tags = "er diagram open selected join relationship query canvas focus",
+                Execute = () =>
+                {
+                    if (!CurrentShell.TryOpenSelectedQueryJoinInErDiagram())
+                    {
+                        CurrentShell.Toasts.ShowWarning(
+                            "Selecione um node JOIN valido no Query Canvas para abrir a relacao correspondente no ER.");
+                    }
+                },
+            },
+            new()
+            {
+                ActionId = ShortcutActionIds.OpenConnectionManager,
                 Name = LN("Manage Connections"),
                 Description = LD("Open the connection manager to add, edit or switch database connections"),
                 Shortcut = ShortcutText(ShortcutActionIds.OpenConnectionManager, "Ctrl+Shift+C"),
                 Icon = MaterialIconKind.DatabaseSettings,
                 Tags = LTg("connection database server host provider switch"),
-                Execute = () => CurrentCanvas.ConnectionManager.Open(),
+                Execute = () =>
+                {
+                    ConnectionManagerViewModel manager = CurrentShell.ActiveConnectionManager
+                        ?? CurrentShell.EnsureCanvas().ConnectionManager;
+                    manager.ConnectOrOpenManagerCommand.Execute(null);
+                },
             },
             // ── File ──────────────────────────────────────────────────────────
             new()
@@ -380,20 +437,6 @@ public class CommandPaletteFactory(
                 Tags = LTg("data results table panel"),
                 Execute = OpenOutputPreviewModal,
             },
-            new()
-            {
-                ActionId = ShortcutActionIds.RunPreview,
-                Name = LN("Run Preview"),
-                Description = LD("Execute the current query in preview"),
-                Shortcut = ShortcutText(ShortcutActionIds.RunPreview, "F5"),
-                Icon = MaterialIconKind.Play,
-                Tags = LTg("execute run sql query results"),
-                Execute = async () =>
-                {
-                    if (!CurrentCanvas.HasErrors && !CurrentCanvas.LiveSql.IsMutatingCommand)
-                        await _preview.RunPreviewAsync();
-                },
-            },
             // ── Cleanup / Quality ─────────────────────────────────────────────
             new()
             {
@@ -584,12 +627,11 @@ public class CommandPaletteFactory(
         {
             case WorkspaceDocumentPreviewKind.Query:
             {
-                CanvasViewModel queryCanvas = shell.ActiveQueryCanvasDocument ?? shell.Canvas
-                    ?? throw new InvalidOperationException("Preview SQL indisponivel para o canvas Query atual.");
-                LiveSqlBarViewModel liveSql = queryCanvas.LiveSql
-                    ?? throw new InvalidOperationException("Preview SQL indisponivel para o canvas Query atual.");
-                liveSql.Recompile();
-                shell.OutputPreview.OpenForQuery(queryCanvas, liveSql, liveSql.ProviderLabel);
+                CanvasViewModel queryCanvas = shell.ActiveQueryCanvasDocument
+                    ?? shell.EnsureCanvas();
+                queryCanvas.LiveSql.Recompile();
+                DatabaseProvider provider = queryCanvas.ActiveConnectionConfig?.Provider ?? queryCanvas.Provider;
+                shell.OutputPreview.OpenForQuery(queryCanvas, queryCanvas.LiveSql, provider.ToString());
                 return;
             }
 
@@ -614,7 +656,7 @@ public class CommandPaletteFactory(
 
     private List<PaletteCommandItem> CreateTemplateCommands() =>
         [
-            .. QueryTemplateLibrary.All.Select(t => new PaletteCommandItem
+            .. QueryTemplateCatalog.LoadAll().Select(t => new PaletteCommandItem
             {
                 Name = string.Format(L("commandPalette.templatePrefix", "Template: {0}"), t.Name),
                 Description = t.Description,
@@ -627,6 +669,12 @@ public class CommandPaletteFactory(
                 },
             }),
         ];
+
+    private static string CreateUserTemplateName(CanvasViewModel canvas)
+    {
+        string prefix = canvas.Nodes.FirstOrDefault()?.Title ?? "Canvas";
+        return $"{prefix} template {DateTime.Now:yyyyMMdd-HHmmss}";
+    }
 
     private void OpenSearch()
     {
@@ -652,13 +700,13 @@ public class CommandPaletteFactory(
     }
 
     private static string LN(string fallback) =>
-        L($"commandPalette.name.{Slugify(fallback)}", fallback);
+        L($"commandPalette.name.{fallback.ToSlugToken('_', "empty")}", fallback);
 
     private static string LD(string fallback) =>
-        L($"commandPalette.description.{Slugify(fallback)}", fallback);
+        L($"commandPalette.description.{fallback.ToSlugToken('_', "empty")}", fallback);
 
     private static string LTg(string fallback) =>
-        L($"commandPalette.tags.{Slugify(fallback)}", fallback);
+        L($"commandPalette.tags.{fallback.ToSlugToken('_', "empty")}", fallback);
 
     private string ShortcutText(string actionId, string fallback)
     {
@@ -676,31 +724,4 @@ public class CommandPaletteFactory(
         && liveDdl.IsValid
         && !string.IsNullOrWhiteSpace(liveDdl.RawSql);
 
-    private static string Slugify(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return "empty";
-
-        char[] buffer = new char[text.Length];
-        int idx = 0;
-        bool lastWasUnderscore = false;
-        foreach (char ch in text.ToLowerInvariant())
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                buffer[idx++] = ch;
-                lastWasUnderscore = false;
-                continue;
-            }
-
-            if (!lastWasUnderscore)
-            {
-                buffer[idx++] = '_';
-                lastWasUnderscore = true;
-            }
-        }
-
-        string raw = new string(buffer, 0, idx).Trim('_');
-        return string.IsNullOrWhiteSpace(raw) ? "value" : raw;
-    }
 }

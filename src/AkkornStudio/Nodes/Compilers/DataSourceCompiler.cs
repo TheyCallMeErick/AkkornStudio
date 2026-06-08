@@ -93,7 +93,11 @@ public sealed class DataSourceCompiler : INodeCompiler
         INodeCompilationContext ctx
     )
     {
-        string cteName = ResolveCteName(node, pinName, ctx) ?? "cte_name";
+        string cteName =
+            ResolveCteName(node, pinName, ctx)
+            ?? throw new InvalidOperationException(
+                $"CTE source node '{node.Id}' could not resolve a CTE name."
+            );
 
         string? aliasFromInput = ResolveTextInput(node, "alias_text", ctx);
         string alias =
@@ -128,9 +132,10 @@ public sealed class DataSourceCompiler : INodeCompiler
         ISqlExpression expr = ctx.ResolveInput(node.Id, pinName, PinDataType.Text);
         return expr switch
         {
-            StringLiteralExpr s when !string.IsNullOrWhiteSpace(s.Value) => s.Value.Trim(),
+            StringLiteralExpr s when !string.IsNullOrWhiteSpace(s.Value)
+                => NormalizeTextLiteralRaw(s.Value),
             LiteralExpr l when !string.IsNullOrWhiteSpace(l.RawValue)
-                => l.RawValue.Trim().Trim('\'', '"').Trim(),
+                => NormalizeTextLiteralRaw(l.RawValue),
             _ => null,
         };
     }
@@ -208,9 +213,10 @@ public sealed class DataSourceCompiler : INodeCompiler
             ISqlExpression expr = ctx.Resolve(wire.FromNodeId, wire.FromPinName);
             return expr switch
             {
-                StringLiteralExpr s when !string.IsNullOrWhiteSpace(s.Value) => s.Value.Trim(),
+                StringLiteralExpr s when !string.IsNullOrWhiteSpace(s.Value)
+                    => NormalizeTextLiteralRaw(s.Value),
                 LiteralExpr l when !string.IsNullOrWhiteSpace(l.RawValue)
-                    => l.RawValue.Trim().Trim('\'', '"').Trim(),
+                    => NormalizeTextLiteralRaw(l.RawValue),
                 _ => null,
             };
         }
@@ -219,8 +225,37 @@ public sealed class DataSourceCompiler : INodeCompiler
             targetNode.PinLiterals.TryGetValue(pinName, out string? literal)
             && !string.IsNullOrWhiteSpace(literal)
         )
-            return literal.Trim().Trim('\'', '"').Trim();
+            return NormalizeTextLiteralRaw(literal);
 
         return null;
+    }
+
+    private static string? NormalizeTextLiteralRaw(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        string trimmed = raw.Trim();
+        if (trimmed.Length >= 2)
+        {
+            if (trimmed[0] == '"' && trimmed[^1] == '"')
+            {
+                string inner = trimmed[1..^1];
+                // Accept both JSON-style escaping and doubled SQL quotes.
+                inner = inner.Replace("\\\"", "\"", StringComparison.Ordinal);
+                inner = inner.Replace("\"\"", "\"", StringComparison.Ordinal);
+                return inner.Trim();
+            }
+
+            if (trimmed[0] == '\'' && trimmed[^1] == '\'')
+            {
+                string inner = trimmed[1..^1];
+                inner = inner.Replace("\\'", "'", StringComparison.Ordinal);
+                inner = inner.Replace("''", "'", StringComparison.Ordinal);
+                return inner.Trim();
+            }
+        }
+
+        return trimmed;
     }
 }

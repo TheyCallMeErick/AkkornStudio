@@ -460,7 +460,8 @@ public sealed class SqlImportAstToIrMapperTests
             GroupBy: null,
             HavingClause: null,
             Limit: null,
-            OuterAliases: []
+            OuterAliases: [],
+            SetOperations: []
         );
 
         SqlToNodeIR ir = mapper.MapSelectFrom(
@@ -633,7 +634,8 @@ public sealed class SqlImportAstToIrMapperTests
             GroupBy: groupBy,
             HavingClause: havingClause,
             Limit: limit,
-            OuterAliases: []
+            OuterAliases: [],
+            SetOperations: []
         );
     }
 }

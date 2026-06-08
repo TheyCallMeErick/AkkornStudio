@@ -10,6 +10,8 @@ namespace AkkornStudio.UI.Controls;
 /// </summary>
 public static class CanvasSelectionViewportMath
 {
+    private const double DefaultNodeWidth = 230d;
+
     public readonly record struct SelectionBounds(double MinX, double MinY, double MaxX, double MaxY)
     {
         public double Width => Math.Max(1, MaxX - MinX);
@@ -38,6 +40,52 @@ public static class CanvasSelectionViewportMath
         }
 
         bounds = new SelectionBounds(coreBounds.MinX, coreBounds.MinY, coreBounds.MaxX, coreBounds.MaxY);
+        return true;
+    }
+
+    public static SelectionBounds FromRect(Rect rect)
+    {
+        return new SelectionBounds(rect.X, rect.Y, rect.Right, rect.Bottom);
+    }
+
+    public static bool TrySelectNodesInRegion(
+        IEnumerable<NodeViewModel> nodes,
+        Rect region,
+        double defaultNodeHeight)
+    {
+        bool anySelected = false;
+        foreach (NodeViewModel node in nodes)
+        {
+            Rect frame = new(
+                node.Position.X,
+                node.Position.Y,
+                node.Width > 0 ? node.Width : DefaultNodeWidth,
+                defaultNodeHeight);
+            bool isSelected = region.Intersects(frame);
+            node.IsSelected = isSelected;
+            anySelected |= isSelected;
+        }
+
+        return anySelected;
+    }
+
+    public static bool TryGetSelectionFrame(
+        IEnumerable<NodeViewModel> selected,
+        double defaultNodeHeight,
+        double padding,
+        out Rect frame)
+    {
+        if (!TryGetSelectionBounds(selected, defaultNodeHeight, out SelectionBounds bounds))
+        {
+            frame = default;
+            return false;
+        }
+
+        frame = new Rect(
+            bounds.MinX - padding,
+            bounds.MinY - padding,
+            bounds.Width + (padding * 2d),
+            bounds.Height + (padding * 2d));
         return true;
     }
 

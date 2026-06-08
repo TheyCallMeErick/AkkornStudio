@@ -18,11 +18,7 @@
   </UserControl.Styles>
 
   <!-- ══ Card shell ════════════════════════════════════════════════════════ -->
-    <Border Background="{StaticResource Bg0Brush}"
-          BorderBrush="{StaticResource BorderActiveBrush}"
-          BorderThickness="1"
-          CornerRadius="{StaticResource RadiusLG}"
-          BoxShadow="{StaticResource ShadowXL}"
+    <Border Classes="surface-floating"
           Width="1220"
           Height="820"
           MinHeight="660"
@@ -33,10 +29,7 @@
 
       <!-- ── Header ──────────────────────────────────────────────────────── -->
       <Border Grid.Row="0"
-              Background="{StaticResource Bg2Brush}"
-              BorderBrush="{StaticResource BorderActiveBrush}"
-              BorderThickness="0,0,0,1"
-              CornerRadius="{StaticResource RadiusLGTop}"
+              Classes="surface-floating-header"
               Padding="0,2,0,0">
       <Grid ColumnDefinitions="Auto,Auto,*,Auto"
             Margin="0"
@@ -60,26 +53,20 @@
 
         <!-- Provider badge -->
         <Border Grid.Column="2"
+                Classes="badge info"
                 HorizontalAlignment="Left"
                 Margin="14,0,0,0"
                 VerticalAlignment="Center"
-                Background="{StaticResource Bg1Brush}"
-                BorderBrush="{StaticResource BorderActiveBrush}"
-                BorderThickness="1"
-                CornerRadius="{StaticResource RadiusXS}"
                 Padding="7,3">
           <TextBlock Text="{Binding ProviderLabel}"
                      FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource AccentPrimaryBrush}"/>
         </Border>
 
         <Border Grid.Column="2"
+                Classes="badge warning"
                 HorizontalAlignment="Left"
                 Margin="88,0,0,0"
                 VerticalAlignment="Center"
-                Background="{StaticResource BtnWarningBgBrush}"
-                BorderBrush="{StaticResource StatusWarningBrush}"
-                BorderThickness="1"
-                CornerRadius="{StaticResource RadiusXS}"
                 Padding="7,3"
                 IsVisible="{Binding IsSimulated}">
           <TextBlock Text="{Binding [explain.badge.simulated], Source={x:Static loc:LocalizationService.Instance}}"
@@ -621,9 +608,7 @@
 
       <!-- ── Footer hint ─────────────────────────────────────────────────── -->
       <Border Grid.Row="4"
-              Background="{StaticResource Bg1Brush}"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="0,1,0,0"
+              Classes="surface-floating-footer"
               Padding="16,8">
         <Grid ColumnDefinitions="*,Auto">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="16">

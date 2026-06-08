@@ -1,4 +1,5 @@
 using Avalonia;
+using System.Text.Json;
 using AkkornStudio.Nodes;
 using AkkornStudio.UI.Services.Workspace.Models;
 using AkkornStudio.UI.ViewModels;
@@ -44,6 +45,7 @@ public static partial class CanvasSerializer
         {
             WorkspaceDocumentType.DdlCanvas => ddlDocumentId,
             WorkspaceDocumentType.SqlEditor => sqlEditorDocumentId,
+            WorkspaceDocumentType.ErDiagram => queryDocumentId,
             _ => queryDocumentId,
         };
 
@@ -55,20 +57,24 @@ public static partial class CanvasSerializer
                 Title: "Query Canvas",
                 IsDirty: queryVm.IsDirty,
                 PersistenceSchemaVersion: "1.0",
-                CanvasPayload: query),
+                CanvasPayload: query,
+                DocumentPayload: null),
             new(
                 DocumentId: ddlDocumentId,
                 DocumentType: WorkspaceDocumentType.DdlCanvas.ToString(),
                 Title: "DDL Canvas",
                 IsDirty: ddlVm?.IsDirty ?? false,
                 PersistenceSchemaVersion: "1.0",
-                CanvasPayload: ddl),
+                CanvasPayload: ddl,
+                DocumentPayload: null),
             new(
                 DocumentId: sqlEditorDocumentId,
                 DocumentType: WorkspaceDocumentType.SqlEditor.ToString(),
                 Title: "SQL Editor",
                 IsDirty: false,
-                PersistenceSchemaVersion: "1.0")
+                PersistenceSchemaVersion: "1.0",
+                CanvasPayload: null,
+                DocumentPayload: null)
         };
 
         var workspace = new SavedWorkspaceDocumentsCanvas(
@@ -90,7 +96,10 @@ public static partial class CanvasSerializer
         Guid? activeDocumentId,
         string provider = "Postgres",
         string connectionName = "untitled",
-        string? description = null)
+        string? description = null,
+        IReadOnlyDictionary<Guid, Guid>? documentTabs = null,
+        IReadOnlyList<SavedWorkspaceTab>? tabs = null,
+        Guid? activeTabId = null)
     {
         if (openDocuments is null || openDocuments.Count == 0)
             throw new InvalidOperationException("Workspace must contain at least one document to be serialized.");
@@ -111,6 +120,13 @@ public static partial class CanvasSerializer
                     ? BuildSavedDdlCanvas(canvasDocument, provider, connectionName)
                     : BuildSavedCanvas(canvasDocument, provider, connectionName, description, persistProviderMetadata: false);
             }
+            JsonElement? documentPayload = openDocument.Descriptor.Payload.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+                ? null
+                : openDocument.Descriptor.Payload.Clone();
+
+            Guid tabId = documentTabs is not null && documentTabs.TryGetValue(documentId, out Guid resolvedTabId)
+                ? resolvedTabId
+                : Guid.Empty;
 
             documents.Add(new SavedWorkspaceDocument(
                 DocumentId: documentId,
@@ -118,7 +134,9 @@ public static partial class CanvasSerializer
                 Title: openDocument.Descriptor.Title,
                 IsDirty: isDirty,
                 PersistenceSchemaVersion: openDocument.Descriptor.PersistenceSchemaVersion,
-                CanvasPayload: canvasPayload));
+                CanvasPayload: canvasPayload,
+                DocumentPayload: documentPayload,
+                TabId: tabId));
         }
 
         Guid resolvedActiveDocumentId = activeDocumentId is Guid requestedActiveId
@@ -134,7 +152,9 @@ public static partial class CanvasSerializer
             DdlCanvas: null,
             AppVersion: AppVersion,
             CreatedAt: DateTime.UtcNow.ToString("o"),
-            Description: description);
+            Description: description,
+            Tabs: tabs?.ToList(),
+            ActiveTabId: activeTabId);
 
         return System.Text.Json.JsonSerializer.Serialize(workspace, _opts);
     }
@@ -176,6 +196,9 @@ public static partial class CanvasSerializer
                 .Select(c => c!)],
             SelectBindings: [],
             WhereBindings: [],
+            PreviewParameterInputs: vm.PreviewParameterInputs.Count > 0
+                ? new Dictionary<string, string>(vm.PreviewParameterInputs, StringComparer.OrdinalIgnoreCase)
+                : null,
             AppVersion: AppVersion,
             CreatedAt: DateTime.UtcNow.ToString("o"),
             Description: description
@@ -201,6 +224,7 @@ public static partial class CanvasSerializer
                 Connections: [],
                 SelectBindings: [],
                 WhereBindings: [],
+                PreviewParameterInputs: null,
                 AppVersion: AppVersion,
                 CreatedAt: DateTime.UtcNow.ToString("o")
             );
@@ -220,6 +244,9 @@ public static partial class CanvasSerializer
                 .Select(c => c!)],
             SelectBindings: [],
             WhereBindings: [],
+            PreviewParameterInputs: ddlVm.PreviewParameterInputs.Count > 0
+                ? new Dictionary<string, string>(ddlVm.PreviewParameterInputs, StringComparer.OrdinalIgnoreCase)
+                : null,
             AppVersion: AppVersion,
             CreatedAt: DateTime.UtcNow.ToString("o")
         );
@@ -268,33 +295,97 @@ public static partial class CanvasSerializer
         double cx = nodes.Average(n => n.X);
         double cy = nodes.Average(n => n.Y);
 
+        var addedNodes = new List<NodeViewModel>(nodes.Count);
+        var addedConnections = new List<ConnectionViewModel>(conns.Count);
         var idMap = new Dictionary<string, NodeViewModel>(StringComparer.Ordinal);
-        foreach (SavedNode sn in nodes)
+        try
         {
-            SavedNode positioned = sn with
+            foreach (SavedNode sn in nodes)
             {
-                NodeId = Guid.NewGuid().ToString(),
-                X = sn.X - cx + canvasPos.X,
-                Y = sn.Y - cy + canvasPos.Y,
-            };
-            (NodeViewModel? nvm, _) = BuildNodeVm(positioned, columnLookup);
-            if (nvm is null)
-                continue;
-            idMap[sn.NodeId] = nvm;
-            vm.Nodes.Add(nvm);
+                SavedNode positioned = sn with
+                {
+                    NodeId = Guid.NewGuid().ToString(),
+                    X = sn.X - cx + canvasPos.X,
+                    Y = sn.Y - cy + canvasPos.Y,
+                };
+                (NodeViewModel? nvm, _) = BuildNodeVm(positioned, columnLookup);
+                if (nvm is null)
+                    continue;
+                idMap[sn.NodeId] = nvm;
+                addedNodes.Add(nvm);
+                vm.Nodes.Add(nvm);
+            }
+
+            foreach (SavedConnection sc in conns)
+            {
+                if (!idMap.TryGetValue(sc.FromNodeId, out NodeViewModel? fromNode))
+                    throw new InvalidOperationException(
+                        $"Subgraph paste failed: missing source node '{sc.FromNodeId}' for connection '{sc.FromPinName} -> {sc.ToPinName}'."
+                    );
+                if (!idMap.TryGetValue(sc.ToNodeId, out NodeViewModel? toNode))
+                    throw new InvalidOperationException(
+                        $"Subgraph paste failed: missing destination node '{sc.ToNodeId}' for connection '{sc.FromPinName} -> {sc.ToPinName}'."
+                    );
+
+                if (
+                    !TryResolvePins(
+                        fromNode,
+                        sc.FromPinName,
+                        toNode,
+                        sc.ToPinName,
+                        out PinViewModel? fromPin,
+                        out PinViewModel? toPin
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Subgraph paste failed: cannot resolve pins '{sc.FromNodeId}.{sc.FromPinName}' -> '{sc.ToNodeId}.{sc.ToPinName}'."
+                    );
+                }
+
+                int beforeCount = vm.Connections.Count;
+                if (!TryConnect(vm.Connections, fromPin!, toPin!))
+                {
+                    throw new InvalidOperationException(
+                        $"Subgraph paste failed: incompatible pins '{sc.FromNodeId}.{sc.FromPinName}' -> '{sc.ToNodeId}.{sc.ToPinName}'."
+                    );
+                }
+
+                if (vm.Connections.Count <= beforeCount)
+                    throw new InvalidOperationException(
+                        "Subgraph paste failed: connection insertion did not mutate collection."
+                    );
+
+                ConnectionViewModel created = vm.Connections[^1];
+                addedConnections.Add(created);
+            }
         }
-
-        foreach (SavedConnection sc in conns)
+        catch
         {
-            if (!idMap.TryGetValue(sc.FromNodeId, out NodeViewModel? fromNode))
-                continue;
-            if (!idMap.TryGetValue(sc.ToNodeId, out NodeViewModel? toNode))
-                continue;
+            foreach (ConnectionViewModel addedConnection in addedConnections)
+                vm.Connections.Remove(addedConnection);
 
-            if (!TryResolvePins(fromNode, sc.FromPinName, toNode, sc.ToPinName, out PinViewModel? fromPin, out PinViewModel? toPin))
-                continue;
+            foreach (NodeViewModel addedNode in addedNodes)
+                vm.Nodes.Remove(addedNode);
 
-            TryConnect(vm.Connections, fromPin!, toPin!);
+            RecomputeConnectedFlags(vm);
+            throw;
+        }
+    }
+
+    private static void RecomputeConnectedFlags(CanvasViewModel vm)
+    {
+        foreach (NodeViewModel node in vm.Nodes)
+        {
+            foreach (PinViewModel pin in node.InputPins)
+            {
+                pin.IsConnected = vm.Connections.Any(c => c.ToPin == pin || c.FromPin == pin);
+            }
+
+            foreach (PinViewModel pin in node.OutputPins)
+            {
+                pin.IsConnected = vm.Connections.Any(c => c.FromPin == pin || c.ToPin == pin);
+            }
         }
     }
 

@@ -14,31 +14,8 @@
       <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
       <Setter Property="Margin"     Value="0,0,0,4"/>
     </Style>
-    <Style Selector="TextBox.field">
-      <Setter Property="Background"      Value="{StaticResource CanvasBgBrush}"/>
-      <Setter Property="BorderBrush"     Value="{StaticResource BorderBrush}"/>
-      <Setter Property="Foreground"      Value="{StaticResource TextPrimaryBrush}"/>
-      <Setter Property="FontSize"        Value="{StaticResource FontSizeBody}"/>
-      <Setter Property="Padding"         Value="7,5"/>
-      <Setter Property="CornerRadius"    Value="{StaticResource RadiusSM}"/>
-      <Setter Property="BorderThickness" Value="1"/>
-    </Style>
     <Style Selector="Border.stat-card">
-      <Setter Property="Background"      Value="{StaticResource CanvasBgBrush}"/>
-      <Setter Property="BorderBrush"     Value="{StaticResource BorderBrush}"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius"    Value="{StaticResource RadiusSM}"/>
-      <Setter Property="Padding"         Value="12,10"/>
-    </Style>
-    <Style Selector="Border.hist-row">
-      <Setter Property="Background"   Value="Transparent"/>
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
-      <Setter Property="Padding"      Value="8,5"/>
-      <Setter Property="Transitions">
-        <Transitions>
-          <BrushTransition Property="Background" Duration="0:0:0.07"/>
-        </Transitions>
-      </Setter>
+      <Setter Property="Padding" Value="12,10"/>
     </Style>
     <Style Selector="Border.hist-row:pointerover">
       <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
@@ -48,25 +25,20 @@
   <!-- ══ Benchmark overlay card ═══════════════════════════════════════════════ -->
   <Border Width="680"
           MaxHeight="620"
-          CornerRadius="{StaticResource RadiusLG}"
-          Background="{StaticResource Bg0Brush}"
-          BorderBrush="{StaticResource BorderActiveBrush}"
-          BorderThickness="1"
-          BoxShadow="{StaticResource ShadowXL}">
+          Classes="surface-floating accented"
+          Background="{StaticResource Bg0Brush}">
 
     <Grid RowDefinitions="Auto,*,Auto">
 
       <!-- Header -->
       <Border Grid.Row="0"
-              Background="{StaticResource Bg2Brush}"
+              Classes="surface-floating-header"
               BorderBrush="{StaticResource BorderActiveBrush}"
-              BorderThickness="0,0,0,1"
-              CornerRadius="{StaticResource RadiusLGTop}"
               Padding="20,14">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-            <Border Width="30" Height="30" CornerRadius="{StaticResource RadiusSM}"
-                    Background="{StaticResource Bg2Brush}" BorderBrush="{StaticResource BorderActiveBrush}" BorderThickness="1">
+              <Border Width="30" Height="30" CornerRadius="{StaticResource RadiusSM}"
+                    Classes="surface-card" BorderBrush="{StaticResource BorderActiveBrush}">
               <mi:MaterialIcon Kind="TimerOutline" Width="16" Height="16" Foreground="{StaticResource AccentPrimaryBrush}"/>
             </Border>
             <StackPanel VerticalAlignment="Center" Spacing="1">
@@ -129,7 +101,7 @@
 
               <Grid ColumnDefinitions="*,8,*,8,*,8,*,8,*">
                 <!-- Avg -->
-                <Border Grid.Column="0" Classes="stat-card">
+                <Border Grid.Column="0" Classes="stat-card surface-card">
                   <StackPanel Spacing="4" HorizontalAlignment="Center">
                     <TextBlock Text="{Binding [benchmark.avg], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" FontWeight="{StaticResource FontWeightTitle}"
                                Foreground="{StaticResource TextMutedBrush}" LetterSpacing="1" HorizontalAlignment="Center"/>
@@ -142,7 +114,7 @@
                 </Border>
 
                 <!-- Median -->
-                <Border Grid.Column="2" Classes="stat-card">
+                <Border Grid.Column="2" Classes="stat-card surface-card">
                   <StackPanel Spacing="4" HorizontalAlignment="Center">
                     <TextBlock Text="{Binding [benchmark.median], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" FontWeight="{StaticResource FontWeightTitle}"
                                Foreground="{StaticResource TextMutedBrush}" LetterSpacing="1" HorizontalAlignment="Center"/>
@@ -155,7 +127,7 @@
                 </Border>
 
                 <!-- P95 -->
-                <Border Grid.Column="4" Classes="stat-card">
+                <Border Grid.Column="4" Classes="stat-card surface-card">
                   <StackPanel Spacing="4" HorizontalAlignment="Center">
                     <TextBlock Text="{Binding [benchmark.p95], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" FontWeight="{StaticResource FontWeightTitle}"
                                Foreground="{StaticResource StatusWarningBrush}" LetterSpacing="1" HorizontalAlignment="Center"/>
@@ -168,7 +140,7 @@
                 </Border>
 
                 <!-- Min -->
-                <Border Grid.Column="6" Classes="stat-card">
+                <Border Grid.Column="6" Classes="stat-card surface-card">
                   <StackPanel Spacing="4" HorizontalAlignment="Center">
                     <TextBlock Text="{Binding [benchmark.min], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" FontWeight="{StaticResource FontWeightTitle}"
                                Foreground="{StaticResource StatusOkBrush}" LetterSpacing="1" HorizontalAlignment="Center"/>
@@ -181,7 +153,7 @@
                 </Border>
 
                 <!-- Max -->
-                <Border Grid.Column="8" Classes="stat-card">
+                <Border Grid.Column="8" Classes="stat-card surface-card">
                   <StackPanel Spacing="4" HorizontalAlignment="Center">
                     <TextBlock Text="{Binding [benchmark.max], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" FontWeight="{StaticResource FontWeightTitle}"
                                Foreground="{StaticResource StatusErrorBrush}" LetterSpacing="1" HorizontalAlignment="Center"/>
@@ -226,7 +198,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="benchmark:BenchmarkRunResult">
-                    <Border Classes="hist-row">
+                    <Border Classes="hist-row list-row">
                       <Grid ColumnDefinitions="*,70,70,70,70,70,80">
                         <TextBlock Grid.Column="0" Text="{Binding Label}"
                                    FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}"
@@ -274,10 +246,7 @@
       </ScrollViewer>
 
       <Border Grid.Row="2"
-              Background="{StaticResource Bg1Brush}"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="0,1,0,0"
-              CornerRadius="{StaticResource RadiusLGBottom}"
+              Classes="surface-floating-footer"
               Padding="20,10">
         <StackPanel Spacing="8">
           <StackPanel Spacing="5" IsVisible="{Binding IsRunning}">

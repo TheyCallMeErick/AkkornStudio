@@ -170,11 +170,13 @@ public class DbMetadataModelTests
     private readonly DbMetadata _db = MetadataFixtures.EcommerceDb();
 
     [Fact]
-    public void FindTable_ReturnsTable_CaseInsensitive()
+    public void FindTable_Postgres_UsesCaseSensitiveComparison()
     {
-        TableMetadata? t = _db.FindTable("public.Orders");
-        Assert.NotNull(t);
-        Assert.Equal("orders", t!.Name);
+        Assert.Null(_db.FindTable("public.Orders"));
+
+        TableMetadata? exact = _db.FindTable("public.orders");
+        Assert.NotNull(exact);
+        Assert.Equal("orders", exact!.Name);
     }
 
     [Fact]
@@ -186,6 +188,29 @@ public class DbMetadataModelTests
 
     [Fact]
     public void FindTable_Missing_ReturnsNull() => Assert.Null(_db.FindTable("public.nonexistent"));
+
+    [Fact]
+    public void FindTable_NonPostgres_RemainsCaseInsensitive()
+    {
+        var table = MetadataFixtures.Table(
+            "dbo",
+            "Orders",
+            [MetadataFixtures.Col("id", isPk: true, isNullable: false)]
+        );
+        var schema = new SchemaMetadata("dbo", [table]);
+        var db = new DbMetadata(
+            "sample",
+            DatabaseProvider.SqlServer,
+            "SQL Server",
+            DateTimeOffset.UtcNow,
+            [schema],
+            []
+        );
+
+        TableMetadata? resolved = db.FindTable("dbo.orders");
+        Assert.NotNull(resolved);
+        Assert.Equal("Orders", resolved!.Name);
+    }
 
     [Fact]
     public void AllTables_Count_IsCorrect() => Assert.Equal(4, _db.TotalTables);

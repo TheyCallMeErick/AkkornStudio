@@ -212,7 +212,7 @@ public sealed class DdlSchemaImporter
             double baseX = 120 + (gridColumn * tableSpacingX);
             double baseY = 80 + (gridRow * tableSpacingY);
 
-            AddViewSubgraph(view, new Point(baseX, baseY), nodes, connections, viewNodes);
+            AddViewSubgraph(metadata.Provider, view, new Point(baseX, baseY), nodes, connections, viewNodes);
 
             warnings.Add(
                 string.Format(
@@ -328,7 +328,7 @@ public sealed class DdlSchemaImporter
         int fkAdded = 0;
         if (isView)
         {
-            AddViewSubgraph(table, origin, nodes, connections, viewNodes);
+            AddViewSubgraph(metadata.Provider, table, origin, nodes, connections, viewNodes);
         }
         else
         {
@@ -562,6 +562,7 @@ public sealed class DdlSchemaImporter
     }
 
     private static void AddViewSubgraph(
+        DatabaseProvider provider,
         TableMetadata view,
         Point origin,
         ICollection<NodeViewModel> nodes,
@@ -573,11 +574,12 @@ public sealed class DdlSchemaImporter
         viewNode.Parameters["ViewName"] = view.Name;
         viewNode.Parameters["OrReplace"] = "false";
         viewNode.Parameters["IsMaterialized"] = view.Kind == TableKind.MaterializedView ? "true" : "false";
-        viewNode.Parameters["SelectSql"] = "SELECT 1";
+        string selectSql = BuildViewSeedSelectSql(provider, view);
+        viewNode.Parameters["SelectSql"] = selectSql;
 
-        NodeGraph seedGraph = BuildViewSeedSubgraph();
+        NodeGraph seedGraph = BuildViewSeedSubgraph(selectSql);
         viewNode.Parameters[CanvasSerializer.ViewSubgraphParameterKey] = JsonSerializer.Serialize(seedGraph);
-        viewNode.Parameters[CanvasSerializer.ViewFromTableParameterKey] = "(SELECT 1 AS placeholder) view_src";
+        viewNode.Parameters[CanvasSerializer.ViewFromTableParameterKey] = $"({selectSql}) view_src";
 
         NodeViewModel createViewOutputNode = NewNode(NodeType.CreateViewOutput, origin.X + 280, origin.Y);
         Connect(viewNode, "view", createViewOutputNode, "view", connections);
@@ -587,7 +589,7 @@ public sealed class DdlSchemaImporter
         viewNodes[view.FullName] = viewNode;
     }
 
-    private static NodeGraph BuildViewSeedSubgraph()
+    private static NodeGraph BuildViewSeedSubgraph(string selectSql)
     {
         const string queryNodeId = "view_query";
         const string outputNodeId = "view_output";
@@ -602,7 +604,7 @@ public sealed class DdlSchemaImporter
                     PinLiterals: new Dictionary<string, string>(),
                     Parameters: new Dictionary<string, string>
                     {
-                        ["query"] = "SELECT 1 AS placeholder",
+                        ["query"] = selectSql,
                         ["alias"] = "view_src",
                     }),
                 new NodeInstance(
@@ -613,6 +615,35 @@ public sealed class DdlSchemaImporter
             ],
             Connections = [],
             SelectOutputs = []
+        };
+    }
+
+    private static string BuildViewSeedSelectSql(DatabaseProvider provider, TableMetadata view)
+    {
+        IReadOnlyList<ColumnMetadata> columns = view.Columns
+            .OrderBy(static column => column.OrdinalPosition)
+            .ToList();
+
+        if (columns.Count == 0)
+            return "SELECT 1 AS placeholder";
+
+        string projection = string.Join(
+            ", ",
+            columns.Select(column => $"NULL AS {QuoteIdentifier(provider, column.Name)}"));
+        return $"SELECT {projection}";
+    }
+
+    private static string QuoteIdentifier(DatabaseProvider provider, string identifier)
+    {
+        string safeIdentifier = string.IsNullOrWhiteSpace(identifier)
+            ? "column"
+            : identifier.Trim();
+
+        return provider switch
+        {
+            DatabaseProvider.SqlServer => $"[{safeIdentifier.Replace("]", "]]", StringComparison.Ordinal)}]",
+            DatabaseProvider.MySql => $"`{safeIdentifier.Replace("`", "``", StringComparison.Ordinal)}`",
+            _ => $"\"{safeIdentifier.Replace("\"", "\"\"", StringComparison.Ordinal)}\"",
         };
     }
 

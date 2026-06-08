@@ -31,8 +31,9 @@ public class MainWindowSidebarActionsRegressionTests
 
         Assert.DoesNotContain("B(\"ConnectionBadgeBtn\", () =>", source);
         Assert.Contains("CurrentShell.StartMenu.OpenSavedConnectionRequested += OnStartOpenSavedConnectionRequested;", source);
+        Assert.Contains("CurrentShell.StartMenu.OpenSchemaCompareRequested += OnStartOpenSchemaCompareRequested;", source);
         Assert.Contains("vm.ConnectionManager.IsVisible = false;", source);
-        Assert.Contains("CurrentVm.ConnectionManager.IsVisible = false;", source);
+        Assert.DoesNotContain("CurrentVm.ConnectionManager.IsVisible = false;", source);
     }
 
     [Fact]
@@ -45,6 +46,19 @@ public class MainWindowSidebarActionsRegressionTests
         Assert.Contains("private void OnGlobalModalRequested(GlobalModalRequest request)", source);
         Assert.Contains("case GlobalModalKind.ConnectionManager:", source);
         Assert.Contains("case GlobalModalKind.Settings:", source);
+    }
+
+    [Fact]
+    public void MainWindow_ConnectionModule_EnforcesExclusiveManagerBetweenQueryAndDdl()
+    {
+        string source = ReadMainWindowSources();
+
+        Assert.Contains("private void EnsureExclusiveConnectionManager(ConnectionManagerViewModel targetManager)", source);
+        Assert.Contains("EnsureExclusiveConnectionManager(manager);", source);
+        Assert.DoesNotContain("ActiveDiagramSidebar?.EffectiveConnectionManager", source);
+        Assert.Contains("ConnectionManagerViewModel manager = ResolveConnectionManagerForActiveSubscreen();", source);
+        Assert.Contains("queryCanvas.ConnectionManager.IsVisible = false;", source);
+        Assert.Contains("ddlCanvas.ConnectionManager.IsVisible = false;", source);
     }
 
     [Fact]

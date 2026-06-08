@@ -18,6 +18,7 @@ A documentação ativa está dividida em dois níveis:
 - **[CODE_CONVENTIONS.md](CODE_CONVENTIONS.md)** — Convenções de código, naming e estrutura geral
 - **[EXCEPTION_HANDLING_STRATEGY.md](EXCEPTION_HANDLING_STRATEGY.md)** — Estratégia de tratamento de erros e falhas
 - **[SEARCH_FILTERING_GUIDELINE.md](SEARCH_FILTERING_GUIDELINE.md)** — Padrão de busca textual centralizada (fuzzy vs estrito) para UI
+- **[OBSERVABILITY_BASELINE_TEMPLATE.md](OBSERVABILITY_BASELINE_TEMPLATE.md)** - Template operacional de baseline semanal para Onda 0 (OBS-01/OBS-02/OBS-03)
 - **[LIST_RENDERING_PERFORMANCE_GUIDELINE.md](LIST_RENDERING_PERFORMANCE_GUIDELINE.md)** — Regras normativas para listas/listagens performáticas (virtualização, cache, debounce e invalidação)
 - **[MODAL_LAYOUT_GUIDELINE.md](MODAL_LAYOUT_GUIDELINE.md)** — Guideline normativa para estrutura de modais (header + body rolável + footer fixo)
 - **[MODAL_ADOPTION_MAP.md](MODAL_ADOPTION_MAP.md)** — Inventário de modais e status de adoção da guideline
@@ -91,3 +92,8 @@ A documentação ativa está dividida em dois níveis:
 ---
 
 *Última atualização: 15 de abril de 2026*
+
+## Atualizacoes recentes
+
+- 2026-05-08: fluxo de conexao atualizado para modal com cards, logo SVG por provider, cards full-width e busca no picker.
+- 2026-05-08: busca de schema com atalhos (`@`, `#`, `!`, `schema:`, `fk`, `pk`, `idx`) e cobertura de testes de regressao.

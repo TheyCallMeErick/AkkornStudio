@@ -1,6 +1,7 @@
 namespace AkkornStudio.Providers.Dialects;
 
 using AkkornStudio.Core;
+using AkkornStudio.Metadata;
 using AkkornStudio.QueryEngine;
 
 /// <summary>
@@ -83,7 +84,7 @@ public sealed class PostgresDialect : ISqlDialect
         ";
 
     public string WrapWithPreviewLimit(string baseQuery, int maxRows) =>
-        $"{baseQuery} LIMIT {maxRows}";
+        $"{TrimTrailingSemicolon(baseQuery)}\nLIMIT {maxRows}";
 
     public string FormatPagination(int? limit, int? offset)
     {
@@ -123,7 +124,7 @@ public sealed class PostgresDialect : ISqlDialect
     {
         _ = columnComment;
         string quotedName = QuoteIdentifier(columnName);
-        string sqlType = string.IsNullOrWhiteSpace(dataType) ? "integer" : dataType.Trim();
+        string sqlType = NormalizeName(dataType, "data type");
         string nullability = isNullable ? "NULL" : "NOT NULL";
 
         if (string.IsNullOrWhiteSpace(defaultExpression))
@@ -168,6 +169,37 @@ public sealed class PostgresDialect : ISqlDialect
             : $"CONSTRAINT {QuoteIdentifier(constraintName.Trim())} CHECK";
 
         return $"{prefix} ({expression.Trim()})";
+    }
+
+    public string EmitForeignKeyConstraint(
+        string? constraintName,
+        IReadOnlyList<string> childColumns,
+        string parentSchema,
+        string parentTable,
+        IReadOnlyList<string> parentColumns,
+        ReferentialAction onDelete,
+        ReferentialAction onUpdate
+    )
+    {
+        if (childColumns.Count == 0 || parentColumns.Count == 0 || childColumns.Count != parentColumns.Count)
+            throw new InvalidOperationException("Foreign key requires child/parent columns with matching non-zero cardinality.");
+
+        string[] normalizedChildColumns = NormalizeConstraintColumns(childColumns, "Foreign key child");
+        string[] normalizedParentColumns = NormalizeConstraintColumns(parentColumns, "Foreign key parent");
+        string normalizedParentTable = NormalizeName(parentTable, "foreign key parent table");
+        string? normalizedParentSchema = string.IsNullOrWhiteSpace(parentSchema) ? null : parentSchema.Trim();
+
+        string constraintClause = string.IsNullOrWhiteSpace(constraintName)
+            ? string.Empty
+            : $"CONSTRAINT {QuoteIdentifier(constraintName.Trim())} ";
+
+        string parentRef = normalizedParentSchema is null
+            ? QuoteIdentifier(normalizedParentTable)
+            : $"{QuoteIdentifier(normalizedParentSchema)}.{QuoteIdentifier(normalizedParentTable)}";
+        string childColumnsSql = string.Join(", ", normalizedChildColumns.Select(QuoteIdentifier));
+        string parentColumnsSql = string.Join(", ", normalizedParentColumns.Select(QuoteIdentifier));
+
+        return $"{constraintClause}FOREIGN KEY ({childColumnsSql}) REFERENCES {parentRef} ({parentColumnsSql}) ON DELETE {EmitReferentialAction(onDelete)} ON UPDATE {EmitReferentialAction(onUpdate)}";
     }
 
     public string EmitCreateTable(
@@ -365,6 +397,30 @@ public sealed class PostgresDialect : ISqlDialect
         string.IsNullOrWhiteSpace(value)
             ? throw new InvalidOperationException($"{label} is required.")
             : value.Trim();
+
+    private static string[] NormalizeConstraintColumns(IReadOnlyList<string> columns, string label)
+    {
+        var normalized = new string[columns.Count];
+        for (int i = 0; i < columns.Count; i++)
+        {
+            string value = columns[i];
+            if (string.IsNullOrWhiteSpace(value))
+                throw new InvalidOperationException($"{label} columns must not contain blank names.");
+            normalized[i] = value.Trim();
+        }
+
+        return normalized;
+    }
+
+    private static string EmitReferentialAction(ReferentialAction action) =>
+        action switch
+        {
+            ReferentialAction.Cascade => "CASCADE",
+            ReferentialAction.SetNull => "SET NULL",
+            ReferentialAction.SetDefault => "SET DEFAULT",
+            ReferentialAction.Restrict => "RESTRICT",
+            _ => "NO ACTION",
+        };
 
     private static string TrimTrailingSemicolon(string sql)
     {

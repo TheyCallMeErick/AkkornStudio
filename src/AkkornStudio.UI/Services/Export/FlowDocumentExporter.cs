@@ -197,13 +197,37 @@ public static class FlowDocumentExporter
     {
         try
         {
-            string? dir = Path.GetDirectoryName(outputPath);
+            string fullPath = Path.GetFullPath(outputPath);
+            string? dir = Path.GetDirectoryName(fullPath);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
 
             string content = Build(canvas);
-            await File.WriteAllTextAsync(outputPath, content, Encoding.UTF8);
-            return Path.GetFullPath(outputPath);
+            string tempPath = $"{fullPath}.tmp-{Guid.NewGuid():N}";
+            try
+            {
+                await File.WriteAllTextAsync(tempPath, content, Encoding.UTF8);
+                File.Move(tempPath, fullPath, overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(tempPath))
+                {
+                    try
+                    {
+                        File.Delete(tempPath);
+                    }
+                    catch
+                    {
+                        // Best-effort cleanup only.
+                    }
+                }
+            }
+
+            if (!File.Exists(fullPath))
+                return null;
+
+            return fullPath;
         }
         catch
         {

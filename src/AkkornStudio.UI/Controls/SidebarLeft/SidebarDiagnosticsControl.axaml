@@ -17,16 +17,6 @@
 
     <Style Selector="Expander.diag-category">
       <Setter Property="Margin" Value="0,0,0,8"/>
-      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
-      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
-      <Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-    </Style>
-
-    <Style Selector="Expander.diag-category:pointerover">
-      <Setter Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
     </Style>
 
     <Style Selector="Border.diag-item">
@@ -71,10 +61,7 @@
                 Spacing="6"
                 Margin="0,10,0,10">
       <Button Command="{Binding RunChecksCommand}"
-              Classes="secondary"
-              CornerRadius="{StaticResource RadiusSM}"
-              Padding="9,5"
-              FontSize="{StaticResource FontSizeCaption}">
+              Classes="secondary compact">
         <StackPanel Orientation="Horizontal" Spacing="4">
           <mi:MaterialIcon Kind="Refresh" Width="12" Height="12"/>
           <TextBlock Text="{Binding [diagnostics.run], Source={x:Static loc:LocalizationService.Instance}}"/>
@@ -82,10 +69,7 @@
       </Button>
 
       <Button Command="{Binding CopyReportCommand}"
-              Classes="secondary"
-              CornerRadius="{StaticResource RadiusSM}"
-              Padding="9,5"
-              FontSize="{StaticResource FontSizeCaption}">
+              Classes="secondary compact">
         <StackPanel Orientation="Horizontal" Spacing="4">
           <mi:MaterialIcon Kind="ContentCopy" Width="12" Height="12"/>
           <TextBlock Text="{Binding [liveSql.copy], Source={x:Static loc:LocalizationService.Instance}}"/>
@@ -107,7 +91,7 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="appdiag:AppDiagnosticCategoryViewModel">
-            <Expander Classes="diag-category"
+            <Expander Classes="app-accordion diag-category"
                       Width="{Binding #CategoriesItems.Bounds.Width}"
                       IsExpanded="{Binding IsExpanded}">
               <Expander.Header>
@@ -127,9 +111,7 @@
                              VerticalAlignment="Center"/>
                   <Border Grid.Column="2"
                           IsVisible="{Binding HasErrors}"
-                          Background="{StaticResource BtnDangerBgBrush}"
-                          CornerRadius="{StaticResource RadiusPill}"
-                          Padding="6,1"
+                          Classes="badge danger"
                           Margin="0,0,6,0">
                     <TextBlock Text="{Binding ErrorCount}"
                                Foreground="{StaticResource BtnDangerFgBrush}"
@@ -137,9 +119,7 @@
                   </Border>
                   <Border Grid.Column="3"
                           IsVisible="{Binding HasWarnings}"
-                          Background="{StaticResource BtnWarningBgBrush}"
-                          CornerRadius="{StaticResource RadiusPill}"
-                          Padding="6,1"
+                          Classes="badge warning"
                           Margin="0,0,6,0">
                     <TextBlock Text="{Binding WarningCount}"
                                Foreground="{StaticResource BtnWarningFgBrush}"
@@ -219,10 +199,7 @@
                             <Button Grid.Column="1"
                                     IsVisible="{Binding HasFocusAction}"
                                     Command="{Binding FocusCommand}"
-                                    Classes="secondary"
-                                    CornerRadius="{StaticResource RadiusSM}"
-                                    Padding="8,3"
-                                    FontSize="{StaticResource FontSizeCaption}">
+                                    Classes="secondary compact">
                               <StackPanel Orientation="Horizontal" Spacing="4">
                                 <mi:MaterialIcon Kind="CrosshairsGps" Width="10" Height="10"/>
                                 <TextBlock Text="Focar nó"/>

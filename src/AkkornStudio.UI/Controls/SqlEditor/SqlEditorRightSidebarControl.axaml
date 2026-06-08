@@ -18,10 +18,7 @@
                 Padding="10"
                 ClipToBounds="True">
     <StackPanel Spacing="10">
-      <Border Background="{StaticResource Bg2Brush}"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="1"
-              CornerRadius="{StaticResource RadiusMD}"
+      <Border Classes="surface-card"
               Padding="10"
               ClipToBounds="True">
         <StackPanel Spacing="8">
@@ -71,10 +68,7 @@
         </StackPanel>
       </Border>
 
-      <Border Background="{StaticResource Bg2Brush}"
-              BorderBrush="{StaticResource BorderSubtleBrush}"
-              BorderThickness="1"
-              CornerRadius="{StaticResource RadiusMD}"
+      <Border Classes="surface-card"
               Padding="10"
               ClipToBounds="True">
         <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
@@ -89,19 +83,15 @@
 
           <Grid Grid.Row="1" ColumnDefinitions="*,Auto" IsVisible="{Binding HasExecutionHistory}">
             <TextBox Grid.Column="0"
+                     Classes="field"
                      x:Name="HistorySearchTextBox"
                      Watermark="{Binding [sqlEditor.history.searchWatermark], Source={x:Static loc:LocalizationService.Instance}}"
                      Text="{Binding HistorySearchText}"
                      FontSize="{StaticResource FontSizeCaption}"
-                     Background="{StaticResource Bg1Brush}"
-                     Foreground="{StaticResource TextPrimaryBrush}"
-                     BorderBrush="{StaticResource BorderSubtleBrush}"
                      KeyDown="HistorySearchTextBox_KeyDown"/>
             <Button Grid.Column="1"
                     Margin="6,0,0,0"
-                    Padding="10,2"
-                    MinHeight="24"
-                    FontSize="{StaticResource FontSizeCaption}"
+                    Classes="secondary compact"
                     Click="ClearHistorySearchButton_Click">
               <mi:MaterialIcon Kind="BackspaceOutline" Width="14" Height="14"/>
             </Button>
@@ -115,16 +105,13 @@
                        VerticalAlignment="Center"/>
             <Button Grid.Column="1"
                     Content="{Binding ClearHistoryButtonText}"
-                    Padding="10,2"
-                    MinHeight="24"
-                    FontSize="{StaticResource FontSizeCaption}"
+                    Classes="secondary compact"
                     Click="ClearHistoryButton_Click"/>
           </Grid>
 
           <Border Grid.Row="3"
                   IsVisible="{Binding HasExecutionHistory}"
-                  Background="{StaticResource Bg1Brush}"
-                  CornerRadius="{StaticResource RadiusSM}"
+                  Classes="callout-subtle"
                   Padding="8,6">
             <TextBlock Text="{Binding [sqlEditor.history.navigationHint], Source={x:Static loc:LocalizationService.Instance}}"
                        Foreground="{StaticResource TextMutedBrush}"
@@ -162,10 +149,7 @@
               <DataTemplate>
                 <Border Margin="0,0,0,8"
                         Padding="10"
-                        Background="{StaticResource Bg1Brush}"
-                        BorderBrush="{StaticResource BorderSubtleBrush}"
-                        BorderThickness="1"
-                        CornerRadius="{StaticResource RadiusSM}">
+                        Classes="surface-card">
                   <StackPanel Spacing="6">
                     <TextBlock Text="{Binding ExecutedAt}"
                                FontSize="{StaticResource FontSizeCaption}"
@@ -179,19 +163,13 @@
                                Foreground="{StaticResource TextPrimaryBrush}"/>
                     <StackPanel Orientation="Horizontal" Spacing="6">
                       <Button Content="{Binding [sqlEditor.history.use], Source={x:Static loc:LocalizationService.Instance}}"
-                              Padding="10,2"
-                              MinHeight="24"
-                              FontSize="{StaticResource FontSizeCaption}"
+                              Classes="secondary compact"
                               Click="HistoryUseButton_Click"/>
                       <Button Content="{Binding [sqlEditor.history.copy], Source={x:Static loc:LocalizationService.Instance}}"
-                              Padding="10,2"
-                              MinHeight="24"
-                              FontSize="{StaticResource FontSizeCaption}"
+                              Classes="secondary compact"
                               Click="HistoryCopyButton_Click"/>
                       <Button Content="{Binding [sqlEditor.history.run], Source={x:Static loc:LocalizationService.Instance}}"
-                              Padding="10,2"
-                              MinHeight="24"
-                              FontSize="{StaticResource FontSizeCaption}"
+                              Classes="secondary compact"
                               Click="HistoryRunButton_Click"/>
                     </StackPanel>
                   </StackPanel>

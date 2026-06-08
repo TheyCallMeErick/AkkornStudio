@@ -222,4 +222,85 @@ public class AppSettingsStoreTests
                 Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public void SaveAndLoadSqlEditorResultDateTimeDisplaySettings_RoundTripsAndNormalizes()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "vsa-settings-tests", Guid.NewGuid().ToString("N"));
+        string file = Path.Combine(root, "app.settings.json");
+        AppSettingsStore.SettingsPathOverride = file;
+
+        try
+        {
+            AppSettingsStore.SaveSqlEditorResultDateTimeDisplaySettings(new SqlEditorResultDateTimeDisplaySettings
+            {
+                DateOrder = "dmy",
+                DateSeparator = ".",
+                PreferRawValues = true,
+            });
+
+            SqlEditorResultDateTimeDisplaySettings loaded = AppSettingsStore.LoadSqlEditorResultDateTimeDisplaySettings();
+            Assert.Equal("DMY", loaded.DateOrder);
+            Assert.Equal("-", loaded.DateSeparator);
+            Assert.True(loaded.PreferRawValues);
+        }
+        finally
+        {
+            AppSettingsStore.SettingsPathOverride = null;
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SaveSqlEditorResultDateTimeDisplaySettings_RaisesChangedEvent_OnlyWhenEffectiveValueChanges()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "vsa-settings-tests", Guid.NewGuid().ToString("N"));
+        string file = Path.Combine(root, "app.settings.json");
+        AppSettingsStore.SettingsPathOverride = file;
+
+        int raisedCount = 0;
+        SqlEditorResultDateTimeDisplaySettings? raisedSettings = null;
+        EventHandler<SqlEditorResultDateTimeDisplaySettings> handler = (_, settings) =>
+        {
+            raisedCount++;
+            raisedSettings = settings;
+        };
+
+        AppSettingsStore.SqlEditorResultDateTimeDisplaySettingsChanged += handler;
+        try
+        {
+            AppSettingsStore.SaveSqlEditorResultDateTimeDisplaySettings(new SqlEditorResultDateTimeDisplaySettings
+            {
+                DateOrder = "DMY",
+                DateSeparator = "/",
+                PreferRawValues = false,
+            });
+            AppSettingsStore.SaveSqlEditorResultDateTimeDisplaySettings(new SqlEditorResultDateTimeDisplaySettings
+            {
+                DateOrder = "dmy",
+                DateSeparator = "/",
+                PreferRawValues = false,
+            });
+            AppSettingsStore.SaveSqlEditorResultDateTimeDisplaySettings(new SqlEditorResultDateTimeDisplaySettings
+            {
+                DateOrder = "MDY",
+                DateSeparator = "/",
+                PreferRawValues = true,
+            });
+
+            Assert.Equal(2, raisedCount);
+            Assert.NotNull(raisedSettings);
+            Assert.Equal("MDY", raisedSettings!.DateOrder);
+            Assert.Equal("/", raisedSettings.DateSeparator);
+            Assert.True(raisedSettings.PreferRawValues);
+        }
+        finally
+        {
+            AppSettingsStore.SqlEditorResultDateTimeDisplaySettingsChanged -= handler;
+            AppSettingsStore.SettingsPathOverride = null;
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
 }

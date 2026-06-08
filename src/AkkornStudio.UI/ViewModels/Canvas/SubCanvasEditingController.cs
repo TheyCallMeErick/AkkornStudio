@@ -106,6 +106,7 @@ internal sealed class SubCanvasEditingController
     public bool IsInCteEditor => _sessionState.IsActive;
     public bool IsInViewEditor => _sessionState.IsViewEditor;
     public bool IsCanvasDimmedBySubcanvas => IsInViewEditor;
+    public bool HasUnsavedSubEditorChanges => _sessionState.IsActive && _canvas.IsDirty;
 
     public string CteEditorBreadcrumb =>
         _sessionState.Mode switch
@@ -126,6 +127,33 @@ internal sealed class SubCanvasEditingController
         IsInViewEditor
             ? _localizationService["main.viewEditor.exitA11y"]
             : _localizationService["main.cteEditor.exitA11y"];
+
+    public bool AbortActiveEditorSession(bool forceDiscard = false)
+    {
+        if (!_sessionState.IsActive)
+            return true;
+
+        if (HasUnsavedSubEditorChanges && !forceDiscard)
+        {
+            _diagnostics.AddWarning(
+                area: L("diagnostics.area.subEditor", "Sub-editor"),
+                message: L(
+                    "diagnostics.subEditor.unsavedChangesBlocked",
+                    "Unsaved sub-editor changes detected. Use discard-and-exit or finish the editor before leaving."),
+                recommendation: L(
+                    "diagnostics.subEditor.unsavedChangesRecommendation",
+                    "Commit the changes by exiting normally, or use the discard command to leave without saving."),
+                openPanel: true
+            );
+            return false;
+        }
+
+        _sessionState = CanvasSubEditorStateMachine.Exit();
+        _setCteSession?.Invoke(null);
+        _setViewSession?.Invoke(null);
+        _notifyStateChanged();
+        return true;
+    }
 
     public bool CanEnterSelectedCteEditor()
     {
@@ -420,6 +448,9 @@ internal sealed class SubCanvasEditingController
                 graph,
                 fromTable,
                 selectSql);
+            _canvas.NotifyNodeParameterChanged(viewNode, CanvasSerializer.ViewSubgraphParameterKey);
+            _canvas.NotifyNodeParameterChanged(viewNode, CanvasSerializer.ViewFromTableParameterKey);
+            _canvas.NotifyNodeParameterChanged(viewNode, "SelectSql");
         }
 
         ViewSession = null;
@@ -670,7 +701,9 @@ internal sealed class SubCanvasEditingController
             CanvasSerializer.SubqueryInputBridgeNodeId,
             inputBindings.ToList());
 
-        subqueryNode.Parameters[CanvasSerializer.SubquerySubgraphParameterKey] = JsonSerializer.Serialize(saved);
+        UpdateNodeParametersAtomically(
+            subqueryNode,
+            updated => updated[CanvasSerializer.SubquerySubgraphParameterKey] = JsonSerializer.Serialize(saved));
     }
 
     private static void PersistCteSubgraph(
@@ -689,7 +722,9 @@ internal sealed class SubCanvasEditingController
             ResultOutputNodeId: resultOutputNodeId
         );
 
-        cteNode.Parameters[CanvasSerializer.CteSubgraphParameterKey] = JsonSerializer.Serialize(subgraph);
+        UpdateNodeParametersAtomically(
+            cteNode,
+            updated => updated[CanvasSerializer.CteSubgraphParameterKey] = JsonSerializer.Serialize(subgraph));
     }
 
     private static void PersistViewEditorState(
@@ -699,16 +734,44 @@ internal sealed class SubCanvasEditingController
         string? fromTable,
         string? selectSql)
     {
-        viewNode.Parameters[CanvasSerializer.ViewEditorCanvasParameterKey] = editorCanvasJson;
+        UpdateNodeParametersAtomically(
+            viewNode,
+            updated =>
+            {
+                updated[CanvasSerializer.ViewEditorCanvasParameterKey] = editorCanvasJson;
 
-        if (graph is not null)
-            viewNode.Parameters[CanvasSerializer.ViewSubgraphParameterKey] = JsonSerializer.Serialize(graph);
+                if (graph is not null)
+                    updated[CanvasSerializer.ViewSubgraphParameterKey] = JsonSerializer.Serialize(graph);
 
-        if (!string.IsNullOrWhiteSpace(fromTable))
-            viewNode.Parameters[CanvasSerializer.ViewFromTableParameterKey] = fromTable;
+                if (!string.IsNullOrWhiteSpace(fromTable))
+                    updated[CanvasSerializer.ViewFromTableParameterKey] = fromTable;
 
-        if (!string.IsNullOrWhiteSpace(selectSql))
-            viewNode.Parameters["SelectSql"] = selectSql;
+                if (!string.IsNullOrWhiteSpace(selectSql))
+                    updated["SelectSql"] = selectSql;
+            });
+    }
+
+    private static void UpdateNodeParametersAtomically(
+        NodeViewModel node,
+        Action<Dictionary<string, string>> applyChanges)
+    {
+        var original = new Dictionary<string, string>(node.Parameters, node.Parameters.Comparer);
+        try
+        {
+            var updated = new Dictionary<string, string>(original, node.Parameters.Comparer);
+            applyChanges(updated);
+
+            node.Parameters.Clear();
+            foreach (KeyValuePair<string, string> entry in updated)
+                node.Parameters[entry.Key] = entry.Value;
+        }
+        catch
+        {
+            node.Parameters.Clear();
+            foreach (KeyValuePair<string, string> entry in original)
+                node.Parameters[entry.Key] = entry.Value;
+            throw;
+        }
     }
 
     private void RemoveExistingCteQuerySubgraph(NodeViewModel cteNode)
@@ -854,4 +917,3 @@ internal sealed class SubCanvasEditingController
         return string.Equals(value, key, StringComparison.Ordinal) ? fallback : value;
     }
 }
-

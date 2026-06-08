@@ -5,22 +5,11 @@
              x:Class="AkkornStudio.UI.Controls.SqlEditor.SqlEditorTabBar"
              x:DataType="vm:SqlEditorViewModel">
   <UserControl.Styles>
-    <Style Selector="Button.sql-tabbar-button">
-      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
-      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
-      <Setter Property="Cursor" Value="Hand"/>
-    </Style>
-    <Style Selector="Button.sql-tabbar-button:pointerover">
-      <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
-      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryHoverBrush}"/>
-    </Style>
     <Style Selector="Border.sql-tab-chip">
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusXS}"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
       <Setter Property="Padding" Value="12,6"/>
       <Setter Property="Margin" Value="0,0,8,0"/>
-      <Setter Property="Background" Value="{StaticResource Bg0Brush}"/>
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
       <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
       <Setter Property="BorderThickness" Value="1"/>
     </Style>
@@ -30,14 +19,12 @@
     </Style>
   </UserControl.Styles>
 
-  <Border Background="{StaticResource Bg1Brush}"
-          BorderBrush="{StaticResource BorderSubtleBrush}"
-          BorderThickness="0,0,0,1"
+  <Border Classes="surface-panel"
           Padding="10,8"
           ClipToBounds="True">
     <DockPanel LastChildFill="True">
       <Button DockPanel.Dock="Right"
-              Classes="sql-tabbar-button"
+              Classes="tb"
               Width="30"
               Height="26"
               Margin="8,0,0,0"
@@ -84,7 +71,7 @@
                              FontSize="{StaticResource FontSizeBody}"
                              FontWeight="{StaticResource FontWeightTitle}"
                              Foreground="{StaticResource TextPrimaryBrush}"/>
-                  <Button Classes="sql-tabbar-button"
+                  <Button Classes="icon-ghost"
                           Width="18"
                           Height="18"
                           Padding="0"

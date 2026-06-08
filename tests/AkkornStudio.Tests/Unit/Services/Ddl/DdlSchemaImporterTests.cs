@@ -90,14 +90,15 @@ public class DdlSchemaImporterTests
         NodeViewModel viewNode = Assert.Single(canvas.Nodes, n => n.Type == NodeType.ViewDefinition);
         Assert.Single(canvas.Nodes, n => n.Type == NodeType.CreateViewOutput);
         Assert.Equal("v_orders", viewNode.Parameters["ViewName"]);
-        Assert.Equal("SELECT 1", viewNode.Parameters["SelectSql"]);
+        Assert.Equal("SELECT NULL AS \"id\"", viewNode.Parameters["SelectSql"]);
         Assert.True(viewNode.Parameters.TryGetValue(CanvasSerializer.ViewSubgraphParameterKey, out string? subgraphJson));
         Assert.False(string.IsNullOrWhiteSpace(subgraphJson));
         NodeGraph? subgraph = JsonSerializer.Deserialize<NodeGraph>(subgraphJson!);
         Assert.NotNull(subgraph);
-        Assert.Contains(subgraph!.Nodes, n => n.Type == NodeType.Subquery);
+        NodeInstance subquery = Assert.Single(subgraph!.Nodes, n => n.Type == NodeType.Subquery);
+        Assert.Equal("SELECT NULL AS \"id\"", subquery.Parameters["query"]);
         Assert.Contains(subgraph.Nodes, n => n.Type == NodeType.ResultOutput);
-        Assert.Equal("(SELECT 1 AS placeholder) view_src", viewNode.Parameters[CanvasSerializer.ViewFromTableParameterKey]);
+        Assert.Equal("(SELECT NULL AS \"id\") view_src", viewNode.Parameters[CanvasSerializer.ViewFromTableParameterKey]);
         Assert.Contains(result.Warnings ?? [], w => w.Contains("v_orders", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -122,7 +123,29 @@ public class DdlSchemaImporterTests
         NodeGraph? subgraph = JsonSerializer.Deserialize<NodeGraph>(payload);
         Assert.NotNull(subgraph);
         NodeInstance subquery = Assert.Single(subgraph!.Nodes, n => n.Type == NodeType.Subquery);
-        Assert.Equal("SELECT 1 AS placeholder", subquery.Parameters["query"]);
+        Assert.Equal("SELECT NULL AS \"id\"", subquery.Parameters["query"]);
+    }
+
+    [Fact]
+    public void Import_WithViewColumns_PreservesColumnShapeInEditableSubcanvas()
+    {
+        DbMetadata metadata = BuildMetadataWithView(
+            new ColumnMetadata("id", "int", "int", false, false, false, false, false, 1),
+            new ColumnMetadata("order_status", "text", "text", true, false, false, false, false, 2)
+        );
+        var canvas = new CanvasViewModel();
+        var importer = new DdlSchemaImporter();
+
+        importer.Import(metadata, canvas);
+
+        NodeViewModel viewNode = Assert.Single(canvas.Nodes, n => n.Type == NodeType.ViewDefinition);
+        Assert.Equal("SELECT NULL AS \"id\", NULL AS \"order_status\"", viewNode.Parameters["SelectSql"]);
+
+        string payload = viewNode.Parameters[CanvasSerializer.ViewSubgraphParameterKey];
+        NodeGraph? subgraph = JsonSerializer.Deserialize<NodeGraph>(payload);
+        Assert.NotNull(subgraph);
+        NodeInstance subquery = Assert.Single(subgraph!.Nodes, n => n.Type == NodeType.Subquery);
+        Assert.Equal("SELECT NULL AS \"id\", NULL AS \"order_status\"", subquery.Parameters["query"]);
     }
 
     [Fact]
@@ -255,14 +278,16 @@ public class DdlSchemaImporterTests
         );
     }
 
-    private static DbMetadata BuildMetadataWithView()
+    private static DbMetadata BuildMetadataWithView(params ColumnMetadata[]? columns)
     {
         TableMetadata view = new(
             Schema: "public",
             Name: "v_orders",
             Kind: TableKind.View,
             EstimatedRowCount: null,
-            Columns: [new ColumnMetadata("id", "int", "int", false, false, false, false, false, 1)],
+            Columns: columns is { Length: > 0 }
+                ? columns
+                : [new ColumnMetadata("id", "int", "int", false, false, false, false, false, 1)],
             Indexes: [],
             OutboundForeignKeys: [],
             InboundForeignKeys: []

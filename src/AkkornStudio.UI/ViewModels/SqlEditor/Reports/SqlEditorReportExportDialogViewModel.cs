@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Linq;
+using AkkornStudio.UI.Extensions;
 using AkkornStudio.UI.Services.Localization;
 
 namespace AkkornStudio.UI.ViewModels;
@@ -11,10 +11,13 @@ public sealed class SqlEditorReportExportDialogViewModel : ViewModelBase
     private string _fileName;
     private string _title;
     private string _description;
+    private SqlEditorReportTypeOption? _lastSelectedType;
     private bool _includeSchema;
-    private bool _includeNodeDetails;
-    private bool _includeMetadata;
-    private bool _useDashForEmptyFields;
+    private bool _includeSql;
+    private bool _includeLineage;
+    private SqlEditorReportExportProfile _profile;
+    private SqlEditorReportMetadataLevel _metadataLevel;
+    private SqlEditorReportEmptyValueDisplayMode _emptyValueDisplayMode;
 
     public SqlEditorReportExportDialogViewModel(string defaultTitle)
     {
@@ -47,12 +50,16 @@ public sealed class SqlEditorReportExportDialogViewModel : ViewModelBase
         ];
 
         _selectedType = ReportTypes[0];
+        _lastSelectedType = _selectedType;
         _fileName = BuildSuggestedFileName(sanitizedTitle, _selectedType.DefaultExtension);
         _title = sanitizedTitle;
         _description = string.Empty;
         _includeSchema = true;
-        _includeMetadata = false;
-        _useDashForEmptyFields = false;
+        _includeSql = true;
+        _includeLineage = false;
+        _profile = SqlEditorReportExportProfile.Technical;
+        _metadataLevel = SqlEditorReportMetadataLevel.Essential;
+        _emptyValueDisplayMode = SqlEditorReportEmptyValueDisplayMode.Blank;
     }
 
     public ObservableCollection<SqlEditorReportTypeOption> ReportTypes { get; }
@@ -65,12 +72,17 @@ public sealed class SqlEditorReportExportDialogViewModel : ViewModelBase
             if (!Set(ref _selectedType, value) || value is null)
                 return;
 
-            FileName = EnsureExtension(FileName, value.DefaultExtension);
+            string previousExtension = _lastSelectedType?.DefaultExtension ?? value.DefaultExtension;
+            FileName = FileName.EnsureExtension(previousExtension, value.DefaultExtension);
+            _lastSelectedType = value;
+
+            ApplyTypeDefaults(value.Type);
             RaisePropertyChanged(nameof(ShowOptions));
             RaisePropertyChanged(nameof(ShowIncludeSchema));
-            RaisePropertyChanged(nameof(ShowIncludeMetadata));
-            RaisePropertyChanged(nameof(ShowUseDashForEmptyFields));
-            RaisePropertyChanged(nameof(ShowIncludeNodeDetails));
+            RaisePropertyChanged(nameof(ShowProfileOptions));
+            RaisePropertyChanged(nameof(ShowMetadataOptions));
+            RaisePropertyChanged(nameof(ShowSqlOptions));
+            RaisePropertyChanged(nameof(ShowLineageOptions));
             RaisePropertyChanged(nameof(CanConfirm));
         }
     }
@@ -111,33 +123,47 @@ public sealed class SqlEditorReportExportDialogViewModel : ViewModelBase
         set => Set(ref _includeSchema, value);
     }
 
-    public bool IncludeNodeDetails
+    public bool IncludeSql
     {
-        get => _includeNodeDetails;
-        set => Set(ref _includeNodeDetails, value);
+        get => _includeSql;
+        set => Set(ref _includeSql, value);
     }
 
-    public bool IncludeMetadata
+    public bool IncludeLineage
     {
-        get => _includeMetadata;
-        set => Set(ref _includeMetadata, value);
+        get => _includeLineage;
+        set => Set(ref _includeLineage, value);
     }
 
-    public bool UseDashForEmptyFields
+    public SqlEditorReportExportProfile Profile
     {
-        get => _useDashForEmptyFields;
-        set => Set(ref _useDashForEmptyFields, value);
+        get => _profile;
+        set => Set(ref _profile, value);
+    }
+
+    public SqlEditorReportMetadataLevel MetadataLevel
+    {
+        get => _metadataLevel;
+        set => Set(ref _metadataLevel, value);
+    }
+
+    public SqlEditorReportEmptyValueDisplayMode EmptyValueDisplayMode
+    {
+        get => _emptyValueDisplayMode;
+        set => Set(ref _emptyValueDisplayMode, value);
     }
 
     public bool ShowOptions => SelectedType?.Type is SqlEditorReportType.HtmlFullFeature or SqlEditorReportType.JsonContract;
 
     public bool ShowIncludeSchema => SelectedType?.Type is SqlEditorReportType.HtmlFullFeature or SqlEditorReportType.JsonContract;
 
-    public bool ShowIncludeMetadata => SelectedType?.Type is SqlEditorReportType.HtmlFullFeature or SqlEditorReportType.JsonContract;
+    public bool ShowProfileOptions => SelectedType?.Type is SqlEditorReportType.HtmlFullFeature or SqlEditorReportType.JsonContract;
 
-    public bool ShowUseDashForEmptyFields => SelectedType?.Type is SqlEditorReportType.HtmlFullFeature or SqlEditorReportType.JsonContract;
+    public bool ShowMetadataOptions => SelectedType?.Type is SqlEditorReportType.HtmlFullFeature or SqlEditorReportType.JsonContract;
 
-    public bool ShowIncludeNodeDetails => SelectedType?.Type == SqlEditorReportType.JsonContract;
+    public bool ShowSqlOptions => SelectedType?.Type is SqlEditorReportType.HtmlFullFeature or SqlEditorReportType.JsonContract;
+
+    public bool ShowLineageOptions => SelectedType?.Type == SqlEditorReportType.JsonContract;
 
     public bool CanConfirm =>
         SelectedType is not null
@@ -154,34 +180,68 @@ public sealed class SqlEditorReportExportDialogViewModel : ViewModelBase
             FilePath: filePath,
             Title: string.IsNullOrWhiteSpace(Title) ? L("sqlEditor.export.defaultTitle", "Relatorio SQL") : Title.Trim(),
             Description: string.IsNullOrWhiteSpace(Description) ? string.Empty : Description.Trim(),
+            Profile: Profile,
+            MetadataLevel: MetadataLevel,
+            EmptyValueDisplayMode: EmptyValueDisplayMode,
             IncludeSchema: IncludeSchema,
-            IncludeNodeDetails: IncludeNodeDetails,
-            IncludeMetadata: IncludeMetadata,
-            UseDashForEmptyFields: UseDashForEmptyFields);
+            IncludeSql: IncludeSql,
+            IncludeLineage: IncludeLineage);
     }
 
     public string SuggestedExtension => SelectedType?.DefaultExtension ?? "html";
 
-    private static string BuildSuggestedFileName(string title, string extension)
+    public void SlugifyTitleIntoFileName()
     {
-        string safeBase = string.Concat(title.Select(ch =>
-            char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '_'));
-
-        if (string.IsNullOrWhiteSpace(safeBase))
-            safeBase = "report";
-
-        return EnsureExtension(safeBase, extension);
+        string extension = SuggestedExtension;
+        string slug = Title.ToSlugCase();
+        FileName = (string.IsNullOrWhiteSpace(slug) ? "report" : slug).EnsureExtension(extension);
     }
 
-    private static string EnsureExtension(string fileName, string extension)
+    public void ApplyTitleTransform(string mode)
     {
-        string normalizedFileName = string.IsNullOrWhiteSpace(fileName) ? "report" : fileName.Trim();
-        string normalizedExtension = extension.TrimStart('.');
+        Title = Title.TransformText(mode);
+    }
 
-        if (normalizedFileName.EndsWith($".{normalizedExtension}", StringComparison.OrdinalIgnoreCase))
-            return normalizedFileName;
+    public void ApplyFileNameTransform(string mode)
+    {
+        string extension = Path.GetExtension(FileName);
+        string baseName = Path.GetFileNameWithoutExtension(FileName);
+        string transformed = baseName.TransformText(mode);
+        string nextBase = string.IsNullOrWhiteSpace(transformed) ? "report" : transformed;
+        FileName = string.IsNullOrWhiteSpace(extension)
+            ? nextBase
+            : nextBase + extension.ToLowerInvariant();
+    }
 
-        return Path.GetFileNameWithoutExtension(normalizedFileName) + "." + normalizedExtension;
+    private static string BuildSuggestedFileName(string title, string extension)
+    {
+        return title.ToSafeFileBase().EnsureExtension(extension);
+    }
+
+    private void ApplyTypeDefaults(SqlEditorReportType reportType)
+    {
+        switch (reportType)
+        {
+            case SqlEditorReportType.HtmlFullFeature:
+                IncludeSchema = true;
+                IncludeSql = true;
+                IncludeLineage = false;
+                if (MetadataLevel == SqlEditorReportMetadataLevel.None)
+                    MetadataLevel = SqlEditorReportMetadataLevel.Essential;
+                break;
+            case SqlEditorReportType.JsonContract:
+                IncludeSchema = true;
+                IncludeSql = true;
+                IncludeLineage = false;
+                break;
+            case SqlEditorReportType.CsvData:
+            case SqlEditorReportType.ExcelWorkbook:
+                IncludeSchema = false;
+                IncludeSql = false;
+                IncludeLineage = false;
+                MetadataLevel = SqlEditorReportMetadataLevel.None;
+                break;
+        }
     }
 
     private static string L(string key, string fallback)

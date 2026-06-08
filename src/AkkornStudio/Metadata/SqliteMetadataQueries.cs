@@ -39,7 +39,7 @@ public sealed class SqliteMetadataQueries : IMetadataQueryProvider
 
     public string GetForeignKeysQuery() => @"
         SELECT
-            'id' as id,
+            from as id,
             table as fk_table_name,
             from as from_column,
             to as to_column
@@ -68,13 +68,29 @@ public sealed class SqliteMetadataQueries : IMetadataQueryProvider
                 Name: row.Field<string>(0) ?? string.Empty,
                 DataType: NormalizeSqliteType(row.Field<string>(1)),
                 IsNullable: row.Field<string>(2) == "YES",
-                MaxLength: row.IsNull(3) ? null : (int?)row.Field<long?>(3),
+                MaxLength: ParseMaxLength(row),
                 IsPrimaryKey: row.Field<int>(4) == 1,
                 IsForeignKey: false, // Foreign key detection handled separately
                 ForeignKeyTable: null
             ));
         }
         return columns;
+    }
+
+    private static int? ParseMaxLength(DataRow row)
+    {
+        if (row.IsNull(3))
+            return null;
+
+        long raw = row.Field<long>(3);
+
+        if (raw < int.MinValue || raw > int.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"SQLite max_length '{raw}' is outside supported Int32 range.");
+        }
+
+        return (int)raw;
     }
 
     /// <summary>

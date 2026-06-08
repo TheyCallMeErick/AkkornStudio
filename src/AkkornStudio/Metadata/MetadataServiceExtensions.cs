@@ -49,7 +49,8 @@ public static class MetadataServiceExtensions
             ActiveConnectionContext ctx = sp.GetRequiredService<ActiveConnectionContext>();
             ILogger<MetadataService>? logger = sp.GetService<ILogger<MetadataService>>();
             IOptions<MetadataServiceOptions>? options = sp.GetService<IOptions<MetadataServiceOptions>>();
-            IDatabaseInspectorFactory? inspectorFactory = sp.GetService<IDatabaseInspectorFactory>();
+            IDatabaseInspectorFactory inspectorFactory = sp.GetService<IDatabaseInspectorFactory>()
+                ?? DatabaseInspectorFactory.CreateDefault();
             ICanvasTableTracker? canvasTableTracker = sp.GetService<ICanvasTableTracker>();
             IJoinSuggestionEngine? joinSuggestionEngine = sp.GetService<IJoinSuggestionEngine>();
             IMetadataSnapshotCache? snapshotCache = intelligenceOptions.SnapshotCacheFactory?.Invoke(sp);
@@ -58,15 +59,16 @@ public static class MetadataServiceExtensions
             ConnectionConfig config =
                 ctx.Config ?? throw new InvalidOperationException("No active connection configured");
 
-            return MetadataService.Create(
-                config,
+            return new MetadataService(
+                inspectorFactory.Create(config),
                 options,
                 logger,
-                inspectorFactory,
                 canvasTableTracker,
                 joinSuggestionEngine,
-                snapshotCache
-            );
+                snapshotCache,
+                inspectorFactory,
+                connectionConfigResolver: () => ctx.Config,
+                initialInspectorBindingConfig: config);
         });
 
         return services;

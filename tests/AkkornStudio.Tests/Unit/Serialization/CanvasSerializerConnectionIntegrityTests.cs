@@ -67,4 +67,55 @@ public class CanvasSerializerConnectionIntegrityTests
         Assert.NotNull(result.Warnings);
         Assert.Contains(result.Warnings!, w => w.Contains("malformed connection", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void Deserialize_WhenAllConnectionsReferenceMissingNodes_AddsUnresolvedConnectionWarning()
+    {
+        var vm = new CanvasViewModel();
+
+        string unresolvedJson =
+            """
+            {
+              "Version": 3,
+              "DatabaseProvider": "Postgres",
+              "ConnectionName": "test",
+              "Zoom": 1.0,
+              "PanX": 0.0,
+              "PanY": 0.0,
+              "Nodes": [
+                {
+                  "NodeId": "n1",
+                  "NodeType": "TableSource",
+                  "X": 0,
+                  "Y": 0,
+                  "Alias": null,
+                  "TableFullName": "public.orders",
+                  "Parameters": {},
+                  "PinLiterals": {},
+                  "Columns": [
+                    { "Name": "id", "Type": "Integer" }
+                  ]
+                }
+              ],
+              "Connections": [
+                {
+                  "FromNodeId": "missing_node_a",
+                  "FromPinName": "id",
+                  "ToNodeId": "missing_node_b",
+                  "ToPinName": "id"
+                }
+              ],
+              "SelectBindings": [],
+              "WhereBindings": []
+            }
+            """;
+
+        CanvasLoadResult result = CanvasSerializer.Deserialize(unresolvedJson, vm);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Warnings);
+        Assert.Contains(result.Warnings!, w =>
+            w.Contains("reference missing nodes or pins", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(vm.Connections);
+    }
 }

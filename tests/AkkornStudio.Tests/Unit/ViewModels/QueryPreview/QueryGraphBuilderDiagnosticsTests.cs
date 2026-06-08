@@ -33,7 +33,9 @@ public class QueryGraphBuilderDiagnosticsTests
         var sut = new QueryGraphBuilder(canvas, DatabaseProvider.SQLite);
 
         (string sqlWithLegacy, List<string> errors) = sut.BuildSql();
-        (string sqlWithDiagnostics, List<PreviewDiagnostic> diagnostics) = sut.BuildSqlWithDiagnostics();
+        QuerySqlBuildResult diagnosticResult = sut.BuildSqlWithDiagnostics();
+        string sqlWithDiagnostics = diagnosticResult.PreviewSql;
+        List<PreviewDiagnostic> diagnostics = diagnosticResult.Diagnostics;
 
         Assert.Equal(sqlWithLegacy, sqlWithDiagnostics);
         Assert.Equal(errors, diagnostics.Select(d => d.Message).ToList());
@@ -67,7 +69,7 @@ public class QueryGraphBuilderDiagnosticsTests
 
         var sut = new QueryGraphBuilder(canvas, DatabaseProvider.Postgres);
 
-        (_, List<PreviewDiagnostic> diagnostics) = sut.BuildSqlWithDiagnostics();
+        List<PreviewDiagnostic> diagnostics = sut.BuildSqlWithDiagnostics().Diagnostics;
 
         PreviewDiagnostic ambiguity = Assert.Single(
             diagnostics,
@@ -98,7 +100,7 @@ public class QueryGraphBuilderDiagnosticsTests
 
         var sut = new QueryGraphBuilder(canvas, DatabaseProvider.Postgres);
 
-        (_, List<PreviewDiagnostic> diagnostics) = sut.BuildSqlWithDiagnostics();
+        List<PreviewDiagnostic> diagnostics = sut.BuildSqlWithDiagnostics().Diagnostics;
 
         Assert.Contains(diagnostics, d =>
             d.Message.Contains("reachable dataset source", StringComparison.OrdinalIgnoreCase));
@@ -127,7 +129,7 @@ public class QueryGraphBuilderDiagnosticsTests
 
         var sut = new QueryGraphBuilder(canvas, DatabaseProvider.Postgres);
 
-        (_, List<PreviewDiagnostic> diagnostics) = sut.BuildSqlWithDiagnostics();
+        List<PreviewDiagnostic> diagnostics = sut.BuildSqlWithDiagnostics().Diagnostics;
 
         Assert.Contains(diagnostics, d =>
             d.Message.Contains("no resolvable JOIN path", StringComparison.OrdinalIgnoreCase));
@@ -165,7 +167,7 @@ public class QueryGraphBuilderDiagnosticsTests
 
         var sut = new QueryGraphBuilder(canvas, DatabaseProvider.Postgres);
 
-        (_, List<PreviewDiagnostic> diagnostics) = sut.BuildSqlWithDiagnostics();
+        List<PreviewDiagnostic> diagnostics = sut.BuildSqlWithDiagnostics().Diagnostics;
 
         Assert.DoesNotContain(diagnostics, d =>
             d.Message.Contains("no resolvable JOIN path", StringComparison.OrdinalIgnoreCase));

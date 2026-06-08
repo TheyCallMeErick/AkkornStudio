@@ -58,6 +58,10 @@ public sealed class SqlEditorResultStateService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(5)
             .ToList();
+        IReadOnlyDictionary<string, int> failureByCategory = results
+            .Where(result => !result.Success && result.ErrorCategory != SqlExecutionErrorCategory.None)
+            .GroupBy(result => result.ErrorCategory.ToString(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
 
         return new SqlEditorExecutionTelemetry
         {
@@ -66,6 +70,7 @@ public sealed class SqlEditorResultStateService
             FailureCount = failureCount,
             TotalDurationMs = totalMs,
             ErrorMessages = errors,
+            FailureByCategory = failureByCategory,
         };
     }
 

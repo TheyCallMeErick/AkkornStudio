@@ -23,20 +23,13 @@
 
   <!-- ══ Card ═══════════════════════════════════════════════════════════════ -->
   <Border Width="560"
-          CornerRadius="{StaticResource RadiusLG}"
-          Background="{StaticResource CanvasBgBrush}"
-          BorderBrush="{StaticResource BorderSoftBrush}"
-          BorderThickness="1"
-          BoxShadow="{StaticResource PanelShadow}">
+          Classes="surface-floating">
 
     <StackPanel>
 
       <!-- ── Header ────────────────────────────────────────────────────────── -->
       <Border Padding="16,14"
-              Background="{StaticResource Bg0Brush}"
-              CornerRadius="{StaticResource RadiusLGTop}"
-              BorderBrush="{StaticResource BorderSoftBrush}"
-              BorderThickness="0,0,0,1">
+              Classes="surface-floating-header">
 
         <Grid ColumnDefinitions="Auto,*,Auto">
 
@@ -79,17 +72,13 @@
                      FontWeight="{StaticResource FontWeightHeading}"
                      Foreground="{StaticResource TextMutedBrush}"
                      LetterSpacing="1.5"/>
-          <TextBox Text="{Binding SqlInput, Mode=TwoWay}"
+          <TextBox Classes="field"
+                   Text="{Binding SqlInput, Mode=TwoWay}"
                    AcceptsReturn="True"
                    MinHeight="120"
                    MaxHeight="200"
                    FontFamily="{StaticResource MonoFont}"
                    FontSize="{StaticResource FontSizeBody}"
-                   Foreground="{StaticResource StatusOkBrush}"
-                   Background="{StaticResource Bg0Brush}"
-                   BorderBrush="{StaticResource BorderBrush}"
-                   BorderThickness="1"
-                   CornerRadius="{StaticResource RadiusSM}"
                    Padding="10,8"
                    Watermark="{Binding [sqlImporter.watermark], Source={x:Static loc:LocalizationService.Instance}}"
                    TextWrapping="Wrap"
@@ -108,19 +97,19 @@
                        FontSize="{StaticResource FontSizeCaption}"
                        Foreground="{StaticResource TextMutedBrush}"
                        VerticalAlignment="Center"/>
-            <Border Background="{StaticResource BtnSuccessBgBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1" Margin="2,0">
+            <Border Classes="badge success" Padding="4,1" Margin="2,0">
               <TextBlock Text="{Binding [sql.keyword.select], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource StatusOkBrush}"/>
             </Border>
-            <Border Background="{StaticResource BtnSuccessBgBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1" Margin="2,0">
+            <Border Classes="badge success" Padding="4,1" Margin="2,0">
               <TextBlock Text="{Binding [sql.keyword.from], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource StatusOkBrush}"/>
             </Border>
-            <Border Background="{StaticResource BtnSuccessBgBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1" Margin="2,0">
+            <Border Classes="badge success" Padding="4,1" Margin="2,0">
               <TextBlock Text="{Binding [sql.keyword.join], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource StatusOkBrush}"/>
             </Border>
-            <Border Background="{StaticResource BtnSuccessBgBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1" Margin="2,0">
+            <Border Classes="badge success" Padding="4,1" Margin="2,0">
               <TextBlock Text="{Binding [sql.keyword.where], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource StatusOkBrush}"/>
             </Border>
-            <Border Background="{StaticResource BtnSuccessBgBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="4,1" Margin="2,0">
+            <Border Classes="badge success" Padding="4,1" Margin="2,0">
               <TextBlock Text="{Binding [sql.keyword.limit], Source={x:Static loc:LocalizationService.Instance}}" FontSize="{StaticResource FontSizeCaption}" FontFamily="{StaticResource MonoFont}" Foreground="{StaticResource StatusOkBrush}"/>
             </Border>
           </WrapPanel>
@@ -157,10 +146,7 @@
       <!-- ── Clear canvas confirmation ─────────────────────────────────────── -->
       <Border Padding="14,0,14,12"
               IsVisible="{Binding IsClearCanvasConfirmationVisible}">
-        <Border Background="{StaticResource BtnWarningBgBrush}"
-                BorderBrush="{StaticResource StatusWarningBrush}"
-                BorderThickness="1"
-                CornerRadius="{StaticResource RadiusSM}"
+        <Border Classes="callout-subtle warning"
                 Padding="10,8">
           <StackPanel Spacing="8">
             <TextBlock Text="{Binding [sqlImporter.confirmClearCanvas], Source={x:Static loc:LocalizationService.Instance}}"
@@ -194,7 +180,7 @@
                      Margin="0,6,0,2"/>
 
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
-            <Border Background="{StaticResource BtnSuccessBgBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="6,2">
+            <Border Classes="badge success" Padding="6,2">
               <TextBlock
                          FontSize="{StaticResource FontSizeCaption}"
                          Foreground="{StaticResource StatusOkBrush}"
@@ -207,7 +193,7 @@
                 </TextBlock.Text>
               </TextBlock>
             </Border>
-            <Border Background="{StaticResource BtnWarningBgBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="6,2">
+            <Border Classes="badge warning" Padding="6,2">
               <TextBlock
                          FontSize="{StaticResource FontSizeCaption}"
                          Foreground="{StaticResource StatusWarningBrush}"
@@ -220,7 +206,7 @@
                 </TextBlock.Text>
               </TextBlock>
             </Border>
-            <Border Background="{StaticResource BtnDangerBgBrush}" CornerRadius="{StaticResource RadiusXS}" Padding="6,2">
+            <Border Classes="badge danger" Padding="6,2">
               <TextBlock
                          FontSize="{StaticResource FontSizeCaption}"
                          Foreground="{StaticResource StatusErrorBrush}"

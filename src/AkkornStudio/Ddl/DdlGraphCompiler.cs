@@ -174,20 +174,20 @@ public sealed partial class DdlGraphCompiler(NodeGraph graph, DatabaseProvider p
                             .Where(static node => node.Type == NodeType.ColumnDefinition)
                             .ToList();
 
-                        if (childColumnNodes.Count != 1 || parentColumnNodes.Count != 1)
+                        if (childColumnNodes.Count == 0
+                            || parentColumnNodes.Count == 0
+                            || childColumnNodes.Count != parentColumnNodes.Count)
                         {
                             AddWarning(
                                 "W-DDL-FOREIGNKEY-UNSUPPORTED-SHAPE",
-                                "ForeignKeyConstraint must connect exactly one child column and one parent column in this phase.",
+                                "ForeignKeyConstraint requires same non-zero number of child and parent columns.",
                                 constraintNode.Id
                             );
                             break;
                         }
 
-                        NodeInstance childColumnNode = childColumnNodes[0];
-                        NodeInstance parentColumnNode = parentColumnNodes[0];
-                        NodeInstance? childTableNode = ResolveOwnerTableDefinition(childColumnNode);
-                        NodeInstance? parentTableNode = ResolveOwnerTableDefinition(parentColumnNode);
+                        NodeInstance? childTableNode = ResolveOwnerTableDefinition(childColumnNodes[0]);
+                        NodeInstance? parentTableNode = ResolveOwnerTableDefinition(parentColumnNodes[0]);
                         if (childTableNode is null
                             || parentTableNode is null
                             || !string.Equals(childTableNode.Id, tableNode.Id, StringComparison.Ordinal))
@@ -200,17 +200,57 @@ public sealed partial class DdlGraphCompiler(NodeGraph graph, DatabaseProvider p
                             break;
                         }
 
-                        string childColumn = ReadParam(childColumnNode, "ColumnName", "");
-                        string parentColumn = ReadParam(parentColumnNode, "ColumnName", "");
+                        var childColumns = new List<string>(childColumnNodes.Count);
+                        var parentColumns = new List<string>(parentColumnNodes.Count);
+                        for (int pairIndex = 0; pairIndex < childColumnNodes.Count; pairIndex++)
+                        {
+                            NodeInstance childNode = childColumnNodes[pairIndex];
+                            NodeInstance parentNode = parentColumnNodes[pairIndex];
+                            NodeInstance? resolvedChildOwner = ResolveOwnerTableDefinition(childNode);
+                            NodeInstance? resolvedParentOwner = ResolveOwnerTableDefinition(parentNode);
+                            if (resolvedChildOwner is null
+                                || resolvedParentOwner is null
+                                || !string.Equals(resolvedChildOwner.Id, childTableNode.Id, StringComparison.Ordinal)
+                                || !string.Equals(resolvedParentOwner.Id, parentTableNode.Id, StringComparison.Ordinal))
+                            {
+                                AddWarning(
+                                    "W-DDL-FOREIGNKEY-UNSUPPORTED-SHAPE",
+                                    "ForeignKeyConstraint could not resolve stable ownership for all composite pairs.",
+                                    constraintNode.Id
+                                );
+                                childColumns.Clear();
+                                parentColumns.Clear();
+                                break;
+                            }
+
+                            string childColumnName = ReadParam(childNode, "ColumnName", "");
+                            string parentColumnName = ReadParam(parentNode, "ColumnName", "");
+                            if (string.IsNullOrWhiteSpace(childColumnName) || string.IsNullOrWhiteSpace(parentColumnName))
+                            {
+                                AddWarning(
+                                    "W-DDL-FOREIGNKEY-UNSUPPORTED-SHAPE",
+                                    "ForeignKeyConstraint could not resolve child/parent column names for composite FK emission.",
+                                    constraintNode.Id
+                                );
+                                childColumns.Clear();
+                                parentColumns.Clear();
+                                break;
+                            }
+
+                            childColumns.Add(childColumnName);
+                            parentColumns.Add(parentColumnName);
+                        }
+
+                        if (childColumns.Count == 0 || parentColumns.Count == 0)
+                            break;
+
                         string parentSchema = ReadParam(parentTableNode, "SchemaName", "dbo");
                         string parentTable = ReadParam(parentTableNode, "TableName", "");
-                        if (string.IsNullOrWhiteSpace(childColumn)
-                            || string.IsNullOrWhiteSpace(parentColumn)
-                            || string.IsNullOrWhiteSpace(parentTable))
+                        if (string.IsNullOrWhiteSpace(parentTable))
                         {
                             AddWarning(
                                 "W-DDL-FOREIGNKEY-UNSUPPORTED-SHAPE",
-                                "ForeignKeyConstraint could not resolve child/parent column names for simple FK emission.",
+                                "ForeignKeyConstraint could not resolve parent table name.",
                                 constraintNode.Id
                             );
                             break;
@@ -219,10 +259,10 @@ public sealed partial class DdlGraphCompiler(NodeGraph graph, DatabaseProvider p
                         string? constraintName = ReadParam(constraintNode, "ConstraintName", "");
                         foreignKeys.Add(new DdlForeignKeyExpr(
                             ConstraintName: string.IsNullOrWhiteSpace(constraintName) ? null : constraintName,
-                            ChildColumn: childColumn,
+                            ChildColumns: childColumns,
                             ParentSchema: parentSchema,
                             ParentTable: parentTable,
-                            ParentColumn: parentColumn,
+                            ParentColumns: parentColumns,
                             OnDelete: ParseReferentialAction(ReadParam(constraintNode, "OnDelete", "NO ACTION")),
                             OnUpdate: ParseReferentialAction(ReadParam(constraintNode, "OnUpdate", "NO ACTION"))
                         ));

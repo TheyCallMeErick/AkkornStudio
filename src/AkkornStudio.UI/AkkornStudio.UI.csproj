@@ -18,6 +18,9 @@
     <!-- Diagnostics / hot-reload (dev only — exclude from release) -->
     <PackageReference Include="Avalonia.Diagnostics" Condition="'$(Configuration)' == 'Debug'" />
     <PackageReference Include="Material.Icons.Avalonia" />
+    <PackageReference Include="Svg.Controls.Skia.Avalonia" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" />
     <!-- Excel export -->
     <PackageReference Include="ClosedXML" />
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
@@ -26,13 +29,20 @@
 
   <!-- ── Core engine reference ── -->
   <ItemGroup>
-    <ProjectReference Include="..\AkkornStudio\AkkornStudio.csproj" />
-    <ProjectReference Include="..\AkkornStudio.Canvas\AkkornStudio.Canvas.csproj" />
+    <ProjectReference Include="..\AkkornStudio\AkkornStudio.csproj">
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+    </ProjectReference>
+    <ProjectReference Include="..\AkkornStudio.Canvas\AkkornStudio.Canvas.csproj">
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+    </ProjectReference>
   </ItemGroup>
 
   <!-- ── AXAML files handled by Avalonia SDK auto-discovery ── -->
   <ItemGroup>
     <AvaloniaResource Include="Assets\Syntax\*.xshd" />
+    <EmbeddedResource Include="Assets\ReportFrontend\dist\report-app.css" />
+    <EmbeddedResource Include="Assets\ReportFrontend\dist\report-app.js" />
+     <AvaloniaResource Include="Assets\Images\**" />
     <None Update="Assets\Localization\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

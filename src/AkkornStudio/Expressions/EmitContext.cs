@@ -11,7 +11,7 @@ namespace AkkornStudio.Expressions;
 public sealed class EmitContext(DatabaseProvider provider, ISqlFunctionRegistry registry)
 {
     private readonly Providers.Dialects.ISqlDialect _dialect =
-        new ProviderRegistry(DefaultProviderRegistrations.CreateAll()).GetDialect(provider);
+        ResolveDialect(new ProviderRegistry(DefaultProviderRegistrations.CreateAll()), provider);
 
     public DatabaseProvider Provider { get; } = provider;
     public ISqlFunctionRegistry Registry { get; } = registry;
@@ -20,10 +20,19 @@ public sealed class EmitContext(DatabaseProvider provider, ISqlFunctionRegistry 
         : this(provider, registry)
     {
         ArgumentNullException.ThrowIfNull(providerRegistry);
-        _dialect = providerRegistry.GetDialect(provider);
+        _dialect = ResolveDialect(providerRegistry, provider);
     }
 
     public string QuoteIdentifier(string id) => _dialect.QuoteIdentifier(id);
 
     public static string QuoteLiteral(string value) => SqlStringUtility.QuoteLiteral(value);
+
+    private static Providers.Dialects.ISqlDialect ResolveDialect(IProviderRegistry providerRegistry, DatabaseProvider provider)
+    {
+        Providers.Dialects.ISqlDialect? dialect = providerRegistry.GetDialect(provider);
+        if (dialect is null)
+            throw new InvalidOperationException($"Provider registry returned null dialect for provider '{provider}'.");
+
+        return dialect;
+    }
 }

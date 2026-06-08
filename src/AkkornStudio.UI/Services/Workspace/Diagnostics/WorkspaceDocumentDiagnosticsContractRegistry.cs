@@ -14,7 +14,11 @@ public sealed class WorkspaceDocumentDiagnosticsContractRegistry : IWorkspaceDoc
             WorkspaceDocumentType.QueryCanvas => HasDiagnosticsContract,
             WorkspaceDocumentType.DdlCanvas => HasDiagnosticsContract,
             WorkspaceDocumentType.SqlEditor => NoDiagnosticsContract,
-            _ => NoDiagnosticsContract,
+            WorkspaceDocumentType.SqlResult => NoDiagnosticsContract,
+            WorkspaceDocumentType.DdlSchemaCompare => NoDiagnosticsContract,
+            WorkspaceDocumentType.DdlSchemaAnalysis => NoDiagnosticsContract,
+            WorkspaceDocumentType.ErDiagram => NoDiagnosticsContract,
+            _ => throw new ArgumentOutOfRangeException(nameof(documentType), documentType, "Unknown workspace document type."),
         };
     }
 }

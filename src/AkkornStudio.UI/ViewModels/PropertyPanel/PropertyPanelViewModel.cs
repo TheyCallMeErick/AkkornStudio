@@ -6,6 +6,7 @@ using AkkornStudio.Metadata;
 using AkkornStudio.Nodes;
 using AkkornStudio.UI.Services.Localization;
 using AkkornStudio.UI.ViewModels.Canvas;
+using AkkornStudio.UI.ViewModels.UndoRedo;
 using AkkornStudio.UI.ViewModels.UndoRedo.Commands;
 using AkkornStudio.UI.ViewModels.Validation.Conventions;
 
@@ -36,10 +37,18 @@ public sealed class PropertyPanelViewModel : ViewModelBase
     private readonly UndoRedoStack _undo;
     private readonly LocalizationService _loc = LocalizationService.Instance;
     private readonly Func<IEnumerable<ConnectionViewModel>> _connectionsResolver;
+    private readonly Func<IEnumerable<NodeViewModel>>? _nodesResolver;
     private readonly Func<DbMetadata?> _metadataResolver;
     private readonly Action<NodeViewModel, IReadOnlyList<(string Name, string? Value)>>? _parametersCommitted;
     private readonly Func<NodeViewModel, bool>? _setPrimaryFromSource;
+    private readonly Action<ICanvasCommand> _executeCommand;
+    private Action? _openSelectedJoinInErDiagram;
+    private Action? _refineAutoProjection;
+    private Action? _resetAutoProjection;
+    private Action? _addSuggestedFilter;
+    private Action? _applySuggestedAggregation;
     private readonly Dictionary<ParameterRowViewModel, PropertyChangedEventHandler> _parameterRowPropertyHandlers = [];
+    private const string AutoProjectionMarkerParameter = "__akkorn_auto_projection";
     private static readonly HashSet<string> SupportedConventions =
     [
         "snake_case",
@@ -56,13 +65,31 @@ public sealed class PropertyPanelViewModel : ViewModelBase
         Func<IEnumerable<ConnectionViewModel>>? connectionsResolver = null,
         Func<DbMetadata?>? metadataResolver = null,
         Action<NodeViewModel, IReadOnlyList<(string Name, string? Value)>>? parametersCommitted = null,
-        Func<NodeViewModel, bool>? setPrimaryFromSource = null)
+        Func<NodeViewModel, bool>? setPrimaryFromSource = null,
+        Func<IEnumerable<NodeViewModel>>? nodesResolver = null,
+        Action<ICanvasCommand>? executeCommand = null)
     {
         _undo = undo;
         _connectionsResolver = connectionsResolver ?? (() => []);
+        _nodesResolver = nodesResolver;
         _metadataResolver = metadataResolver ?? (() => null);
         _parametersCommitted = parametersCommitted;
         _setPrimaryFromSource = setPrimaryFromSource;
+        _executeCommand = executeCommand ?? _undo.Execute;
+        Parameters.CollectionChanged += (_, e) =>
+        {
+            if (e.OldItems is not null)
+            {
+                foreach (ParameterRowViewModel row in e.OldItems)
+                    DetachParameterRowHandler(row);
+            }
+
+            if (e.NewItems is not null)
+            {
+                foreach (ParameterRowViewModel row in e.NewItems)
+                    EnsureParameterRowHandler(row);
+            }
+        };
         _loc.PropertyChanged += (_, _) =>
         {
             RaisePropertyChanged(nameof(NodeAliasLabel));
@@ -76,11 +103,31 @@ public sealed class PropertyPanelViewModel : ViewModelBase
         SetAsPrimaryFromSourceCommand = new RelayCommand(
             SetAsPrimaryFromSource,
             () => CanSetAsPrimaryFromSource);
+        OpenSelectedJoinInErDiagramCommand = new RelayCommand(
+            OpenSelectedJoinInErDiagram,
+            () => CanOpenSelectedJoinInErDiagram);
+        RefineAutoProjectionCommand = new RelayCommand(
+            RefineAutoProjection,
+            () => CanRefineAutoProjection);
+        ResetAutoProjectionCommand = new RelayCommand(
+            ResetAutoProjection,
+            () => CanResetAutoProjection);
+        AddSuggestedFilterCommand = new RelayCommand(
+            AddSuggestedFilter,
+            () => CanAddSuggestedFilter);
+        ApplySuggestedAggregationCommand = new RelayCommand(
+            ApplySuggestedAggregation,
+            () => CanApplySuggestedAggregation);
     }
 
     public RelayCommand SelectPropertiesTabCommand { get; }
     public RelayCommand SelectProjectSettingsTabCommand { get; }
     public RelayCommand SetAsPrimaryFromSourceCommand { get; }
+    public RelayCommand OpenSelectedJoinInErDiagramCommand { get; }
+    public RelayCommand RefineAutoProjectionCommand { get; }
+    public RelayCommand ResetAutoProjectionCommand { get; }
+    public RelayCommand AddSuggestedFilterCommand { get; }
+    public RelayCommand ApplySuggestedAggregationCommand { get; }
 
     // ── Sub-collections ───────────────────────────────────────────────────────
     public ObservableCollection<ParameterRowViewModel> Parameters { get; } = [];
@@ -313,16 +360,70 @@ public sealed class PropertyPanelViewModel : ViewModelBase
 
     public bool IsSelectedNodeSourceType => SelectedNode is not null && IsSourceAliasNode(SelectedNode.Type);
 
+    public bool IsSelectedNodeJoinType => SelectedNode?.IsJoin == true;
+
     public bool CanSetAsPrimaryFromSource =>
         IsSelectedNodeSourceType
         && !IsSelectedNodePrimaryFromSource
         && _setPrimaryFromSource is not null;
+
+    public bool CanOpenSelectedJoinInErDiagram =>
+        IsSelectedNodeJoinType && _openSelectedJoinInErDiagram is not null;
+
+    public bool IsSelectedNodeAutoProjectionResultOutput =>
+        SelectedNode?.Type == NodeType.ResultOutput
+        && string.Equals(
+            SelectedNode.Parameters.GetValueOrDefault(AutoProjectionMarkerParameter),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+
+    public bool CanRefineAutoProjection =>
+        IsSelectedNodeAutoProjectionResultOutput && _refineAutoProjection is not null;
+
+    public bool CanResetAutoProjection =>
+        IsSelectedNodeAutoProjectionResultOutput && _resetAutoProjection is not null;
+
+    public bool CanAddSuggestedFilter =>
+        IsSelectedNodeAutoProjectionResultOutput && _addSuggestedFilter is not null;
+
+    public bool CanApplySuggestedAggregation =>
+        IsSelectedNodeAutoProjectionResultOutput && _applySuggestedAggregation is not null;
 
     public Avalonia.Media.LinearGradientBrush? HeaderGradient => SelectedNode?.HeaderGradient;
 
     public string CategoryIcon => SelectedNode?.CategoryIcon ?? string.Empty;
     public MaterialIconKind CategoryIconKind =>
         SelectedNode?.CategoryIconKind ?? MaterialIconKind.Help;
+
+    public void BindOpenSelectedJoinInErDiagram(Action? openSelectedJoinInErDiagram)
+    {
+        _openSelectedJoinInErDiagram = openSelectedJoinInErDiagram;
+        OpenSelectedJoinInErDiagramCommand.NotifyCanExecuteChanged();
+    }
+
+    public void BindRefineAutoProjection(Action? refineAutoProjection)
+    {
+        _refineAutoProjection = refineAutoProjection;
+        RefineAutoProjectionCommand.NotifyCanExecuteChanged();
+    }
+
+    public void BindResetAutoProjection(Action? resetAutoProjection)
+    {
+        _resetAutoProjection = resetAutoProjection;
+        ResetAutoProjectionCommand.NotifyCanExecuteChanged();
+    }
+
+    public void BindAddSuggestedFilter(Action? addSuggestedFilter)
+    {
+        _addSuggestedFilter = addSuggestedFilter;
+        AddSuggestedFilterCommand.NotifyCanExecuteChanged();
+    }
+
+    public void BindApplySuggestedAggregation(Action? applySuggestedAggregation)
+    {
+        _applySuggestedAggregation = applySuggestedAggregation;
+        ApplySuggestedAggregationCommand.NotifyCanExecuteChanged();
+    }
 
     // ── Selection management ──────────────────────────────────────────────────
 
@@ -351,7 +452,14 @@ public sealed class PropertyPanelViewModel : ViewModelBase
         RaisePropertyChanged(nameof(ShowAliasEditor));
         RaisePropertyChanged(nameof(IsSelectedNodePrimaryFromSource));
         RaisePropertyChanged(nameof(IsSelectedNodeSourceType));
+        RaisePropertyChanged(nameof(IsSelectedNodeJoinType));
         RaisePropertyChanged(nameof(CanSetAsPrimaryFromSource));
+        RaisePropertyChanged(nameof(CanOpenSelectedJoinInErDiagram));
+        RaisePropertyChanged(nameof(IsSelectedNodeAutoProjectionResultOutput));
+        RaisePropertyChanged(nameof(CanRefineAutoProjection));
+        RaisePropertyChanged(nameof(CanResetAutoProjection));
+        RaisePropertyChanged(nameof(CanAddSuggestedFilter));
+        RaisePropertyChanged(nameof(CanApplySuggestedAggregation));
         RaisePropertyChanged(nameof(HeaderGradient));
         RaisePropertyChanged(nameof(CategoryIcon));
         RaisePropertyChanged(nameof(CategoryIconKind));
@@ -361,6 +469,11 @@ public sealed class PropertyPanelViewModel : ViewModelBase
         RaisePropertyChanged(nameof(SelectedWireLabel));
         RaisePropertyChanged(nameof(ShowSelectNodeHint));
         SetAsPrimaryFromSourceCommand.NotifyCanExecuteChanged();
+        OpenSelectedJoinInErDiagramCommand.NotifyCanExecuteChanged();
+        RefineAutoProjectionCommand.NotifyCanExecuteChanged();
+        ResetAutoProjectionCommand.NotifyCanExecuteChanged();
+        AddSuggestedFilterCommand.NotifyCanExecuteChanged();
+        ApplySuggestedAggregationCommand.NotifyCanExecuteChanged();
     }
 
     public void ShowMultiSelection(IReadOnlyList<NodeViewModel> nodes)
@@ -390,13 +503,25 @@ public sealed class PropertyPanelViewModel : ViewModelBase
         RaisePropertyChanged(nameof(ShowAliasEditor));
         RaisePropertyChanged(nameof(IsSelectedNodePrimaryFromSource));
         RaisePropertyChanged(nameof(IsSelectedNodeSourceType));
+        RaisePropertyChanged(nameof(IsSelectedNodeJoinType));
         RaisePropertyChanged(nameof(CanSetAsPrimaryFromSource));
+        RaisePropertyChanged(nameof(CanOpenSelectedJoinInErDiagram));
+        RaisePropertyChanged(nameof(IsSelectedNodeAutoProjectionResultOutput));
+        RaisePropertyChanged(nameof(CanRefineAutoProjection));
+        RaisePropertyChanged(nameof(CanResetAutoProjection));
+        RaisePropertyChanged(nameof(CanAddSuggestedFilter));
+        RaisePropertyChanged(nameof(CanApplySuggestedAggregation));
         RaisePropertyChanged(nameof(ShowPropertiesTab));
         RaisePropertyChanged(nameof(ShowProjectSettingsTab));
         RaisePropertyChanged(nameof(HasSelectedWire));
         RaisePropertyChanged(nameof(SelectedWireLabel));
         RaisePropertyChanged(nameof(ShowSelectNodeHint));
         SetAsPrimaryFromSourceCommand.NotifyCanExecuteChanged();
+        OpenSelectedJoinInErDiagramCommand.NotifyCanExecuteChanged();
+        RefineAutoProjectionCommand.NotifyCanExecuteChanged();
+        ResetAutoProjectionCommand.NotifyCanExecuteChanged();
+        AddSuggestedFilterCommand.NotifyCanExecuteChanged();
+        ApplySuggestedAggregationCommand.NotifyCanExecuteChanged();
     }
 
     public void Clear()
@@ -423,13 +548,25 @@ public sealed class PropertyPanelViewModel : ViewModelBase
         RaisePropertyChanged(nameof(ShowAliasEditor));
         RaisePropertyChanged(nameof(IsSelectedNodePrimaryFromSource));
         RaisePropertyChanged(nameof(IsSelectedNodeSourceType));
+        RaisePropertyChanged(nameof(IsSelectedNodeJoinType));
         RaisePropertyChanged(nameof(CanSetAsPrimaryFromSource));
+        RaisePropertyChanged(nameof(CanOpenSelectedJoinInErDiagram));
+        RaisePropertyChanged(nameof(IsSelectedNodeAutoProjectionResultOutput));
+        RaisePropertyChanged(nameof(CanRefineAutoProjection));
+        RaisePropertyChanged(nameof(CanResetAutoProjection));
+        RaisePropertyChanged(nameof(CanAddSuggestedFilter));
+        RaisePropertyChanged(nameof(CanApplySuggestedAggregation));
         RaisePropertyChanged(nameof(ShowPropertiesTab));
         RaisePropertyChanged(nameof(ShowProjectSettingsTab));
         RaisePropertyChanged(nameof(HasSelectedWire));
         RaisePropertyChanged(nameof(SelectedWireLabel));
         RaisePropertyChanged(nameof(ShowSelectNodeHint));
         SetAsPrimaryFromSourceCommand.NotifyCanExecuteChanged();
+        OpenSelectedJoinInErDiagramCommand.NotifyCanExecuteChanged();
+        RefineAutoProjectionCommand.NotifyCanExecuteChanged();
+        ResetAutoProjectionCommand.NotifyCanExecuteChanged();
+        AddSuggestedFilterCommand.NotifyCanExecuteChanged();
+        ApplySuggestedAggregationCommand.NotifyCanExecuteChanged();
     }
 
     public void ShowWire(ConnectionViewModel wire)
@@ -451,6 +588,11 @@ public sealed class PropertyPanelViewModel : ViewModelBase
         RaisePropertyChanged(nameof(IsSelectedNodePrimaryFromSource));
         RaisePropertyChanged(nameof(IsSelectedNodeSourceType));
         RaisePropertyChanged(nameof(CanSetAsPrimaryFromSource));
+        RaisePropertyChanged(nameof(IsSelectedNodeAutoProjectionResultOutput));
+        RaisePropertyChanged(nameof(CanRefineAutoProjection));
+        RaisePropertyChanged(nameof(CanResetAutoProjection));
+        RaisePropertyChanged(nameof(CanAddSuggestedFilter));
+        RaisePropertyChanged(nameof(CanApplySuggestedAggregation));
         RaisePropertyChanged(nameof(ShowSelectNodeHint));
 
         _selectedWire = wire;
@@ -460,6 +602,10 @@ public sealed class PropertyPanelViewModel : ViewModelBase
         RaisePropertyChanged(nameof(SelectedWireLabel));
         RaisePropertyChanged(nameof(ShowSelectNodeHint));
         SetAsPrimaryFromSourceCommand.NotifyCanExecuteChanged();
+        RefineAutoProjectionCommand.NotifyCanExecuteChanged();
+        ResetAutoProjectionCommand.NotifyCanExecuteChanged();
+        AddSuggestedFilterCommand.NotifyCanExecuteChanged();
+        ApplySuggestedAggregationCommand.NotifyCanExecuteChanged();
     }
 
     public void ClearSelectedWire()
@@ -561,7 +707,7 @@ public sealed class PropertyPanelViewModel : ViewModelBase
             }
         }
 
-        AttachParameterRowHandlers(node);
+        AttachParameterRowHandlers();
 
         foreach (PinViewModel pin in node.InputPins)
             InputPins.Add(new PinInfoRowViewModel(pin));
@@ -587,6 +733,15 @@ public sealed class PropertyPanelViewModel : ViewModelBase
     {
         if (SelectedNode is null || !ReferenceEquals(SelectedNode, node))
             return;
+
+        if (_nodesResolver is not null
+            && !_nodesResolver().Any(existing => ReferenceEquals(existing, node)))
+        {
+            // The selected node was detached from canvas; drop panel state safely.
+            SelectedNode = null;
+            Clear();
+            return;
+        }
 
         ParameterRowViewModel? row = Parameters.FirstOrDefault(parameter =>
             string.Equals(parameter.Name, paramName, StringComparison.OrdinalIgnoreCase));
@@ -844,27 +999,47 @@ public sealed class PropertyPanelViewModel : ViewModelBase
     private static string QualifyName(string schema, string name) =>
         string.IsNullOrWhiteSpace(schema) ? name : $"{schema}.{name}";
 
-    private void AttachParameterRowHandlers(NodeViewModel node)
+    private void AttachParameterRowHandlers()
     {
         foreach (ParameterRowViewModel row in Parameters)
+            EnsureParameterRowHandler(row);
+    }
+
+    private void EnsureParameterRowHandler(ParameterRowViewModel row)
+    {
+        if (_parameterRowPropertyHandlers.ContainsKey(row))
+            return;
+
+        PropertyChangedEventHandler handler = (_, e) =>
         {
-            PropertyChangedEventHandler handler = (_, e) =>
+            if (e.PropertyName != nameof(ParameterRowViewModel.Value))
+                return;
+
+            NodeViewModel? selectedNode = SelectedNode;
+            if (selectedNode is null)
+                return;
+
+            if (!IsSchemaParameter(selectedNode, row.Name))
+                return;
+
+            foreach (ParameterRowViewModel targetRow in Parameters.Where(parameter =>
+                         IsObjectNameOnlyParameter(selectedNode, parameter.Name)
+                         || IsQualifiedObjectParameter(selectedNode, parameter.Name)))
             {
-                if (e.PropertyName != nameof(ParameterRowViewModel.Value))
-                    return;
+                ApplyTextSuggestions(selectedNode, targetRow);
+            }
+        };
 
-                if (!IsSchemaParameter(node, row.Name))
-                    return;
+        row.PropertyChanged += handler;
+        _parameterRowPropertyHandlers[row] = handler;
+    }
 
-                foreach (ParameterRowViewModel targetRow in Parameters.Where(parameter =>
-                             IsObjectNameOnlyParameter(node, parameter.Name) || IsQualifiedObjectParameter(node, parameter.Name)))
-                {
-                    ApplyTextSuggestions(node, targetRow);
-                }
-            };
-
-            row.PropertyChanged += handler;
-            _parameterRowPropertyHandlers[row] = handler;
+    private void DetachParameterRowHandler(ParameterRowViewModel row)
+    {
+        if (_parameterRowPropertyHandlers.TryGetValue(row, out PropertyChangedEventHandler? handler))
+        {
+            row.PropertyChanged -= handler;
+            _parameterRowPropertyHandlers.Remove(row);
         }
     }
 
@@ -887,22 +1062,75 @@ public sealed class PropertyPanelViewModel : ViewModelBase
         if (SelectedNode is null)
             return;
 
-        var committedChanges = new List<(string Name, string? Value)>();
+        List<ParameterRowViewModel> dirtyRows = Parameters.Where(r => r.IsDirty).ToList();
+        var committedChanges = new List<(string Name, string? Value)>(dirtyRows.Count);
+        using UndoRedoStack.UndoRedoTransaction transaction = _undo.BeginTransaction("Edit Parameters");
 
-        foreach (ParameterRowViewModel? row in Parameters.Where(r => r.IsDirty))
+        try
         {
-            SelectedNode.Parameters.TryGetValue(row.Name, out string? old);
-            _undo.Execute(new EditParameterCommand(SelectedNode, row.Name, old, row.Value));
-            committedChanges.Add((row.Name, row.Value));
-
-            row.MarkClean();
+            foreach (ParameterRowViewModel row in dirtyRows)
+            {
+                SelectedNode.Parameters.TryGetValue(row.Name, out string? old);
+                _executeCommand(new EditParameterCommand(SelectedNode, row.Name, old, row.Value));
+                committedChanges.Add((row.Name, row.Value));
+            }
+            transaction.Commit();
         }
+        catch
+        {
+            foreach (ParameterRowViewModel row in Parameters)
+                ApplyTextSuggestions(SelectedNode, row);
+            throw;
+        }
+
+        foreach (ParameterRowViewModel row in dirtyRows)
+            row.MarkClean();
 
         foreach (ParameterRowViewModel row in Parameters)
             ApplyTextSuggestions(SelectedNode, row);
 
         if (committedChanges.Count > 0)
             _parametersCommitted?.Invoke(SelectedNode, committedChanges);
+    }
+
+    private void OpenSelectedJoinInErDiagram()
+    {
+        if (!CanOpenSelectedJoinInErDiagram)
+            return;
+
+        _openSelectedJoinInErDiagram?.Invoke();
+    }
+
+    private void RefineAutoProjection()
+    {
+        if (!CanRefineAutoProjection)
+            return;
+
+        _refineAutoProjection?.Invoke();
+    }
+
+    private void ResetAutoProjection()
+    {
+        if (!CanResetAutoProjection)
+            return;
+
+        _resetAutoProjection?.Invoke();
+    }
+
+    private void AddSuggestedFilter()
+    {
+        if (!CanAddSuggestedFilter)
+            return;
+
+        _addSuggestedFilter?.Invoke();
+    }
+
+    private void ApplySuggestedAggregation()
+    {
+        if (!CanApplySuggestedAggregation)
+            return;
+
+        _applySuggestedAggregation?.Invoke();
     }
 
     // ── SQL Trace extraction ──────────────────────────────────────────────────

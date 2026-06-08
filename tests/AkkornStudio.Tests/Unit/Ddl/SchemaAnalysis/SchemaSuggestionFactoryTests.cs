@@ -93,6 +93,72 @@ public sealed class SchemaSuggestionFactoryTests
     }
 
     [Fact]
+    public void CreateSuggestions_AttachesSqlCandidate_ForNf1SplitColumnWhenPkEvidenceExists()
+    {
+        SchemaIssue issue = SchemaAnalysisContractValidatorTestData.CreateIssue(
+            issueId: "issue-nf1",
+            targetType: SchemaTargetType.Column,
+            tableName: "orders",
+            columnName: "tags",
+            evidence:
+            [
+                SchemaEvidenceFactory.MetadataFact("primaryKeyColumn", "id", 0.85),
+                SchemaEvidenceFactory.MetadataFact("primaryKeyNativeType", "integer", 0.85),
+                SchemaEvidenceFactory.MetadataFact("columnNativeType", "text", 0.85),
+            ],
+            suggestions: []
+        ) with
+        {
+            RuleCode = SchemaRuleCode.NF1_HINT_MULTI_VALUED,
+            Title = "1NF hint multi-valued",
+            Message = "Column may be multi-valued",
+            IsAmbiguous = false,
+        };
+
+        IReadOnlyList<SchemaSuggestion> suggestions = _factory.CreateSuggestions(
+            issue,
+            DatabaseProvider.Postgres,
+            SchemaAnalysisContractValidatorTestData.CreateProfile()
+        );
+
+        SchemaSuggestion suggestion = Assert.Single(suggestions);
+        SqlFixCandidate candidate = Assert.Single(suggestion.SqlCandidates);
+        Assert.Equal("Create normalized child table", candidate.Title);
+        Assert.Equal(SqlCandidateSafety.NonDestructive, candidate.Safety);
+        Assert.Equal(CandidateVisibility.VisibleActionable, candidate.Visibility);
+        Assert.False(candidate.IsAutoApplicable);
+        Assert.Contains("CREATE TABLE \"public\".\"orders_tags\"", candidate.Sql);
+        Assert.Contains("FOREIGN KEY (\"id\") REFERENCES \"public\".\"orders\" (\"id\")", candidate.Sql);
+        Assert.NotEmpty(candidate.PreconditionsSql);
+    }
+
+    [Fact]
+    public void CreateSuggestions_SkipsNf1SqlCandidate_WhenPrimaryKeyEvidenceIsMissing()
+    {
+        SchemaIssue issue = SchemaAnalysisContractValidatorTestData.CreateIssue(
+            issueId: "issue-nf1-no-pk",
+            targetType: SchemaTargetType.Column,
+            tableName: "orders",
+            columnName: "tags",
+            suggestions: []
+        ) with
+        {
+            RuleCode = SchemaRuleCode.NF1_HINT_MULTI_VALUED,
+            Title = "1NF hint multi-valued",
+            Message = "Column may be multi-valued",
+        };
+
+        IReadOnlyList<SchemaSuggestion> suggestions = _factory.CreateSuggestions(
+            issue,
+            DatabaseProvider.Postgres,
+            SchemaAnalysisContractValidatorTestData.CreateProfile()
+        );
+
+        SchemaSuggestion suggestion = Assert.Single(suggestions);
+        Assert.Empty(suggestion.SqlCandidates);
+    }
+
+    [Fact]
     public void CreateSuggestions_ReturnsEmpty_WhenIssueHasNoSuggestionMapping()
     {
         SchemaIssue issue = SchemaAnalysisContractValidatorTestData.CreateIssue(

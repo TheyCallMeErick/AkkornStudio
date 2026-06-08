@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Avalonia;
+using AkkornStudio.Nodes;
 using AkkornStudio.SqlImport.Contracts;
 using AkkornStudio.SqlImport.Diagnostics;
 using AkkornStudio.SqlImport.IR;
@@ -139,6 +141,9 @@ public sealed class SqlImportExecutionService(
         partial += applyResult.Partial;
         skipped += applyResult.Skipped;
 
+        int importedSetOperations = ApplySetOperationNodes(parsed, coreContext, report, cancellationToken);
+        imported += importedSetOperations;
+
         buildWatch.Stop();
         totalWatch.Stop();
 
@@ -157,6 +162,53 @@ public sealed class SqlImportExecutionService(
             new SqlImportTiming(parseWatch.Elapsed, mapWatch.Elapsed, buildWatch.Elapsed, totalWatch.Elapsed),
             outcome
         );
+    }
+
+    private int ApplySetOperationNodes(
+        SqlImportParsedQuery parsed,
+        ImportBuildContext coreContext,
+        ObservableCollection<ImportReportItem> report,
+        CancellationToken cancellationToken)
+    {
+        if (parsed.SetOperations.Count == 0)
+            return 0;
+
+        int imported = 0;
+        for (int index = 0; index < parsed.SetOperations.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SqlImportSetOperation operation = parsed.SetOperations[index];
+            string operatorText = operation.IsAll ? $"{operation.Operator} ALL" : operation.Operator;
+
+            NodeViewModel setNode = new(
+                NodeDefinitionRegistry.Get(NodeType.SetOperation),
+                new Point(coreContext.ResultNode.Position.X - 260, coreContext.ResultNode.Position.Y + 160 + (index * 130)));
+            setNode.Parameters["operator"] = operatorText;
+            _canvas.Nodes.Add(setNode);
+
+            NodeViewModel queryTextNode = new(
+                NodeDefinitionRegistry.Get(NodeType.ValueString),
+                new Point(setNode.Position.X - 260, setNode.Position.Y + 40));
+            queryTextNode.Parameters["value"] = operation.RightSql.Trim();
+            _canvas.Nodes.Add(queryTextNode);
+
+            PinViewModel setResultPin = setNode.OutputPins.Single(pin => pin.Name.Equals("result", StringComparison.OrdinalIgnoreCase));
+            PinViewModel resultSetOperationPin = coreContext.ResultNode.InputPins.Single(pin => pin.Name.Equals("set_operation", StringComparison.OrdinalIgnoreCase));
+            PinViewModel queryValuePin = queryTextNode.OutputPins.Single(pin => pin.Name.Equals("result", StringComparison.OrdinalIgnoreCase));
+            PinViewModel queryTextPin = setNode.InputPins.Single(pin => pin.Name.Equals("query_text", StringComparison.OrdinalIgnoreCase));
+
+            _canvas.ConnectPins(queryValuePin, queryTextPin);
+            _canvas.ConnectPins(setResultPin, resultSetOperationPin);
+
+            report.Add(new ImportReportItem(
+                operatorText,
+                ImportItemStatus.Imported,
+                "Set operation node connected to Result Output.",
+                setNode.Id));
+            imported++;
+        }
+
+        return imported;
     }
 
     private static (int partial, int skipped) AppendAstIrDiagnosticsToReport(

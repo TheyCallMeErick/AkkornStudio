@@ -26,6 +26,7 @@ public sealed class FlowVersionOverlayViewModel : ViewModelBase
     private string _newLabel = string.Empty;
     private FlowVersionRowViewModel? _selectedVersion;
     private FlowVersionRowViewModel? _diffBaseVersion;
+    private string ProjectKey => ResolveProjectKey(_canvas);
 
     // ── Collections ───────────────────────────────────────────────────────────
 
@@ -139,10 +140,11 @@ public sealed class FlowVersionOverlayViewModel : ViewModelBase
             CreatedAt: DateTimeOffset.UtcNow.ToString("o"),
             NodeCount: _canvas.Nodes.Count,
             ConnectionCount: _canvas.Connections.Count,
-            CanvasJson: json
+            CanvasJson: json,
+            ProjectKey: ProjectKey
         );
 
-        FlowVersionStore.Add(version);
+        FlowVersionStore.Add(version, ProjectKey);
         NewLabel = string.Empty;
         Reload();
     }
@@ -167,7 +169,7 @@ public sealed class FlowVersionOverlayViewModel : ViewModelBase
 
     public void DeleteVersion(string id)
     {
-        FlowVersionStore.Remove(id);
+        FlowVersionStore.Remove(id, ProjectKey);
         Reload();
     }
 
@@ -281,7 +283,7 @@ public sealed class FlowVersionOverlayViewModel : ViewModelBase
     private void Reload()
     {
         Versions.Clear();
-        foreach (FlowVersion v in FlowVersionStore.Load())
+        foreach (FlowVersion v in FlowVersionStore.Load(ProjectKey))
             Versions.Add(new FlowVersionRowViewModel(v));
 
         SelectedVersion = null;
@@ -301,6 +303,14 @@ public sealed class FlowVersionOverlayViewModel : ViewModelBase
         {
             return null;
         }
+    }
+
+    private static string ResolveProjectKey(CanvasViewModel canvas)
+    {
+        if (!string.IsNullOrWhiteSpace(canvas.CurrentFilePath))
+            return Path.GetFullPath(canvas.CurrentFilePath);
+
+        return FlowVersionStore.DefaultProjectKey;
     }
 
     private static string Truncate(string s, int max = 40) =>

@@ -4,6 +4,8 @@ namespace AkkornStudio.Tests.Unit.ViewModels.Shell;
 
 public class ShellExtractedPanelsTests
 {
+    private const string AutoProjectionMarkerParameter = "__akkorn_auto_projection";
+
     [Fact]
     public void ExtractedPanels_QueryMode_BindsAndShowsQueryScaffold()
     {
@@ -102,5 +104,38 @@ public class ShellExtractedPanelsTests
 
         shell.ActivateDocument(AkkornStudio.UI.Services.Workspace.Models.WorkspaceDocumentType.SqlEditor);
         Assert.False(shell.IsDiagramModeActive);
+    }
+
+    [Fact]
+    public void ExtractedPanels_QueryPropertyPanel_BindsOpenJoinInErAction()
+    {
+        var shell = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
+        CanvasViewModel query = shell.EnsureCanvas();
+        var joinNode = new NodeViewModel(AkkornStudio.Nodes.NodeDefinitionRegistry.Get(AkkornStudio.Nodes.NodeType.Join), new Avalonia.Point(0, 0));
+
+        query.PropertyPanel.ShowNode(joinNode);
+
+        Assert.True(query.PropertyPanel.CanOpenSelectedJoinInErDiagram);
+        Assert.True(query.PropertyPanel.OpenSelectedJoinInErDiagramCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void ExtractedPanels_QueryPropertyPanel_BindsRefineAutoProjectionAction()
+    {
+        var shell = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
+        CanvasViewModel query = shell.EnsureCanvas();
+        var resultOutput = new NodeViewModel(AkkornStudio.Nodes.NodeDefinitionRegistry.Get(AkkornStudio.Nodes.NodeType.ResultOutput), new Avalonia.Point(0, 0));
+        resultOutput.Parameters[AutoProjectionMarkerParameter] = "true";
+
+        query.PropertyPanel.ShowNode(resultOutput);
+
+        Assert.True(query.PropertyPanel.CanRefineAutoProjection);
+        Assert.True(query.PropertyPanel.RefineAutoProjectionCommand.CanExecute(null));
+        Assert.True(query.PropertyPanel.CanResetAutoProjection);
+        Assert.True(query.PropertyPanel.ResetAutoProjectionCommand.CanExecute(null));
+        Assert.True(query.PropertyPanel.CanAddSuggestedFilter);
+        Assert.True(query.PropertyPanel.AddSuggestedFilterCommand.CanExecute(null));
+        Assert.True(query.PropertyPanel.CanApplySuggestedAggregation);
+        Assert.True(query.PropertyPanel.ApplySuggestedAggregationCommand.CanExecute(null));
     }
 }

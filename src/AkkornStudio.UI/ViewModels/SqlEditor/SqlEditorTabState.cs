@@ -35,5 +35,6 @@ public sealed class SqlEditorTabState
     public SqlEditorExecutionTelemetry ExecutionTelemetry { get; set; } = SqlEditorExecutionTelemetry.Empty();
     public SqlEditorCompletionTelemetryTracker CompletionTelemetryTracker { get; } = new(CompletionTelemetryWindowSize, CompletionTelemetryBudgetMs);
     public SqlEditorCompletionTelemetry CompletionTelemetry { get; set; } = SqlEditorCompletionTelemetry.Empty(CompletionTelemetryBudgetMs);
+    public Dictionary<string, string> QueryParameterLastValues { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public ICommand? CloseCommand { get; set; }
 }

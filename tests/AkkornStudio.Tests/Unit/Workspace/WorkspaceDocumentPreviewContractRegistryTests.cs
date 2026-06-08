@@ -9,6 +9,9 @@ public class WorkspaceDocumentPreviewContractRegistryTests
     [InlineData(WorkspaceDocumentType.QueryCanvas, WorkspaceDocumentPreviewKind.Query)]
     [InlineData(WorkspaceDocumentType.DdlCanvas, WorkspaceDocumentPreviewKind.Ddl)]
     [InlineData(WorkspaceDocumentType.SqlEditor, WorkspaceDocumentPreviewKind.Unavailable)]
+    [InlineData(WorkspaceDocumentType.SqlResult, WorkspaceDocumentPreviewKind.Unavailable)]
+    [InlineData(WorkspaceDocumentType.DdlSchemaCompare, WorkspaceDocumentPreviewKind.Unavailable)]
+    [InlineData(WorkspaceDocumentType.ErDiagram, WorkspaceDocumentPreviewKind.Unavailable)]
     public void Resolve_ReturnsExpectedPreviewKindForDocumentType(
         WorkspaceDocumentType documentType,
         WorkspaceDocumentPreviewKind expectedKind)

@@ -99,4 +99,35 @@ public sealed class SqlSelectionExtractorTests
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             sut.ExtractSelectionOrCurrentStatement("SELECT 1", 0, 0, -1));
     }
+
+    [Fact]
+    public void ExtractSelectionOrCurrentStatement_OnlyComments_ReturnsNull()
+    {
+        var sut = new SqlSelectionExtractor();
+        const string script = """
+                              -- ========= SITUACAO =========
+                              -- 8 => SUSPENSO
+                              -- 9 => ENCERRADO
+                              """;
+
+        string? result = sut.ExtractSelectionOrCurrentStatement(script, 0, 0, script.Length);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ExtractSelectionOrCurrentStatement_CommentPrefixPlusQuery_ReturnsQueryStatement()
+    {
+        var sut = new SqlSelectionExtractor();
+        const string script = """
+                              -- ========= SITUACAO =========
+                              -- 8 => SUSPENSO
+                              SELECT 1;
+                              """;
+
+        int caret = script.IndexOf("SITUACAO", StringComparison.Ordinal);
+        string? result = sut.ExtractSelectionOrCurrentStatement(script, 0, 0, caret);
+
+        Assert.Equal("-- ========= SITUACAO =========\n-- 8 => SUSPENSO\nSELECT 1", result);
+    }
 }

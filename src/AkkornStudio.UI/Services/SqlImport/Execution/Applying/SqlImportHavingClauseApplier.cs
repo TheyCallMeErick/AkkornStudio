@@ -43,7 +43,13 @@ internal sealed class SqlImportHavingClauseApplier(CanvasViewModel canvas) : ISq
 
         Match aggregateHavingMatch = Regex.Match(
             query.HavingClause,
-            $@"^\s*\(?\s*(?<func>COUNT|SUM|AVG|MIN|MAX)\s*\(\s*(?<arg>{qualifiedIdentifierPattern}|\*|1)\s*\)\s*(?<op><>|!=|>=|<=|=|>|<)\s*(?<right>.+?)\s*\)?\s*$",
+            $@"^\s*\(?\s*(?<func>COUNT|SUM|AVG|MIN|MAX)\s*\(\s*(?<distinct>DISTINCT\s+)?(?<arg>{qualifiedIdentifierPattern}|\*|1)\s*\)\s*(?<op><>|!=|>=|<=|=|>|<)\s*(?<right>.+?)\s*\)?\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant
+        );
+
+        Match stringAggHavingMatch = Regex.Match(
+            query.HavingClause,
+            $@"^\s*\(?\s*STRING_AGG\s*\(\s*(?<distinct>DISTINCT\s+)?(?<arg>{qualifiedIdentifierPattern})\s*,\s*(?<sep>'(?:[^']|'')*'|""(?:[^""]|"""")*"")(?<order>\s+ORDER\s+BY\s+(?<orderArg>{qualifiedIdentifierPattern})(?:\s+(?<orderDir>ASC|DESC))?)?\s*\)\s*(?<op><>|!=|>=|<=|=|>|<)\s*(?<right>.+?)\s*\)?\s*$",
             RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant
         );
 
@@ -91,6 +97,7 @@ internal sealed class SqlImportHavingClauseApplier(CanvasViewModel canvas) : ISq
         else if (aggregateHavingMatch.Success)
         {
             string functionName = aggregateHavingMatch.Groups["func"].Value.Trim().ToUpperInvariant();
+            bool isDistinctCount = aggregateHavingMatch.Groups["distinct"].Success;
             string argumentExpression = SqlImportIdentifierNormalizer.NormalizeQualifiedIdentifier(aggregateHavingMatch.Groups["arg"].Value.Trim());
             string op = aggregateHavingMatch.Groups["op"].Value.Trim();
             string rightExpr = aggregateHavingMatch.Groups["right"].Value.Trim().Trim('\'', '"');
@@ -136,7 +143,7 @@ internal sealed class SqlImportHavingClauseApplier(CanvasViewModel canvas) : ISq
                     NodeDefinitionRegistry.Get(NodeType.CountDistinct),
                     layout.HavingCountPosition(query.FromParts.Count)
                 );
-                countNode.Parameters["distinct"] = "false";
+                countNode.Parameters["distinct"] = isDistinctCount ? "true" : "false";
                 _canvas.Nodes.Add(countNode);
 
                 SqlImportClauseApplyUtilities.SafeWire(
@@ -159,7 +166,7 @@ internal sealed class SqlImportHavingClauseApplier(CanvasViewModel canvas) : ISq
 
                 report.Add(
                     new ImportReportItem(
-                        $"HAVING {functionName}({argumentExpression}) {op} {rightExpr}",
+                        $"HAVING {functionName}({(isDistinctCount ? "DISTINCT " : string.Empty)}{argumentExpression}) {op} {rightExpr}",
                         ImportItemStatus.Imported,
                         sourceNodeId: comp.Id
                     )
@@ -223,6 +230,85 @@ internal sealed class SqlImportHavingClauseApplier(CanvasViewModel canvas) : ISq
                     result.Id));
                 partial++;
             }
+        }
+        else if (stringAggHavingMatch.Success)
+        {
+            bool isDistinct = stringAggHavingMatch.Groups["distinct"].Success;
+            string argumentExpression = SqlImportIdentifierNormalizer.NormalizeQualifiedIdentifier(stringAggHavingMatch.Groups["arg"].Value.Trim());
+            string separator = stringAggHavingMatch.Groups["sep"].Value.Trim().Trim('\'', '"');
+            string? orderByExpression = stringAggHavingMatch.Groups["orderArg"].Success
+                ? SqlImportIdentifierNormalizer.NormalizeQualifiedIdentifier(stringAggHavingMatch.Groups["orderArg"].Value.Trim())
+                : null;
+            bool orderDescending = stringAggHavingMatch.Groups["orderDir"].Success
+                && stringAggHavingMatch.Groups["orderDir"].Value.Equals("DESC", StringComparison.OrdinalIgnoreCase);
+            string op = stringAggHavingMatch.Groups["op"].Value.Trim();
+            string rightExpr = stringAggHavingMatch.Groups["right"].Value.Trim().Trim('\'', '"');
+
+            if (!ImportBuildUtilities.TryResolveExpressionPin(argumentExpression, fromParts, tableNodes, out PinViewModel sourcePin))
+            {
+                report.Add(
+                    SqlImportReportFactory.HavingUnsupported(
+                        $"HAVING {SqlImportClauseApplyUtilities.Truncate(query.HavingClause, 40)}",
+                        result.Id
+                    )
+                );
+
+                report.Add(SqlImportReportFactory.Partial(
+                    SqlImportDiagnosticCodes.FallbackRegexUsed,
+                    "HAVING fallback",
+                    SqlImportDiagnosticMessages.HavingFallbackReportNote,
+                    result.Id));
+                partial++;
+
+                return new SqlImportApplyResult(imported, partial, 0);
+            }
+
+            NodeViewModel aggregateNode = new(
+                NodeDefinitionRegistry.Get(NodeType.StringAgg),
+                layout.HavingCountPosition(query.FromParts.Count)
+            );
+            aggregateNode.Parameters["separator"] = separator;
+            aggregateNode.Parameters["distinct"] = isDistinct ? "true" : "false";
+            if (orderDescending)
+                aggregateNode.Parameters["order_1_desc"] = "true";
+            _canvas.Nodes.Add(aggregateNode);
+            SqlImportClauseApplyUtilities.SafeWire(sourcePin.Owner, sourcePin.Name, aggregateNode, "value", _canvas);
+
+            if (!string.IsNullOrWhiteSpace(orderByExpression)
+                && ImportBuildUtilities.TryResolveExpressionPin(orderByExpression, fromParts, tableNodes, out PinViewModel orderByPin))
+            {
+                SqlImportClauseApplyUtilities.SafeWire(orderByPin.Owner, orderByPin.Name, aggregateNode, "order_by", _canvas);
+            }
+
+            NodeType compType = op switch
+            {
+                "=" => NodeType.Equals,
+                "<>" or "!=" => NodeType.NotEquals,
+                ">" => NodeType.GreaterThan,
+                ">=" => NodeType.GreaterOrEqual,
+                "<" => NodeType.LessThan,
+                "<=" => NodeType.LessOrEqual,
+                _ => NodeType.Equals,
+            };
+
+            NodeViewModel comp = new(
+                NodeDefinitionRegistry.Get(compType),
+                layout.HavingComparisonPosition(query.FromParts.Count)
+            );
+            comp.PinLiterals["right"] = rightExpr;
+            _canvas.Nodes.Add(comp);
+
+            SqlImportClauseApplyUtilities.SafeWire(aggregateNode, "result", comp, "left", _canvas);
+            SqlImportClauseApplyUtilities.SafeWire(comp, "result", result, "having", _canvas);
+
+            report.Add(
+                new ImportReportItem(
+                    $"HAVING STRING_AGG({(isDistinct ? "DISTINCT " : string.Empty)}{argumentExpression}, '{separator}'{(string.IsNullOrWhiteSpace(orderByExpression) ? string.Empty : $" ORDER BY {orderByExpression}{(orderDescending ? " DESC" : string.Empty)}")}) {op} {rightExpr}",
+                    ImportItemStatus.Imported,
+                    sourceNodeId: comp.Id
+                )
+            );
+            imported++;
         }
         else
         {

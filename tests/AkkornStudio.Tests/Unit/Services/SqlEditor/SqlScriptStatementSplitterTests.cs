@@ -54,4 +54,25 @@ public sealed class SqlScriptStatementSplitterTests
         Assert.Equal(2, result[1].StartLine);
         Assert.Equal(4, result[1].EndLine);
     }
+
+    [Fact]
+    public void Split_IgnoresCommentOnlySegments()
+    {
+        var sut = new SqlScriptStatementSplitter();
+        const string sql = """
+                           -- bloco solto de comentário
+                           -- sem instrução executável
+                           ;
+                           -- ========= SITUACAO =========
+                           -- 8 => SUSPENSO
+                           -- 9 => ENCERRADO
+                           SELECT 1;
+                           """;
+
+        IReadOnlyList<SqlStatement> result = sut.Split(sql);
+
+        Assert.Single(result);
+        Assert.Contains("SELECT 1", result[0].Sql, StringComparison.Ordinal);
+        Assert.Equal(StatementKind.Select, result[0].Kind);
+    }
 }

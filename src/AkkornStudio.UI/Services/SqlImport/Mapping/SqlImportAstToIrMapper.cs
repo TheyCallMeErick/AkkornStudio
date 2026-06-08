@@ -69,15 +69,18 @@ public sealed class SqlImportAstToIrMapper
         SqlExpression? whereExpr = null;
         if (!string.IsNullOrWhiteSpace(parsed.WhereClause))
         {
-            whereExpr = _predicateParser.Parse(
-                parsed.WhereClause,
-                queryId,
-                "where",
-                SqlImportClause.Where,
-                sourceByAlias,
-                fromSource.SourceId,
-                diagnostics
-            );
+            if (!IsGraphHandledExistsSubquery(parsed.WhereClause))
+            {
+                whereExpr = _predicateParser.Parse(
+                    parsed.WhereClause,
+                    queryId,
+                    "where",
+                    SqlImportClause.Where,
+                    sourceByAlias,
+                    fromSource.SourceId,
+                    diagnostics
+                );
+            }
         }
 
         IReadOnlyList<SelectItemExpr> selectItems = BuildSelectItems(
@@ -1197,6 +1200,15 @@ public sealed class SqlImportAstToIrMapper
         return false;
     }
 
+    private static bool IsGraphHandledExistsSubquery(string whereClause)
+    {
+        string normalized = Regex.Replace(whereClause, @"\s+", " ").Trim();
+        return Regex.IsMatch(
+            normalized,
+            @"^(?:NOT\s+)?EXISTS\s*\(\s*SELECT\b.+\)\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
+    }
+
     private static string NormalizeSetOperandSql(string operandSql)
     {
         string normalized = operandSql.Trim();
@@ -1452,7 +1464,8 @@ public sealed class SqlImportAstToIrMapper
             GroupBy: groupBy,
             HavingClause: havingClause,
             Limit: limit,
-            OuterAliases: []
+            OuterAliases: [],
+            SetOperations: []
         );
 
         return true;

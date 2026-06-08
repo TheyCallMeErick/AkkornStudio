@@ -9,6 +9,8 @@ namespace AkkornStudio.UI.Serialization;
 
 public static partial class CanvasSerializer
 {
+    public static event Action<string>? WarningRaised;
+
     private enum CanvasNodeFamily
     {
         Any,
@@ -31,6 +33,7 @@ public static partial class CanvasSerializer
     public const int CompressionThresholdBytes = 64 * 1024;
     public const int MaxLocalFileVersions = 30;
     public const int MaxAutomaticBackups = 20;
+    public const int MaxCteSubgraphDepth = 16;
 
     private static readonly JsonSerializerOptions _opts = new()
     {
@@ -38,4 +41,11 @@ public static partial class CanvasSerializer
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    private static void RaiseWarning(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+
+        WarningRaised?.Invoke(message);
+    }
 }

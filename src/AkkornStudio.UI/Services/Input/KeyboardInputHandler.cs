@@ -522,7 +522,7 @@ public class KeyboardInputHandler
             case ShortcutActionIds.RunPreview:
                 if (isTextInputFocused || isCanvasInteractionBlocked)
                     return false;
-                return TryExecuteCommandPaletteShortcut(ShortcutActionIds.RunPreview, "F5");
+                return false;
 
             case ShortcutActionIds.ExplainPlan:
                 if (isTextInputFocused || isCanvasInteractionBlocked)

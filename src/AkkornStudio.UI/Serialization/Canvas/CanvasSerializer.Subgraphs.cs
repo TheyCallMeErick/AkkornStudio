@@ -153,6 +153,12 @@ public static partial class CanvasSerializer
             SavedCteSubgraph subgraph = cteNode.CteSubgraph!;
             if (subgraph.Nodes.Count == 0)
                 continue;
+            if (TryGetCteSubgraphDepth(subgraph, out int depth) && depth > MaxCteSubgraphDepth)
+            {
+                warnings.Add(
+                    $"Skipped persisted CTE subgraph for node '{cteNode.NodeId}' because nesting depth {depth} exceeds limit {MaxCteSubgraphDepth}.");
+                continue;
+            }
 
             var localIdMap = new Dictionary<string, NodeViewModel>(StringComparer.Ordinal);
             foreach (SavedNode subNode in subgraph.Nodes)
@@ -203,5 +209,27 @@ public static partial class CanvasSerializer
 
             warnings.Add($"Materialized persisted CTE subgraph for node '{cteVm.Id}'.");
         }
+    }
+
+    private static bool TryGetCteSubgraphDepth(SavedCteSubgraph subgraph, out int depth)
+    {
+        depth = 0;
+        var stack = new Stack<(SavedCteSubgraph Graph, int Level)>();
+        stack.Push((subgraph, 1));
+
+        while (stack.Count > 0)
+        {
+            (SavedCteSubgraph current, int level) = stack.Pop();
+            if (level > depth)
+                depth = level;
+
+            foreach (SavedNode node in current.Nodes)
+            {
+                if (node.CteSubgraph is not null)
+                    stack.Push((node.CteSubgraph, level + 1));
+            }
+        }
+
+        return true;
     }
 }

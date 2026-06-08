@@ -9,6 +9,8 @@ internal sealed class QueryCompilationValidationStageFactory(
     Action<NodeViewModel, List<string>> validateNotAndJsonNodes,
     Action<NodeViewModel, List<string>> validateOutputSourceReachability,
     Action<NodeViewModel, IReadOnlyList<JoinDefinition>, List<string>> validateSourceConflicts,
+    Action<IReadOnlyList<JoinDefinition>, List<string>> validateImplicitCrossJoins,
+    Action<NodeViewModel, List<string>> validateSelectStarProjection,
     Action<NodeViewModel, List<string>> validatePaginationSettings,
     Action<NodeViewModel, List<string>> validateQueryHints,
     Action<NodeViewModel, List<string>> validatePivotSettings)
@@ -21,6 +23,8 @@ internal sealed class QueryCompilationValidationStageFactory(
     private readonly Action<NodeViewModel, List<string>> _validateNotAndJsonNodes = validateNotAndJsonNodes;
     private readonly Action<NodeViewModel, List<string>> _validateOutputSourceReachability = validateOutputSourceReachability;
     private readonly Action<NodeViewModel, IReadOnlyList<JoinDefinition>, List<string>> _validateSourceConflicts = validateSourceConflicts;
+    private readonly Action<IReadOnlyList<JoinDefinition>, List<string>> _validateImplicitCrossJoins = validateImplicitCrossJoins;
+    private readonly Action<NodeViewModel, List<string>> _validateSelectStarProjection = validateSelectStarProjection;
     private readonly Action<NodeViewModel, List<string>> _validatePaginationSettings = validatePaginationSettings;
     private readonly Action<NodeViewModel, List<string>> _validateQueryHints = validateQueryHints;
     private readonly Action<NodeViewModel, List<string>> _validatePivotSettings = validatePivotSettings;
@@ -35,8 +39,9 @@ internal sealed class QueryCompilationValidationStageFactory(
             _validateNotAndJsonNodes,
             _validateOutputSourceReachability,
             _validateSourceConflicts,
+            _validateImplicitCrossJoins,
+            _validateSelectStarProjection,
             _validatePaginationSettings,
             _validateQueryHints,
             _validatePivotSettings);
 }
-
