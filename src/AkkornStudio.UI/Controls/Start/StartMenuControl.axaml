@@ -155,6 +155,92 @@
       <Setter Property="Padding" Value="14,12"/>
     </Style>
 
+    <!-- Primary action tiles in the hero -->
+    <Style Selector="Button.action-tile">
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusMD}"/>
+      <Setter Property="Padding" Value="14,14"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="RenderTransform" Value="translateY(0px)"/>
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.14"/>
+          <BrushTransition Property="Background" Duration="0:0:0.12"/>
+          <BrushTransition Property="BorderBrush" Duration="0:0:0.12"/>
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.action-tile:pointerover">
+      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+      <Setter Property="RenderTransform" Value="translateY(-3px)"/>
+    </Style>
+    <Style Selector="Button.action-tile.primary-tile">
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+    </Style>
+    <Style Selector="Button.action-tile TextBlock.tile-title">
+      <Setter Property="FontSize" Value="{StaticResource FontSizeLabel}"/>
+      <Setter Property="FontWeight" Value="{StaticResource FontWeightAction}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="Button.action-tile TextBlock.tile-sub">
+      <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+    </Style>
+
+    <!-- Colored icon chip for each action -->
+    <Style Selector="Border.icon-chip">
+      <Setter Property="Width" Value="38"/>
+      <Setter Property="Height" Value="38"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
+      <Setter Property="HorizontalAlignment" Value="Left"/>
+    </Style>
+
+    <!-- Accent bar before a section title -->
+    <Style Selector="Border.section-bar">
+      <Setter Property="Width" Value="3"/>
+      <Setter Property="Height" Value="16"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
+      <Setter Property="Background" Value="{StaticResource AccentPrimaryBrush}"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Kicker rendered as a subtle pill badge -->
+    <Style Selector="Border.kicker-badge">
+      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
+      <Setter Property="Padding" Value="9,3"/>
+      <Setter Property="HorizontalAlignment" Value="Left"/>
+    </Style>
+
+    <!-- Decorative node-graph motif (echoes the canvas/node identity) -->
+    <Style Selector="Border.motif-node">
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
+    </Style>
+
+    <!-- Clickable saved-connection rows -->
+    <Style Selector="Button.connection-row">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="8,2"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusSM}"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    </Style>
+    <Style Selector="Button.connection-row:pointerover">
+      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+    </Style>
+
     <!-- Responsive typography scale for desktop ranges -->
     <Style Selector="UserControl.start-compact TextBlock.brand">
       <Setter Property="FontSize" Value="{StaticResource FontSizeLabel}"/>
@@ -208,14 +294,14 @@
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*" Background="{StaticResource Bg0Brush}">
-    <Canvas Grid.RowSpan="3" IsHitTestVisible="False" Opacity="0.38">
-      <!-- Azul — canto superior esquerdo (existente) -->
-      <Border Width="420" Height="420" CornerRadius="{StaticResource RadiusPill}" Background="{StaticResource Bg3Brush}" Canvas.Left="-140" Canvas.Top="-220"/>
+    <Canvas Grid.RowSpan="3" IsHitTestVisible="False" Opacity="0.22">
+      <!-- Glow azul (acento primário) — canto superior esquerdo -->
+      <Border Width="420" Height="420" CornerRadius="{StaticResource RadiusPill}" Background="{StaticResource AccentPrimaryBrush}" Canvas.Left="-160" Canvas.Top="-240"/>
       <!-- Verde — lateral direita central (existente) -->
       <Border Width="360" Height="360" CornerRadius="{StaticResource RadiusPill}" Background="{StaticResource Bg2Brush}" Canvas.Right="-90" Canvas.Top="110"/>
 
-      <!-- Violeta — canto superior direito (análogo ao azul, seção Conexões) -->
-      <Border Width="300" Height="300" CornerRadius="{StaticResource RadiusPill}" Background="{StaticResource Bg2Brush}" Canvas.Right="-100" Canvas.Top="-90"/>
+      <!-- Glow violeta (acento secundário) — canto superior direito -->
+      <Border Width="300" Height="300" CornerRadius="{StaticResource RadiusPill}" Background="{StaticResource AccentSecondaryBrush}" Canvas.Right="-110" Canvas.Top="-110"/>
       <!-- Ciano — centro-esquerda (análogo ao azul, transição entre hero e recentes) -->
       <Border Width="260" Height="260" CornerRadius="{StaticResource RadiusPill}" Background="{StaticResource Bg1Brush}" Canvas.Left="300" Canvas.Top="250"/>
       <!-- Teal — inferior esquerdo (análogo ao verde, seção Recentes) -->
@@ -252,22 +338,108 @@
     </shell:AppHeaderBar>
 
     <ScrollViewer Grid.Row="1"  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <Grid Margin="24" ColumnDefinitions="2.2*,1*" RowDefinitions="Auto,Auto,*" MinHeight="640">
-      <Border Grid.Row="0" Grid.ColumnSpan="2" Grid.Column="0"  Margin="0,0,14,0" Classes="card hero-card" Name="HeroBlock">
-        <StackPanel Spacing="8">
-          <TextBlock Classes="kicker" Text="{Binding [start.workspace], Source={x:Static loc:LocalizationService.Instance}}"/>
-          <TextBlock Classes="h1" Text="{Binding [start.resumeTitle], Source={x:Static loc:LocalizationService.Instance}}"/>
-          <TextBlock Classes="meta" Text="{Binding [start.resumeSubtitle], Source={x:Static loc:LocalizationService.Instance}}"/>
-          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-            <Border Classes="chip"><TextBlock Classes="meta" Text="{Binding [start.chip.quickFlow], Source={x:Static loc:LocalizationService.Instance}}"/></Border>
-            <Border Classes="chip"><TextBlock Classes="meta" Text="{Binding [start.chip.templates], Source={x:Static loc:LocalizationService.Instance}}"/></Border>
+      <Grid Margin="24" ColumnDefinitions="2.2*,18,1*" RowDefinitions="Auto,Auto,Auto" MinHeight="640">
+
+      <!-- HERO: workspace intro + primary actions -->
+      <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Classes="card hero-card" Name="HeroBlock" ClipToBounds="True">
+        <Grid RowDefinitions="Auto,Auto">
+          <!-- Decorative node-graph motif (top-right, non-interactive) -->
+          <Canvas Grid.Row="0" Grid.RowSpan="2" IsHitTestVisible="False" Opacity="0.5" HorizontalAlignment="Right" Width="240" Height="150" ClipToBounds="True">
+            <Path Stroke="{StaticResource AccentPrimaryBrush}" StrokeThickness="1.5" Data="M 64,30 C 100,30 96,18 132,18"/>
+            <Path Stroke="{StaticResource AccentSecondaryBrush}" StrokeThickness="1.5" Data="M 64,38 C 104,38 92,104 130,104"/>
+            <Path Stroke="{StaticResource StatusOkBrush}" StrokeThickness="1.5" Data="M 196,34 C 220,34 210,96 196,96"/>
+            <Border Classes="motif-node" Canvas.Left="8" Canvas.Top="20" Width="56" Height="30">
+              <Border Height="3" VerticalAlignment="Top" Margin="0" CornerRadius="4,4,0,0" Background="{StaticResource AccentPrimaryBrush}"/>
+            </Border>
+            <Border Classes="motif-node" Canvas.Left="132" Canvas.Top="4" Width="64" Height="34" BorderBrush="{StaticResource AccentSecondaryBrush}">
+              <Border Height="3" VerticalAlignment="Top" CornerRadius="4,4,0,0" Background="{StaticResource AccentSecondaryBrush}"/>
+            </Border>
+            <Border Classes="motif-node" Canvas.Left="130" Canvas.Top="88" Width="64" Height="34" BorderBrush="{StaticResource StatusOkBrush}">
+              <Border Height="3" VerticalAlignment="Top" CornerRadius="4,4,0,0" Background="{StaticResource StatusOkBrush}"/>
+            </Border>
+            <Ellipse Canvas.Left="60" Canvas.Top="26" Width="7" Height="7" Fill="{StaticResource AccentPrimaryBrush}"/>
+            <Ellipse Canvas.Left="129" Canvas.Top="15" Width="7" Height="7" Fill="{StaticResource AccentSecondaryBrush}"/>
+            <Ellipse Canvas.Left="127" Canvas.Top="101" Width="7" Height="7" Fill="{StaticResource StatusOkBrush}"/>
+          </Canvas>
+
+          <StackPanel Grid.Row="0" Spacing="8" Margin="0,0,0,14">
+            <Border Classes="kicker-badge">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Ellipse Width="6" Height="6" VerticalAlignment="Center" Fill="{StaticResource AccentPrimaryBrush}"/>
+                <TextBlock Classes="kicker" Text="{Binding [start.workspace], Source={x:Static loc:LocalizationService.Instance}}"/>
+              </StackPanel>
+            </Border>
+            <TextBlock Classes="h1" Text="{Binding [start.resumeTitle], Source={x:Static loc:LocalizationService.Instance}}"/>
+            <TextBlock Classes="meta" Text="{Binding [start.resumeSubtitle], Source={x:Static loc:LocalizationService.Instance}}" MaxWidth="560" HorizontalAlignment="Left"/>
           </StackPanel>
-        </StackPanel>
+
+          <Grid Grid.Row="1" ColumnDefinitions="*,10,*,10,*,10,*,10,*">
+            <Button Grid.Column="0" Classes="action-tile primary-tile" Command="{Binding CreateNewDiagramCommand}">
+              <StackPanel Spacing="10">
+                <Border Classes="icon-chip" Background="{StaticResource BtnInfoBgBrush}">
+                  <mi:MaterialIcon Kind="Sitemap" Width="20" Height="20" Foreground="{StaticResource AccentPrimaryBrush}"/>
+                </Border>
+                <StackPanel Spacing="2">
+                  <TextBlock Classes="tile-title" Text="{Binding [menu.newDiagram], Source={x:Static loc:LocalizationService.Instance}}" TextWrapping="Wrap"/>
+                  <TextBlock Classes="tile-sub" Text="Monte SQL por nós" TextWrapping="Wrap"/>
+                </StackPanel>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="2" Classes="action-tile" Command="{Binding OpenSqlEditorCommand}">
+              <StackPanel Spacing="10">
+                <Border Classes="icon-chip" Background="{StaticResource BtnSuccessBgBrush}">
+                  <mi:MaterialIcon Kind="ConsoleLine" Width="20" Height="20" Foreground="{StaticResource StatusOkBrush}"/>
+                </Border>
+                <StackPanel Spacing="2">
+                  <TextBlock Classes="tile-title" Text="Editor SQL" TextWrapping="Wrap"/>
+                  <TextBlock Classes="tile-sub" Text="Escreva e rode queries" TextWrapping="Wrap"/>
+                </StackPanel>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="4" Classes="action-tile" Command="{Binding OpenSchemaCompareCommand}">
+              <StackPanel Spacing="10">
+                <Border Classes="icon-chip" Background="#2A2150">
+                  <mi:MaterialIcon Kind="TableSync" Width="20" Height="20" Foreground="{StaticResource AccentSecondaryBrush}"/>
+                </Border>
+                <StackPanel Spacing="2">
+                  <TextBlock Classes="tile-title" Text="{Binding [start.compareTables], Source={x:Static loc:LocalizationService.Instance}}" TextWrapping="Wrap"/>
+                  <TextBlock Classes="tile-sub" Text="Diff de schema/banco" TextWrapping="Wrap"/>
+                </StackPanel>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="6" Classes="action-tile" Command="{Binding OpenStructureAnalysisCommand}">
+              <StackPanel Spacing="10">
+                <Border Classes="icon-chip" Background="{StaticResource BtnWarningBgBrush}">
+                  <mi:MaterialIcon Kind="Stethoscope" Width="20" Height="20" Foreground="{StaticResource StatusWarningBrush}"/>
+                </Border>
+                <StackPanel Spacing="2">
+                  <TextBlock Classes="tile-title" Text="Diagnóstico" TextWrapping="Wrap"/>
+                  <TextBlock Classes="tile-sub" Text="Análise de estrutura" TextWrapping="Wrap"/>
+                </StackPanel>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="8" Classes="action-tile" Command="{Binding OpenFromDiskCommand}">
+              <StackPanel Spacing="10">
+                <Border Classes="icon-chip" Background="{StaticResource Bg2Brush}">
+                  <mi:MaterialIcon Kind="FolderOpenOutline" Width="20" Height="20" Foreground="{StaticResource StatusInfoBrush}"/>
+                </Border>
+                <StackPanel Spacing="2">
+                  <TextBlock Classes="tile-title" Text="{Binding [main.open], Source={x:Static loc:LocalizationService.Instance}}" TextWrapping="Wrap"/>
+                  <TextBlock Classes="tile-sub" Text="Abrir do disco" TextWrapping="Wrap"/>
+                </StackPanel>
+              </StackPanel>
+            </Button>
+          </Grid>
+        </Grid>
       </Border>
 
-      <Border Grid.Row="1" Grid.ColumnSpan="2" Grid.Column="0" Margin="0,14,14,0" Classes="card" Name="RecentSection" MinHeight="300">
-        <Grid RowDefinitions="Auto,Auto,Auto,*">
-          <TextBlock Classes="h2" Text="{Binding [start.recentProjectsTitle], Source={x:Static loc:LocalizationService.Instance}}"/>
+      <!-- RECENTS (left) -->
+      <Border Grid.Row="1" Grid.Column="0" Margin="0,18,0,0" Classes="card" Name="RecentSection" MinHeight="300">
+        <Grid RowDefinitions="Auto,Auto,*">
+          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <Border Classes="section-bar"/>
+            <TextBlock Classes="h2" Text="{Binding [start.recentProjectsTitle], Source={x:Static loc:LocalizationService.Instance}}"/>
+          </StackPanel>
 
           <TextBox Grid.Row="1"
                    Classes="field"
@@ -276,47 +448,32 @@
                    Watermark="{Binding [start.searchRecent], Source={x:Static loc:LocalizationService.Instance}}"
                    Height="34"/>
 
-          <ScrollViewer Grid.Row="2" Margin="{StaticResource StartMarginInnerTop}" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Height="190">
-            <StackPanel Orientation="Horizontal" Spacing="{StaticResource StartSpaceSM}">
-              <Border Classes="quick-action-card" Width="272" Height="178">
-                <Grid RowDefinitions="Auto,*,Auto,Auto,Auto">
-                  <TextBlock Classes="meta" Text="{Binding [start.quickActions], Source={x:Static loc:LocalizationService.Instance}}" FontWeight="{StaticResource FontWeightStrong}"/>
-                  <TextBlock Grid.Row="1" Classes="meta" Text="{Binding [start.quickActionsSubtitle], Source={x:Static loc:LocalizationService.Instance}}" TextWrapping="Wrap" Opacity="0.9" Margin="0,6,0,0"/>
-                  <Button Grid.Row="2" Classes="primary" Content="{Binding [mode.sql], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding OpenSqlEditorCommand}" Margin="0,8,0,0" HorizontalAlignment="Center" MinWidth="164"/>
-                  <Button Grid.Row="3" Classes="ghost" Content="{Binding [menu.newDiagram], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding CreateNewDiagramCommand}" Margin="0,8,0,0" HorizontalAlignment="Center" MinWidth="164"/>
-                  <Grid Grid.Row="4" ColumnDefinitions="*,8,*,8,*" Margin="0,8,0,0">
-                    <Button Grid.Column="0" Classes="ghost" Content="{Binding [main.open], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding OpenFromDiskCommand}" HorizontalAlignment="Stretch"/>
-                    <Button Grid.Column="2" Classes="ghost" Content="{Binding [start.compareTables], Source={x:Static loc:LocalizationService.Instance}}" Command="{Binding OpenSchemaCompareCommand}" HorizontalAlignment="Stretch"/>
-                    <Button Grid.Column="4" Classes="ghost" Content="Diagnóstico" Command="{Binding OpenStructureAnalysisCommand}" HorizontalAlignment="Stretch"/>
-                  </Grid>
-                </Grid>
-              </Border>
-
-              <ItemsControl ItemsSource="{Binding RecentProjects}" IsVisible="{Binding HasRecentProjects}">
-                <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate>
-                    <VirtualizingStackPanel Orientation="Horizontal"/>
-                  </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="startmodels:StartRecentProjectItem">
-                    <Button Classes="ghost"
-                            Width="220"
-                            Height="154"
-                            Padding="{StaticResource StartPaddingGhostButton}"
-                            Tag="{Binding}"
-                            Click="RecentProjectCard_Click"
-                            HorizontalContentAlignment="Stretch"
-                            VerticalContentAlignment="Stretch">
-                      <start:RecentProjectCard/>
-                    </Button>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
+          <ScrollViewer Grid.Row="2" Margin="{StaticResource StartMarginInnerTop}" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" IsVisible="{Binding HasRecentProjects}">
+            <ItemsControl ItemsSource="{Binding RecentProjects}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <VirtualizingStackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="startmodels:StartRecentProjectItem">
+                  <Button Classes="ghost"
+                          Width="220"
+                          Height="160"
+                          Margin="0,0,10,0"
+                          Padding="{StaticResource StartPaddingGhostButton}"
+                          Tag="{Binding}"
+                          Click="RecentProjectCard_Click"
+                          HorizontalContentAlignment="Stretch"
+                          VerticalContentAlignment="Stretch">
+                    <start:RecentProjectCard/>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
           </ScrollViewer>
 
-          <Border Grid.Row="3" Classes="empty-placeholder" Margin="0,10,0,0" VerticalAlignment="Center" IsVisible="{Binding HasRecentProjects, Converter={x:Static BoolConverters.Not}}">
+          <Border Grid.Row="2" Classes="empty-placeholder" VerticalAlignment="Center" IsVisible="{Binding HasRecentProjects, Converter={x:Static BoolConverters.Not}}">
             <StackPanel Classes="empty-state" Spacing="8">
               <TextBlock Text="{Binding [start.noRecentTitle], Source={x:Static loc:LocalizationService.Instance}}" Classes="h2" FontSize="{StaticResource FontSizeHeading}"/>
               <TextBlock Text="{Binding [start.noRecentSubtitle], Source={x:Static loc:LocalizationService.Instance}}" Classes="meta" Opacity="0.9"/>
@@ -325,9 +482,56 @@
         </Grid>
       </Border>
 
-      <Border Grid.Row="2" Grid.ColumnSpan="2" Classes="card" Margin="0,14,0,0" Name="TemplatesSection">
+      <!-- SAVED CONNECTIONS (right) -->
+      <Border Grid.Row="1" Grid.Column="2" Margin="0,18,0,0" Classes="card" Name="ConnectionsSection" MinHeight="300">
+        <Grid RowDefinitions="Auto,Auto,*,Auto">
+          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <Border Classes="section-bar" Background="{StaticResource AccentSecondaryBrush}"/>
+            <TextBlock Classes="h2" Text="{Binding [start.savedConnectionsTitle], Source={x:Static loc:LocalizationService.Instance}}"/>
+            <Border Classes="chip"><TextBlock Classes="meta" Text="{Binding [start.chip.connections], Source={x:Static loc:LocalizationService.Instance}}"/></Border>
+          </StackPanel>
+
+          <TextBlock Grid.Row="1"
+                     Margin="{StaticResource StartMarginInnerTop}"
+                     Classes="meta"
+                     Opacity="0.9"
+                     TextWrapping="Wrap"
+                     Text="{Binding [start.savedConnectionsSubtitle], Source={x:Static loc:LocalizationService.Instance}}"/>
+
+          <ScrollViewer Grid.Row="2" Margin="{StaticResource StartMarginInnerTop}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasSavedConnections}">
+            <ItemsControl ItemsSource="{Binding SavedConnections}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="startmodels:StartSavedConnectionItem">
+                  <Button Classes="connection-row"
+                          Tag="{Binding}"
+                          Click="SavedConnectionCard_Click">
+                    <start:ConnectionStatusCard/>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+
+          <Border Grid.Row="2" Classes="empty-placeholder" VerticalAlignment="Center" Margin="0,10,0,0" IsVisible="{Binding HasSavedConnections, Converter={x:Static BoolConverters.Not}}">
+            <StackPanel Classes="empty-state" Spacing="8">
+              <TextBlock Text="{Binding [start.noConnectionsTitle], Source={x:Static loc:LocalizationService.Instance}}" Classes="h2" FontSize="{StaticResource FontSizeHeading}" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding [start.noConnectionsSubtitle], Source={x:Static loc:LocalizationService.Instance}}" Classes="meta" Opacity="0.9" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
+
+          <Button Grid.Row="3"
+                  Classes="primary"
+                  Margin="0,12,0,0"
+                  HorizontalAlignment="Stretch"
+                  Content="{Binding [start.newConnection], Source={x:Static loc:LocalizationService.Instance}}"
+                  Command="{Binding OpenConnectionsCommand}"/>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Classes="card" Margin="0,18,0,0" Name="TemplatesSection">
         <Grid RowDefinitions="Auto,*">
           <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <Border Classes="section-bar" Background="{StaticResource StatusOkBrush}"/>
             <TextBlock Classes="h2" Text="{Binding [start.exploreTemplates], Source={x:Static loc:LocalizationService.Instance}}"/>
             <Border Classes="chip"><TextBlock Classes="meta" Text="{Binding [start.templatesFavoritesHint], Source={x:Static loc:LocalizationService.Instance}}"/></Border>
           </StackPanel>

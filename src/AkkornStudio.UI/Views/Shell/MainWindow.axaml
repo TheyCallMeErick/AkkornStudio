@@ -236,6 +236,78 @@
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
+
+    <!-- Workspace tab strip -->
+    <Style Selector="Border.ws-tab">
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusMD}"/>
+      <Setter Property="Padding" Value="2,1"/>
+      <Setter Property="Height" Value="30"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.12"/>
+          <BrushTransition Property="BorderBrush" Duration="0:0:0.12"/>
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Border.ws-tab:pointerover">
+      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+    </Style>
+    <Style Selector="Border.ws-tab.active">
+      <Setter Property="Background" Value="{StaticResource PanelActiveBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+    </Style>
+    <!-- Active tab gets an accent-tinted icon + brighter label -->
+    <Style Selector="Border.ws-tab.active mi|MaterialIcon">
+      <Setter Property="Foreground" Value="{StaticResource AccentPrimaryBrush}"/>
+    </Style>
+    <Style Selector="Border.ws-tab.active Button.ws-tab-main TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+      <Setter Property="FontWeight" Value="{StaticResource FontWeightTitle}"/>
+    </Style>
+    <Style Selector="Button.ws-tab-main">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="9,4"/>
+      <Setter Property="MaxWidth" Value="200"/>
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.ws-tab-close">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="3"/>
+      <Setter Property="Margin" Value="0,0,3,0"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.ws-tab-close:pointerover">
+      <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
+      <Setter Property="Foreground" Value="{StaticResource StatusErrorBrush}"/>
+    </Style>
+    <Style Selector="Button.new-tab-btn">
+      <Setter Property="Width" Value="28"/>
+      <Setter Property="Height" Value="28"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.new-tab-btn:pointerover">
+      <Setter Property="Background" Value="{StaticResource Bg3Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentPrimaryBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
   </Window.Styles>
 
     <!-- ══════════════════════════════════════════════════════════════════
@@ -289,26 +361,93 @@
                   Classes="mode-switch-host"
                   Margin="0,0,8,0"
                   VerticalAlignment="Center">
-            <StackPanel Orientation="Horizontal" Spacing="4">
+            <StackPanel Orientation="Horizontal" Spacing="2">
               <Button Classes="mode-switch-btn"
                       Name="QueryModeBtn"
-                      Content="{Binding [mode.query], Source={x:Static loc:LocalizationService.Instance}}"
+                      Classes.active="{ReflectionBinding DataContext.IsQueryModeActive, ElementName=RootWindow}"
                       Click="QueryModeBtn_Click"
-                      ToolTip.Tip="{Binding [tooltip.switchToQueryMode], Source={x:Static loc:LocalizationService.Instance}}"/>
+                      ToolTip.Tip="{Binding [tooltip.switchToQueryMode], Source={x:Static loc:LocalizationService.Instance}}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="VectorPolyline" Width="14" Height="14"/>
+                  <TextBlock Text="{Binding [mode.query], Source={x:Static loc:LocalizationService.Instance}}"/>
+                </StackPanel>
+              </Button>
               <Button Classes="mode-switch-btn"
                       Name="DdlModeBtn"
-                      Content="{Binding [mode.ddl], Source={x:Static loc:LocalizationService.Instance}}"
+                      Classes.active="{ReflectionBinding DataContext.IsDdlModeActive, ElementName=RootWindow}"
                       Click="DdlModeBtn_Click"
-                      ToolTip.Tip="{Binding [tooltip.switchToDdlMode], Source={x:Static loc:LocalizationService.Instance}}"/>
+                      ToolTip.Tip="{Binding [tooltip.switchToDdlMode], Source={x:Static loc:LocalizationService.Instance}}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="TableCog" Width="14" Height="14"/>
+                  <TextBlock Text="{Binding [mode.ddl], Source={x:Static loc:LocalizationService.Instance}}"/>
+                </StackPanel>
+              </Button>
+              <Button Classes="mode-switch-btn"
+                      Name="SqlEditorModeBtn"
+                      Classes.active="{ReflectionBinding DataContext.IsSqlEditorModeActive, ElementName=RootWindow}"
+                      Click="SqlEditorModeBtn_Click"
+                      ToolTip.Tip="Editor de SQL desta aba">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="ConsoleLine" Width="14" Height="14"/>
+                  <TextBlock Text="SQL"/>
+                </StackPanel>
+              </Button>
               <Button Classes="mode-switch-btn"
                       Name="ErDiagramModeBtn"
-                      Content="ER"
+                      Classes.active="{ReflectionBinding DataContext.IsErDiagramModeActive, ElementName=RootWindow}"
                       Click="ErDiagramModeBtn_Click"
-                      ToolTip.Tip="Abrir diagrama ER do schema ativo"/>
+                      ToolTip.Tip="Abrir diagrama ER do schema ativo">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <mi:MaterialIcon Kind="Sitemap" Width="14" Height="14"/>
+                  <TextBlock Text="ER"/>
+                </StackPanel>
+              </Button>
             </StackPanel>
           </Border>
 
-          <Grid Grid.Column="2"/>
+          <ScrollViewer Grid.Column="2" Margin="8,0,0,0"
+                        HorizontalScrollBarVisibility="Hidden"
+                        VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+              <ItemsControl ItemsSource="{ReflectionBinding DataContext.Tabs, ElementName=RootWindow}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="4"/>
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:WorkspaceTabViewModel">
+                    <Border Classes="ws-tab" Classes.active="{Binding IsActive}">
+                      <StackPanel Orientation="Horizontal">
+                        <Button Classes="ws-tab-main"
+                                Command="{ReflectionBinding DataContext.ActivateTabCommand, ElementName=RootWindow}"
+                                CommandParameter="{Binding}"
+                                ToolTip.Tip="{Binding DisplayTitle}">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <mi:MaterialIcon Kind="{Binding CurrentModeIcon}" Width="13" Height="13"/>
+                            <TextBlock Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                          </StackPanel>
+                        </Button>
+                        <Button Classes="ws-tab-close"
+                                Command="{ReflectionBinding DataContext.CloseTabCommand, ElementName=RootWindow}"
+                                CommandParameter="{Binding}"
+                                IsVisible="{ReflectionBinding DataContext.CanCloseActiveTab, ElementName=RootWindow}"
+                                ToolTip.Tip="Fechar aba">
+                          <mi:MaterialIcon Kind="Close" Width="12" Height="12"/>
+                        </Button>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Button Classes="new-tab-btn"
+                      Margin="4,0,0,0"
+                      Command="{ReflectionBinding DataContext.NewTabCommand, ElementName=RootWindow}"
+                      ToolTip.Tip="Nova aba (escolher modo)">
+                <mi:MaterialIcon Kind="Plus" Width="15" Height="15"/>
+              </Button>
+            </StackPanel>
+          </ScrollViewer>
         </Grid>
       </shell:AppHeaderBar.CenterContent>
 
@@ -845,6 +984,10 @@
                                      IsVisible="{ReflectionBinding DataContext.IsOutputPreviewModalVisible, ElementName=RootWindow}"/>
     <shell:QuickDataPreviewModalControl DataContext="{Binding QuickDataPreview}"
                                         IsVisible="{ReflectionBinding DataContext.IsQuickDataPreviewModalVisible, ElementName=RootWindow}"/>
+
+    <shell:NewTabModeModalControl DataContext="{Binding NewTabModal}"
+                                  ZIndex="90"
+                                  IsVisible="{ReflectionBinding DataContext.IsNewTabModalVisible, ElementName=RootWindow}"/>
 
     <Border IsVisible="{Binding IsSettingsVisible}"
             Background="{StaticResource MacroScrimBrush}"

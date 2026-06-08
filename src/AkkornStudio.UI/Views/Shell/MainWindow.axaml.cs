@@ -315,6 +315,9 @@ public partial class MainWindow : Window
 
     private void OnStartOpenConnectionsRequested()
     {
+        // The connection manager renders as an overlay over the active workspace document, so the
+        // workspace must be visible (not the start screen) for the modal to appear.
+        EnterCanvasMode();
         _globalModalManager.RequestConnectionManager(beginNewProfile: true, keepStartVisible: true);
     }
 
@@ -344,6 +347,10 @@ public partial class MainWindow : Window
 
     private void OnStartOpenSavedConnectionRequested(StartSavedConnectionItem item)
     {
+        // Enter the workspace first so the connection manager overlay has a host to render into
+        // (it is gated on the canvas being visible, not the start screen).
+        EnterCanvasMode();
+
         if (GetConnectionModule().ConnectFromStartItem(item.Id))
             return;
 
@@ -582,7 +589,8 @@ public partial class MainWindow : Window
                 CurrentShell.RestoreWorkspaceDocuments(snapshot);
                 SyncModeToggleState();
             },
-            invalidateActiveCanvasWires: InvalidateActiveDiagramCanvasWires);
+            invalidateActiveCanvasWires: InvalidateActiveDiagramCanvasWires,
+            workspaceTabsSnapshotResolver: () => CurrentShell.BuildTabsSaveSnapshot());
         _fileOps = new FileOperationsService(
             window: this,
             vm: vm,

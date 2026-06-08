@@ -32,7 +32,7 @@ namespace AkkornStudio.UI.ViewModels;
 /// <summary>
 /// Coordinates the application shell flow between Start Menu and Canvas work area.
 /// </summary>
-public sealed class ShellViewModel : ViewModelBase, IDisposable
+public sealed partial class ShellViewModel : ViewModelBase, IDisposable
 {
     private const string ShellConnectionModalLogFile = "shell-connection-modal-debug.log";
     private const string AutoProjectionMarkerParameter = "__akkorn_auto_projection";
@@ -189,6 +189,7 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
         }
         ActivateDocumentCore(WorkspaceDocumentType.QueryCanvas);
         SyncExtractedPanels();
+        InitializeTabs();
     }
 
     public CanvasViewModel? Canvas
@@ -651,8 +652,7 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        OpenWorkspaceDocument? target = _workspaceRouter.OpenDocuments
-            .LastOrDefault(document => document.Descriptor.DocumentType == documentType);
+        OpenWorkspaceDocument? target = FindActiveTabDocument(documentType);
         if (documentType == WorkspaceDocumentType.ErDiagram && target?.DocumentViewModel is ErCanvasViewModel erCanvas)
         {
             erCanvas.BindQueryNavigation(OpenErRelationInQuery);
@@ -702,8 +702,7 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
 
     public Guid OpenNewDocument(WorkspaceDocumentType documentType)
     {
-        OpenWorkspaceDocument? existing = _workspaceRouter.OpenDocuments
-            .LastOrDefault(document => document.Descriptor.DocumentType == documentType);
+        OpenWorkspaceDocument? existing = FindActiveTabDocument(documentType);
         if (existing is not null)
         {
             _workspaceRouter.TryActivate(existing.Descriptor.DocumentId);
@@ -713,7 +712,7 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
             return existing.Descriptor.DocumentId;
         }
 
-        return documentType switch
+        Guid created = documentType switch
         {
             WorkspaceDocumentType.DdlCanvas => OpenNewDdlDocument(),
             WorkspaceDocumentType.SqlEditor => OpenNewSqlEditorDocument(),
@@ -723,6 +722,10 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
             WorkspaceDocumentType.DdlSchemaAnalysis => OpenNewDdlSchemaAnalysisDocument(),
             _ => OpenNewQueryDocument(),
         };
+
+        // Scope the freshly created document to the active tab so mode switches reuse it.
+        TagActiveTabDocument(created);
+        return created;
     }
 
     public bool TryOpenSelectedQueryJoinInErDiagram()
@@ -794,18 +797,15 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
             return;
 
         var restoredDocuments = new List<OpenWorkspaceDocument>(workspace.Documents.Count);
-        var restoredTypes = new HashSet<WorkspaceDocumentType>();
+        // Maps each restored document to the tab it belonged to (multiple docs of the same type
+        // are valid now — one per tab — so the old dedup-by-type rejection is gone).
+        var documentTabPairs = new List<(Guid DocumentId, Guid TabId)>(workspace.Documents.Count);
         var warnings = new List<string>();
         foreach (SavedWorkspaceDocument savedDocument in workspace.Documents)
         {
             if (!Enum.TryParse(savedDocument.DocumentType, true, out WorkspaceDocumentType documentType))
             {
                 warnings.Add($"Documento ignorado: tipo invalido '{savedDocument.DocumentType}'.");
-                continue;
-            }
-            if (!restoredTypes.Add(documentType))
-            {
-                warnings.Add($"Documento ignorado: tipo duplicado '{documentType}'.");
                 continue;
             }
 
@@ -842,6 +842,7 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
                     DocumentViewModel: documentViewModel,
                     PageViewModel: documentViewModel,
                     PageState: null));
+                documentTabPairs.Add((descriptor.DocumentId, savedDocument.TabId));
             }
             catch (Exception ex)
             {
@@ -856,38 +857,10 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
         }
 
         _workspaceRouter.ReplaceDocuments(restoredDocuments, workspace.ActiveDocumentId);
+        RestoreTabsFromSnapshot(workspace, documentTabPairs);
 
-        _queryDocumentId = _workspaceRouter.OpenDocuments
-            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.QueryCanvas)
-            ?.Descriptor.DocumentId;
-        _ddlDocumentId = _workspaceRouter.OpenDocuments
-            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.DdlCanvas)
-            ?.Descriptor.DocumentId;
-        _sqlResultDocumentId = _workspaceRouter.OpenDocuments
-            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.SqlResult)
-            ?.Descriptor.DocumentId;
-        _erDiagramDocumentId = _workspaceRouter.OpenDocuments
-            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.ErDiagram)
-            ?.Descriptor.DocumentId;
-        _ddlSchemaCompareDocumentId = _workspaceRouter.OpenDocuments
-            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.DdlSchemaCompare)
-            ?.Descriptor.DocumentId;
-        _ddlSchemaAnalysisDocumentId = _workspaceRouter.OpenDocuments
-            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.DdlSchemaAnalysis)
-            ?.Descriptor.DocumentId;
-
-        Canvas = _workspaceRouter.OpenDocuments
-            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.QueryCanvas)
-            ?.DocumentViewModel as CanvasViewModel;
-        DdlCanvas = _workspaceRouter.OpenDocuments
-            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.DdlCanvas)
-            ?.DocumentViewModel as CanvasViewModel;
-        _erCanvas = _workspaceRouter.OpenDocuments
-            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.ErDiagram)
-            ?.DocumentViewModel as ErCanvasViewModel;
-        _sqlResultPage = _workspaceRouter.OpenDocuments
-            .FirstOrDefault(document => document.Descriptor.DocumentType == WorkspaceDocumentType.SqlResult)
-            ?.DocumentViewModel as SqlResultPageViewModel;
+        // The active tab's documents become the shell's active singletons.
+        RebindActiveTabDocuments();
 
         SyncStateFromActiveDocument();
         RaiseActiveDocumentPropertiesChanged();
@@ -1471,6 +1444,12 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
                 break;
         }
         UpdateActiveCanvasContext();
+        SyncActiveTabModeFromActiveDocument();
+
+        // The SQL editor resolves its connection/metadata lazily from the active context, so
+        // refresh it whenever the active document changes (e.g. switching into SQL mode).
+        if (ActiveWorkspaceDocumentType == WorkspaceDocumentType.SqlEditor)
+            ActiveSqlEditorDocument?.NotifyConnectionContextChanged();
     }
 
     private static void CloseDiagramConnectionManager(CanvasViewModel? canvas)
@@ -1775,7 +1754,8 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
     {
         var viewModel = new DdlSchemaAnalysisWorkspaceViewModel(
             _sqlEditorConnectionManager,
-            OpenMetadataInDdlCanvas);
+            OpenMetadataInDdlCanvas,
+            OpenSchemaCompareFromAnalysis);
         viewModel.OpenConnectionManagerRequested += () =>
         {
             ConnectionManagerViewModel? manager = ResolveSqlEditorConnectionManager();
@@ -1783,6 +1763,18 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
                 manager.IsVisible = true;
         };
         return viewModel;
+    }
+
+    private void OpenSchemaCompareFromAnalysis(DdlSchemaCompareLaunchRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        Guid documentId = OpenNewDdlSchemaCompareDocument();
+        DdlSchemaCompareWorkspaceViewModel? compare = _workspaceRouter.OpenDocuments
+            .FirstOrDefault(document => document.Descriptor.DocumentId == documentId)?
+            .DocumentViewModel as DdlSchemaCompareWorkspaceViewModel;
+
+        compare?.SeedSource(request.ProfileId, request.DatabaseName, request.SchemaName);
     }
 
     private void OpenMetadataInDdlCanvas(DdlSchemaAnalysisOpenDdlRequest request)
@@ -3528,11 +3520,25 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
             .ToList();
     }
 
-    private ConnectionManagerViewModel? ResolveSqlEditorConnectionManager() =>
-        _sqlEditorConnectionManager;
+    private ConnectionManagerViewModel? ResolveSqlEditorConnectionManager()
+    {
+        // Inherit a CONNECTED canvas manager so the SQL editor shows the live connection + metadata;
+        // when no canvas is connected, keep the SQL editor's own (independent) manager.
+        if (Canvas?.ActiveConnectionConfig is not null)
+            return Canvas.ConnectionManager;
+        if (DdlCanvas?.ActiveConnectionConfig is not null)
+            return DdlCanvas.ConnectionManager;
+
+        return _sqlEditorConnectionManager;
+    }
 
     private ConnectionConfig? ResolveSqlEditorActiveConnectionConfig()
     {
+        // The live connection from the active tab's canvas wins.
+        ConnectionConfig? shared = ResolveSharedActiveConnectionConfig();
+        if (shared is not null)
+            return shared;
+
         string? activeProfileId = _sqlEditorConnectionManager.ActiveProfileId;
         if (!string.IsNullOrWhiteSpace(activeProfileId))
         {
@@ -3546,17 +3552,35 @@ public sealed class ShellViewModel : ViewModelBase, IDisposable
     }
 
     private DbMetadata? ResolveSqlEditorMetadata() =>
-        _sqlEditorConnectionManager.ActiveMetadata
-        ?? ResolveSharedMetadata();
+        ResolveSharedMetadata()
+        ?? _sqlEditorConnectionManager.ActiveMetadata;
 
     private ConnectionManagerViewModel? ResolveSharedConnectionManager() =>
         Canvas?.ConnectionManager ?? DdlCanvas?.ConnectionManager;
 
     private ConnectionConfig? ResolveSharedActiveConnectionConfig() =>
-        Canvas?.ActiveConnectionConfig ?? DdlCanvas?.ActiveConnectionConfig;
+        Canvas?.ActiveConnectionConfig
+        ?? DdlCanvas?.ActiveConnectionConfig
+        ?? ResolveAnyOpenCanvasConnectionConfig();
 
     private DbMetadata? ResolveSharedMetadata() =>
-        Canvas?.DatabaseMetadata ?? DdlCanvas?.DatabaseMetadata;
+        Canvas?.DatabaseMetadata
+        ?? DdlCanvas?.DatabaseMetadata
+        ?? ResolveAnyOpenCanvasMetadata();
+
+    // Fall back to any other open canvas that is already connected, so modes that don't own a
+    // canvas (ER, SQL, analysis) can reuse a live connection instead of demanding a new one.
+    private ConnectionConfig? ResolveAnyOpenCanvasConnectionConfig() =>
+        _workspaceRouter.OpenDocuments
+            .Select(static document => document.DocumentViewModel as CanvasViewModel)
+            .FirstOrDefault(static canvas => canvas?.ActiveConnectionConfig is not null)
+            ?.ActiveConnectionConfig;
+
+    private DbMetadata? ResolveAnyOpenCanvasMetadata() =>
+        _workspaceRouter.OpenDocuments
+            .Select(static document => document.DocumentViewModel as CanvasViewModel)
+            .FirstOrDefault(static canvas => canvas?.DatabaseMetadata is not null)
+            ?.DatabaseMetadata;
 
     private (CanvasViewModel? Canvas, ConnectionManagerViewModel? Manager) ResolveSharedConnectionContext()
     {

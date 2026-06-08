@@ -177,6 +177,115 @@ public sealed class PostgresInspector(ConnectionConfig config) : BaseInspector(c
         return columns;
     }
 
+    // ── Check constraints (best-effort) ─────────────────────────────────────────
+
+    protected override async Task<IReadOnlyList<CheckConstraintMetadata>> FetchCheckConstraintsAsync(
+        DbConnection conn,
+        string schema,
+        string table,
+        CancellationToken ct
+    )
+    {
+        const string sql = """
+            SELECT con.conname, pg_get_constraintdef(con.oid)
+            FROM pg_constraint con
+            JOIN pg_class      rel ON rel.oid = con.conrelid
+            JOIN pg_namespace  nsp ON nsp.oid = rel.relnamespace
+            WHERE con.contype = 'c'
+              AND nsp.nspname  = @schema
+              AND rel.relname  = @table
+            """;
+
+        try
+        {
+            await using var cmd = (NpgsqlCommand)conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("@schema", schema);
+            cmd.Parameters.AddWithValue("@table", table);
+
+            var checks = new List<CheckConstraintMetadata>();
+            await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (reader.IsDBNull(0) || reader.IsDBNull(1))
+                    continue;
+
+                checks.Add(new CheckConstraintMetadata(reader.GetString(0), StripCheckPrefix(reader.GetString(1))));
+            }
+
+            return checks;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    // pg_get_constraintdef returns e.g. "CHECK ((amount > 0))"; keep the bare expression.
+    private static string StripCheckPrefix(string definition)
+    {
+        string trimmed = definition.Trim();
+        return trimmed.StartsWith("CHECK", StringComparison.OrdinalIgnoreCase)
+            ? trimmed[5..].Trim()
+            : trimmed;
+    }
+
+    // ── Column attributes (best-effort) ──────────────────────────────────────────
+
+    protected override async Task<IReadOnlyDictionary<string, ColumnAttributes>> FetchColumnAttributesAsync(
+        DbConnection conn,
+        string schema,
+        string table,
+        CancellationToken ct
+    )
+    {
+        const string sql = """
+            SELECT
+                a.attname,
+                (a.attidentity <> '')                                  AS is_identity,
+                CASE WHEN a.attgenerated <> ''
+                     THEN pg_get_expr(ad.adbin, ad.adrelid) END        AS gen_expr,
+                co.collname                                            AS collation_name
+            FROM pg_catalog.pg_attribute a
+            JOIN pg_catalog.pg_class      cl ON cl.oid = a.attrelid
+            JOIN pg_catalog.pg_namespace  n  ON n.oid  = cl.relnamespace
+            LEFT JOIN pg_catalog.pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
+            LEFT JOIN pg_catalog.pg_collation co ON co.oid = a.attcollation
+            WHERE n.nspname = @schema
+              AND cl.relname = @table
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+            """;
+
+        var map = new Dictionary<string, ColumnAttributes>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            await using var cmd = (NpgsqlCommand)conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("@schema", schema);
+            cmd.Parameters.AddWithValue("@table", table);
+
+            await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                string name = reader.GetString(0);
+                bool isIdentity = !reader.IsDBNull(1) && reader.GetBoolean(1);
+                string? gen = reader.IsDBNull(2) ? null : reader.GetString(2);
+                string? collation = reader.IsDBNull(3) ? null : reader.GetString(3);
+                if (string.Equals(collation, "default", StringComparison.OrdinalIgnoreCase))
+                    collation = null;
+
+                map[name] = new ColumnAttributes(isIdentity, gen, collation);
+            }
+        }
+        catch
+        {
+            return map;
+        }
+
+        return map;
+    }
+
     // ── Indexes ───────────────────────────────────────────────────────────────
 
     protected override async Task<IReadOnlyList<IndexMetadata>> FetchIndexesAsync(

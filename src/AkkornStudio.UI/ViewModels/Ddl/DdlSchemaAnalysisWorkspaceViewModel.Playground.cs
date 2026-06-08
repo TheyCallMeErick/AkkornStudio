@@ -286,6 +286,7 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel
 
         RaisePropertyChanged(nameof(HasTemplateValidationErrors));
         RaisePropertyChanged(nameof(HasAllTemplatesValid));
+        RaisePropertyChanged(nameof(HasMixedNamingConventions));
         RaisePropertyChanged(nameof(PlaygroundValidationSummary));
         RaisePropertyChanged(nameof(IsPrimaryKeyConstraintTemplateValid));
         RaisePropertyChanged(nameof(IsPrimaryKeyConstraintTemplateInvalid));

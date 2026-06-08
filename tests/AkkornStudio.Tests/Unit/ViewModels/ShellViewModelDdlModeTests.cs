@@ -211,14 +211,15 @@ public class ShellViewModelDdlModeTests
     }
 
     [Fact]
-    public void Query_Ddl_AndSqlEditor_UseIndependentConnectionContexts()
+    public void SqlEditor_InheritsActiveConnectionContext_FromActiveCanvas()
     {
+        // Per-tab model: a tab has one connection shared by its modes, so the SQL editor inherits
+        // the active canvas's connection/metadata (instead of starting empty/independent). Query and
+        // DDL still own separate managers; switching to SQL surfaces the live connection.
         var vm = new ShellViewModel(connectionManagerViewModelFactory: global::AkkornStudio.UI.Services.ConnectionManager.ConnectionManagerViewModelFactory.CreateDefault());
 
         CanvasViewModel queryCanvas = vm.EnsureCanvas();
         CanvasViewModel ddlCanvas = vm.EnsureDdlCanvas();
-        vm.ActivateDocument(AkkornStudio.UI.Services.Workspace.Models.WorkspaceDocumentType.SqlEditor);
-        SqlEditorViewModel sqlEditor = Assert.IsType<SqlEditorViewModel>(vm.ActiveSqlEditorDocument);
 
         queryCanvas.SetDatabaseContext(
             CreateMetadata(),
@@ -240,11 +241,17 @@ public class ShellViewModelDdlModeTests
                 Username: "ddl_user",
                 Password: "pwd"));
 
+        vm.ActivateDocument(AkkornStudio.UI.Services.Workspace.Models.WorkspaceDocumentType.SqlEditor);
+        SqlEditorViewModel sqlEditor = Assert.IsType<SqlEditorViewModel>(vm.ActiveSqlEditorDocument);
+
+        // Query and DDL keep independent connection managers.
         Assert.NotSame(queryCanvas.ConnectionManager, ddlCanvas.ConnectionManager);
-        Assert.NotNull(sqlEditor.SharedConnectionManager);
-        Assert.NotSame(queryCanvas.ConnectionManager, sqlEditor.SharedConnectionManager);
-        Assert.NotSame(ddlCanvas.ConnectionManager, sqlEditor.SharedConnectionManager);
-        Assert.Null(sqlEditor.GetActiveConnectionConfigForTools());
+
+        // The SQL editor inherits the active canvas connection so its connection/metadata fill in.
+        Assert.Same(queryCanvas.ConnectionManager, sqlEditor.SharedConnectionManager);
+        ConnectionConfig? toolsConfig = sqlEditor.GetActiveConnectionConfigForTools();
+        Assert.NotNull(toolsConfig);
+        Assert.Equal("query-host", toolsConfig!.Host);
     }
 
     private static DbMetadata CreateMetadata() =>

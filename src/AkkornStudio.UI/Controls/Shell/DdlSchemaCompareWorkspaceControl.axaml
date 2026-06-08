@@ -247,6 +247,75 @@
     <Style Selector="Border.diff-badge.destructive">
       <Setter Property="BorderBrush" Value="{StaticResource StatusWarningBrush}"/>
     </Style>
+
+    <!-- Data comparison results -->
+    <Style Selector="Border.data-metric-card">
+      <Setter Property="Padding" Value="10"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusMD}"/>
+      <Setter Property="BorderThickness" Value="1,1,1,3"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="Background" Value="{StaticResource Bg1Brush}"/>
+    </Style>
+    <Style Selector="Border.data-metric-card.insert">
+      <Setter Property="BorderBrush" Value="{StaticResource StatusOkBrush}"/>
+    </Style>
+    <Style Selector="Border.data-metric-card.update">
+      <Setter Property="BorderBrush" Value="{StaticResource StatusWarningBrush}"/>
+    </Style>
+    <Style Selector="Border.data-metric-card.delete">
+      <Setter Property="BorderBrush" Value="{StaticResource StatusErrorBrush}"/>
+    </Style>
+
+    <Style Selector="Border.data-kind-badge">
+      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
+      <Setter Property="Padding" Value="7,1"/>
+      <Setter Property="MinWidth" Value="62"/>
+      <Setter Property="HorizontalAlignment" Value="Left"/>
+      <Setter Property="VerticalAlignment" Value="Top"/>
+    </Style>
+    <Style Selector="Border.data-kind-badge.insert">
+      <Setter Property="BorderBrush" Value="{StaticResource StatusOkBrush}"/>
+      <Setter Property="Background" Value="{StaticResource BtnSuccessBgBrush}"/>
+    </Style>
+    <Style Selector="Border.data-kind-badge.update">
+      <Setter Property="BorderBrush" Value="{StaticResource StatusWarningBrush}"/>
+      <Setter Property="Background" Value="{StaticResource BtnWarningBgBrush}"/>
+    </Style>
+    <Style Selector="Border.data-kind-badge.delete">
+      <Setter Property="BorderBrush" Value="{StaticResource StatusErrorBrush}"/>
+      <Setter Property="Background" Value="{StaticResource BtnDangerBgBrush}"/>
+    </Style>
+    <Style Selector="Border.data-kind-badge TextBlock">
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="FontWeight" Value="{StaticResource FontWeightStrong}"/>
+      <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}"/>
+    </Style>
+
+    <Style Selector="Border.data-sql-pane">
+      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusMD}"/>
+    </Style>
+    <Style Selector="TextBox.data-sql-editor">
+      <Setter Property="FontFamily" Value="Consolas, Cascadia Code, Menlo, monospace"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="AcceptsReturn" Value="True"/>
+      <Setter Property="IsReadOnly" Value="True"/>
+    </Style>
+
+    <Style Selector="Border.data-key-chip">
+      <Setter Property="Background" Value="{StaticResource Bg2Brush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
+      <Setter Property="Padding" Value="8,3"/>
+      <Setter Property="Margin" Value="0,0,6,6"/>
+    </Style>
   </UserControl.Styles>
 
   <Grid Margin="8"
@@ -435,6 +504,20 @@
                   </Button>
                 </Grid>
 
+                <Border Classes="callout-subtle">
+                  <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="Tipo de comparacao:" VerticalAlignment="Center" Classes="section-label"/>
+                    <ComboBox Width="180" SelectedIndex="{Binding ComparisonKindIndex, Mode=TwoWay}">
+                      <ComboBoxItem Content="Estrutura (DDL)"/>
+                      <ComboBoxItem Content="Dados (valores)"/>
+                    </ComboBox>
+                    <TextBlock VerticalAlignment="Center" Classes="step-state"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               IsVisible="{Binding IsDataComparison}"
+                               Text="Compara os valores das linhas (tabelas pequenas). Casa por primary key; teto de 5000 linhas/lado."/>
+                  </StackPanel>
+                </Border>
+
                 <Grid ColumnDefinitions="*,Auto,*"
                       ColumnSpacing="10">
                   <Border Grid.Column="0" Classes="endpoint-selection-card">
@@ -506,6 +589,152 @@
                     </StackPanel>
                   </Border>
                 </Grid>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="selection-focus-shell" IsVisible="{Binding IsDataComparison}">
+              <StackPanel Spacing="12">
+                <StackPanel Spacing="2">
+                  <TextBlock Text="Comparacao de dados" Classes="section-title"/>
+                  <TextBlock Text="{Binding DataSummary}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <Border Classes="callout-subtle" IsVisible="{Binding HasDataKeyOptions}">
+                  <StackPanel Spacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <mi:MaterialIcon Kind="KeyVariant" Width="14" Height="14" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
+                      <TextBlock Text="Chave de comparacao" Classes="section-label"/>
+                    </StackPanel>
+                    <TextBlock Text="Colunas usadas para casar as linhas (padrao = primary key). Sem nenhuma marcada, as linhas sao casadas pela linha inteira."
+                               Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" FontSize="{StaticResource FontSizeCaption}"/>
+                    <ItemsControl ItemsSource="{Binding DataKeyColumns}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DataKeyColumnOption">
+                          <Border Classes="data-key-chip">
+                            <CheckBox Content="{Binding Name}" IsChecked="{Binding IsKey, Mode=TwoWay}"/>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+
+                <TextBlock Text="Ajuste a chave (se necessario) e clique em comparar para gerar as diferencas de dados."
+                           Foreground="{StaticResource TextMutedBrush}"
+                           TextWrapping="Wrap"
+                           IsVisible="{Binding HasDataResult, Converter={x:Static BoolConverters.Not}}"/>
+
+                <StackPanel IsVisible="{Binding HasDataResult}" Spacing="12">
+                  <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                    <Border Grid.Column="0" Classes="data-metric-card insert">
+                      <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <mi:MaterialIcon Kind="PlusCircleOutline" Width="13" Height="13" Foreground="{StaticResource StatusOkBrush}" VerticalAlignment="Center"/>
+                          <TextBlock Text="Inserir" Classes="section-label"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding DataInsertCount}" FontSize="20" FontWeight="{StaticResource FontWeightStrong}"/>
+                      </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" Classes="data-metric-card update">
+                      <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <mi:MaterialIcon Kind="PencilOutline" Width="13" Height="13" Foreground="{StaticResource StatusWarningBrush}" VerticalAlignment="Center"/>
+                          <TextBlock Text="Alterar" Classes="section-label"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding DataUpdateCount}" FontSize="20" FontWeight="{StaticResource FontWeightStrong}"/>
+                      </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Classes="data-metric-card delete">
+                      <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <mi:MaterialIcon Kind="MinusCircleOutline" Width="13" Height="13" Foreground="{StaticResource StatusErrorBrush}" VerticalAlignment="Center"/>
+                          <TextBlock Text="Remover" Classes="section-label"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding DataDeleteCount}" FontSize="20" FontWeight="{StaticResource FontWeightStrong}"/>
+                      </StackPanel>
+                    </Border>
+                    <Border Grid.Column="3" Classes="data-metric-card">
+                      <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <mi:MaterialIcon Kind="EqualBox" Width="13" Height="13" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
+                          <TextBlock Text="Iguais" Classes="section-label"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding DataUnchangedCount}" FontSize="20" FontWeight="{StaticResource FontWeightStrong}"/>
+                      </StackPanel>
+                    </Border>
+                  </Grid>
+
+                  <Border Classes="callout-subtle" IsVisible="{Binding DataIsInSync}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <mi:MaterialIcon Kind="CheckCircleOutline" Width="16" Height="16" Foreground="{StaticResource StatusOkBrush}" VerticalAlignment="Center"/>
+                      <TextBlock Text="Dados sincronizados: nenhuma diferenca de valores entre origem e destino." VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </Border>
+
+                  <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsVisible="{Binding HasDataStatements}">
+                    <Border Grid.Column="0" Classes="endpoint-selection-card">
+                      <StackPanel Spacing="8">
+                        <TextBlock Text="Diferencas de linhas" FontWeight="{StaticResource FontWeightTitle}"/>
+                        <ListBox MaxHeight="360" ItemsSource="{Binding DataDifferences}" Background="Transparent" BorderThickness="0" Padding="0">
+                          <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DdlSchemaCompareRowDiffItemViewModel">
+                              <Grid ColumnDefinitions="68,*" ColumnSpacing="10">
+                                <Border Grid.Column="0"
+                                        Classes="data-kind-badge"
+                                        Classes.insert="{Binding IsInsert}"
+                                        Classes.update="{Binding IsUpdate}"
+                                        Classes.delete="{Binding IsDelete}">
+                                  <TextBlock Text="{Binding KindLabel}"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                  <TextBlock Text="{Binding KeyDisplay}" TextTrimming="CharacterEllipsis"/>
+                                  <TextBlock Text="{Binding Detail}" Foreground="{StaticResource TextMutedBrush}" FontSize="{StaticResource FontSizeCaption}" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                              </Grid>
+                            </DataTemplate>
+                          </ListBox.ItemTemplate>
+                        </ListBox>
+                      </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="1" Classes="endpoint-selection-card">
+                      <StackPanel Spacing="8">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="Script de sincronizacao (DML)" FontWeight="{StaticResource FontWeightTitle}" VerticalAlignment="Center"/>
+                            <Border Classes="quick-chip">
+                              <TextBlock Text="{Binding DataStatementCount, StringFormat='{}{0} comandos'}" FontSize="{StaticResource FontSizeCaption}"/>
+                            </Border>
+                          </StackPanel>
+                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                            <ToggleButton Classes="ghost compact" Content="Quebrar linha" IsChecked="{Binding WrapDataSql, Mode=TwoWay}"
+                                          ToolTip.Tip="Alterna a quebra de linha do script"/>
+                            <ToggleButton Classes="ghost compact" Content="Comentar deletes" IsChecked="{Binding CommentDestructiveDeletes, Mode=TwoWay}"
+                                          ToolTip.Tip="Emite os comandos DELETE comentados para revisao manual"/>
+                            <Button Classes="primary compact" Command="{Binding CopyDataSqlCommand}">
+                              <StackPanel Orientation="Horizontal" Spacing="6">
+                                <mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14"/>
+                                <TextBlock Text="Copiar SQL"/>
+                              </StackPanel>
+                            </Button>
+                          </StackPanel>
+                        </Grid>
+                        <Border Classes="data-sql-pane">
+                          <TextBox Classes="data-sql-editor"
+                                   Text="{Binding GeneratedDataSql}"
+                                   TextWrapping="{Binding DataSqlWrapping}"
+                                   MinHeight="300"
+                                   Padding="10"/>
+                        </Border>
+                      </StackPanel>
+                    </Border>
+                  </Grid>
+                </StackPanel>
               </StackPanel>
             </Border>
           </StackPanel>

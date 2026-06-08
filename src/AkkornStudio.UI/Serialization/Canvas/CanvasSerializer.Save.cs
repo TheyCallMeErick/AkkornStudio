@@ -96,7 +96,10 @@ public static partial class CanvasSerializer
         Guid? activeDocumentId,
         string provider = "Postgres",
         string connectionName = "untitled",
-        string? description = null)
+        string? description = null,
+        IReadOnlyDictionary<Guid, Guid>? documentTabs = null,
+        IReadOnlyList<SavedWorkspaceTab>? tabs = null,
+        Guid? activeTabId = null)
     {
         if (openDocuments is null || openDocuments.Count == 0)
             throw new InvalidOperationException("Workspace must contain at least one document to be serialized.");
@@ -121,6 +124,10 @@ public static partial class CanvasSerializer
                 ? null
                 : openDocument.Descriptor.Payload.Clone();
 
+            Guid tabId = documentTabs is not null && documentTabs.TryGetValue(documentId, out Guid resolvedTabId)
+                ? resolvedTabId
+                : Guid.Empty;
+
             documents.Add(new SavedWorkspaceDocument(
                 DocumentId: documentId,
                 DocumentType: openDocument.Descriptor.DocumentType.ToString(),
@@ -128,7 +135,8 @@ public static partial class CanvasSerializer
                 IsDirty: isDirty,
                 PersistenceSchemaVersion: openDocument.Descriptor.PersistenceSchemaVersion,
                 CanvasPayload: canvasPayload,
-                DocumentPayload: documentPayload));
+                DocumentPayload: documentPayload,
+                TabId: tabId));
         }
 
         Guid resolvedActiveDocumentId = activeDocumentId is Guid requestedActiveId
@@ -144,7 +152,9 @@ public static partial class CanvasSerializer
             DdlCanvas: null,
             AppVersion: AppVersion,
             CreatedAt: DateTime.UtcNow.ToString("o"),
-            Description: description);
+            Description: description,
+            Tabs: tabs?.ToList(),
+            ActiveTabId: activeTabId);
 
         return System.Text.Json.JsonSerializer.Serialize(workspace, _opts);
     }

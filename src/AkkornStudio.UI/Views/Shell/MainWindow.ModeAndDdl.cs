@@ -45,35 +45,9 @@ public partial class MainWindow
 
     private void SyncModeToggleState()
     {
-        Button? queryModeBtn = this.FindControl<Button>("QueryModeBtn");
-        Button? ddlModeBtn = this.FindControl<Button>("DdlModeBtn");
-        Button? sqlEditorModeBtn = this.FindControl<Button>("SqlEditorModeBtn");
-        Button? erDiagramModeBtn = this.FindControl<Button>("ErDiagramModeBtn");
-
-        if (queryModeBtn is not null)
-        {
-            queryModeBtn.IsEnabled = true;
-            queryModeBtn.Classes.Set("active", CurrentShell.IsQueryDocumentPageActive);
-        }
-
-        if (ddlModeBtn is not null)
-        {
-            ddlModeBtn.IsEnabled = true;
-            ddlModeBtn.Classes.Set("active", CurrentShell.IsDdlDocumentPageActive);
-        }
-
-        if (sqlEditorModeBtn is not null)
-        {
-            sqlEditorModeBtn.IsEnabled = true;
-            sqlEditorModeBtn.Classes.Set("active", CurrentShell.IsSqlEditorDocumentPageActive);
-        }
-
-        if (erDiagramModeBtn is not null)
-        {
-            erDiagramModeBtn.IsEnabled = true;
-            erDiagramModeBtn.Classes.Set("active", CurrentShell.IsErDiagramDocumentPageActive);
-        }
-
+        // The mode buttons' active highlight is now bound reactively in XAML to the shell's
+        // IsXxxModeActive properties (so it follows the active tab automatically). This method
+        // keeps the sidebar chrome in sync with the active page.
         SyncSidebarChromeForActivePage();
     }
 

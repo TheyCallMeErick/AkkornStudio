@@ -10,6 +10,11 @@
              x:DataType="vm:DdlSchemaAnalysisWorkspaceViewModel">
   <UserControl.Resources>
     <conv:EnumEqualsConverter x:Key="EnumEqualsConverter"/>
+    <conv:IssueModeLabelConverter x:Key="IssueModeLabelConverter"/>
+
+    <DataTemplate x:Key="IssueModeLabelTemplate">
+      <TextBlock Text="{Binding Converter={StaticResource IssueModeLabelConverter}}"/>
+    </DataTemplate>
 
     <DataTemplate x:Key="PlaygroundBadgeTemplate" x:DataType="vm:NamingPlaygroundBadgeViewModel">
       <Border Classes="playground-badge"
@@ -466,9 +471,27 @@
       <Setter Property="BorderBrush" Value="#476E9A"/>
       <Setter Property="Background" Value="#182536"/>
     </Style>
-    <Style Selector="ListBox#IssuesCardsList ListBoxItem:selected Border.issue-item-card">
+    <Style Selector="ListBox.issues-cards-list ListBoxItem:selected Border.issue-item-card">
       <Setter Property="BorderBrush" Value="#4E81C8"/>
       <Setter Property="Background" Value="#1D2A42"/>
+    </Style>
+    <Style Selector="Border.issue-item-card.compact">
+      <Setter Property="Padding" Value="6"/>
+      <Setter Property="Margin" Value="0,0,0,4"/>
+    </Style>
+    <Style Selector="Border.issue-group-header">
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+      <Setter Property="BorderBrush" Value="#2A3550"/>
+      <Setter Property="Background" Value="#101A2C"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Padding" Value="8,5"/>
+    </Style>
+    <Style Selector="Border.issue-reviewed-badge">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#3E7C5A"/>
+      <Setter Property="Background" Value="#1A2B22"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="8,2"/>
     </Style>
     <Style Selector="Border.issue-badge">
       <Setter Property="BorderThickness" Value="1"/>
@@ -607,6 +630,8 @@
                 </Grid>
                 <StackPanel Orientation="Horizontal" Spacing="6">
                   <Button Command="{Binding RefreshMetadataCommand}" Classes="secondary compact" Content="Atualizar metadata"/>
+                  <Button Command="{Binding OpenSchemaCompareCommand}" Classes="secondary compact" Content="Comparar tabelas"
+                          ToolTip.Tip="Abrir o Table Compare com esta conexao como origem"/>
                   <Button Command="{Binding NextStepCommand}" Classes="secondary compact" Content="Continuar"/>
                 </StackPanel>
               </StackPanel>
@@ -803,6 +828,14 @@
                 </StackPanel>
                 <Button Grid.Column="2" Command="{Binding GenerateIssuesCommand}" Classes="secondary compact playground-primary" Content="Gerar issues de padronizacao"/>
               </Grid>
+            </Border>
+
+            <Border Classes="playground-issue-item issue-warning" IsVisible="{Binding HasMixedNamingConventions}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <mi:MaterialIcon Kind="AlertOutline" Width="16" Height="16" Foreground="#BE8D3F" VerticalAlignment="Center"/>
+                <TextBlock TextWrapping="Wrap" VerticalAlignment="Center"
+                           Text="Voce definiu convencoes diferentes por tipo de objeto. O motor de analise atual avalia uma unica convencao global, entao a deteccao de violacao de naming sera relaxada (Mixed). Use a mesma convencao em todos os tipos para deteccao estrita."/>
+              </StackPanel>
             </Border>
 
             <Grid ColumnDefinitions="1.05*,1.2*" ColumnSpacing="12">
@@ -1042,10 +1075,36 @@
                 <TextBlock Text="{Binding MetadataLoadedSummary}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{StaticResource FontSizeCaption}"/>
               </StackPanel>
               <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
-                <Button Classes="secondary compact" Content="Exportar" Click="ExportIssuesButton_OnClick"/>
-                <Button Classes="secondary compact" Content="Salvar visao"/>
+                <Button Classes="secondary compact" Content="Exportar relatorio" Click="ExportIssuesButton_OnClick"/>
+                <Button Classes="secondary compact" Content="Salvar visao" Command="{Binding SchemaAnalysisPanel.SaveCurrentViewCommand}"
+                        ToolTip.Tip="Salva os filtros, ordenacao e agrupamento atuais como uma visao reutilizavel"/>
+                <Button Classes="secondary compact" Content="Visoes salvas" IsEnabled="{Binding SchemaAnalysisPanel.HasSavedViews}">
+                  <Button.Flyout>
+                    <Flyout Placement="BottomEdgeAlignedRight">
+                      <Border Classes="issue-filter-flyout">
+                        <StackPanel Spacing="6">
+                          <TextBlock Text="Visoes salvas" FontWeight="{StaticResource FontWeightStrong}"/>
+                          <ItemsControl ItemsSource="{Binding SchemaAnalysisPanel.SavedViews}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="vm:SchemaSavedView">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,0,0,4">
+                                  <Button Grid.Column="0" Classes="secondary compact" Content="{Binding Name}"
+                                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                          Command="{Binding DataContext.SchemaAnalysisPanel.ApplyViewCommand, ElementName=Root}"
+                                          CommandParameter="{Binding}"/>
+                                  <Button Grid.Column="1" Classes="secondary compact" Content="X"
+                                          Command="{Binding DataContext.SchemaAnalysisPanel.RemoveViewCommand, ElementName=Root}"
+                                          CommandParameter="{Binding}"/>
+                                </Grid>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </StackPanel>
+                      </Border>
+                    </Flyout>
+                  </Button.Flyout>
+                </Button>
                 <Button Classes="secondary compact" Content="Reanalisar" Command="{Binding RunAnalysisCommand}"/>
-                <Button Classes="secondary compact" Content="Gerar relatorio" Click="ExportIssuesButton_OnClick"/>
               </StackPanel>
             </Grid>
           </Border>
@@ -1148,7 +1207,8 @@
                           <CheckBox Content="Low semantic" IsChecked="{Binding SchemaAnalysisPanel.IncludeLowSemanticName, Mode=TwoWay}"/>
                           <CheckBox Content="Comment" IsChecked="{Binding SchemaAnalysisPanel.IncludeMissingRequiredComment, Mode=TwoWay}"/>
                           <CheckBox Content="NF1" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf1HintMultiValued, Mode=TwoWay}"/>
-                          <CheckBox Content="NF2/NF3" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf2HintPartialDependency, Mode=TwoWay}"/>
+                          <CheckBox Content="NF2" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf2HintPartialDependency, Mode=TwoWay}"/>
+                          <CheckBox Content="NF3" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf3HintTransitiveDependency, Mode=TwoWay}"/>
                         </StackPanel>
                       </Border>
                     </Flyout>
@@ -1186,9 +1246,11 @@
                 <Border Grid.Column="1" Classes="issue-filter-chip">
                   <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredTotalIssues, StringFormat=Resultado: {0} issues}"/>
                 </Border>
-                <Border Grid.Column="2" Classes="issue-filter-chip">
-                  <TextBlock Text="Multi-selecao ativa"/>
+                <Border Grid.Column="2" Classes="issue-reviewed-badge" IsVisible="{Binding SchemaAnalysisPanel.HasReviewedIssues}">
+                  <TextBlock Text="{Binding SchemaAnalysisPanel.ReviewedCount, StringFormat=Revisadas: {0}}"/>
                 </Border>
+                <ToggleButton Grid.Column="3" Classes="secondary compact" HorizontalAlignment="Left"
+                              Content="Ocultar revisadas" IsChecked="{Binding SchemaAnalysisPanel.HideReviewed, Mode=TwoWay}"/>
               </Grid>
             </StackPanel>
           </Border>
@@ -1203,20 +1265,53 @@
                       <TextBlock Text="Issues Explorer" FontWeight="{StaticResource FontWeightTitle}"/>
                       <TextBlock Text="{Binding SchemaAnalysisPanel.FilteredTotalIssues, StringFormat='{}{0} issues'}" Foreground="{StaticResource TextMutedBrush}"/>
                     </StackPanel>
-                    <ComboBox Grid.Column="1" Width="130" SelectedIndex="0">
-                      <ComboBoxItem Content="Agrupar: Severidade"/>
-                      <ComboBoxItem Content="Agrupar: Tabela"/>
-                      <ComboBoxItem Content="Agrupar: Tipo"/>
-                      <ComboBoxItem Content="Agrupar: Schema"/>
+                    <ComboBox Grid.Column="1" Width="150"
+                              ItemsSource="{Binding SchemaAnalysisPanel.GroupModes}"
+                              SelectedItem="{Binding SchemaAnalysisPanel.GroupMode, Mode=TwoWay}"
+                              ItemTemplate="{StaticResource IssueModeLabelTemplate}"
+                              ToolTip.Tip="Agrupar issues">
+                      <ComboBox.SelectionBoxItemTemplate>
+                        <DataTemplate>
+                          <TextBlock>
+                            <Run Text="Agrupar:"/>
+                            <Run Text="{Binding Converter={StaticResource IssueModeLabelConverter}}"/>
+                          </TextBlock>
+                        </DataTemplate>
+                      </ComboBox.SelectionBoxItemTemplate>
                     </ComboBox>
-                    <ComboBox Grid.Column="2" Width="130" SelectedIndex="0">
-                      <ComboBoxItem Content="Ordenar: Severidade"/>
-                      <ComboBoxItem Content="Ordenar: Confianca"/>
-                      <ComboBoxItem Content="Ordenar: Frequencia"/>
-                      <ComboBoxItem Content="Ordenar: Tabela"/>
+                    <ComboBox Grid.Column="2" Width="150"
+                              ItemsSource="{Binding SchemaAnalysisPanel.SortModes}"
+                              SelectedItem="{Binding SchemaAnalysisPanel.SortMode, Mode=TwoWay}"
+                              ItemTemplate="{StaticResource IssueModeLabelTemplate}"
+                              ToolTip.Tip="Ordenar issues">
+                      <ComboBox.SelectionBoxItemTemplate>
+                        <DataTemplate>
+                          <TextBlock>
+                            <Run Text="Ordenar:"/>
+                            <Run Text="{Binding Converter={StaticResource IssueModeLabelConverter}}"/>
+                          </TextBlock>
+                        </DataTemplate>
+                      </ComboBox.SelectionBoxItemTemplate>
                     </ComboBox>
-                    <ToggleButton Grid.Column="3" Classes="secondary compact" Content="Compacto" IsChecked="True"/>
-                    <Button Grid.Column="4" Classes="secondary compact" Content="Bulk actions"/>
+                    <ToggleButton Grid.Column="3" Classes="secondary compact" Content="Compacto"
+                                  IsChecked="{Binding SchemaAnalysisPanel.IsCompact, Mode=TwoWay}"/>
+                    <Button Grid.Column="4" Classes="secondary compact" Content="Bulk actions">
+                      <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedRight">
+                          <Border Classes="issue-filter-flyout">
+                            <StackPanel Spacing="6">
+                              <TextBlock Text="Acoes em massa (issues visiveis)" FontWeight="{StaticResource FontWeightStrong}"/>
+                              <Button Classes="secondary compact" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                      Content="Marcar visiveis como revisadas"
+                                      Command="{Binding SchemaAnalysisPanel.MarkAllVisibleReviewedCommand}"/>
+                              <Button Classes="secondary compact" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                      Content="Ignorar tabelas das visiveis"
+                                      Command="{Binding SchemaAnalysisPanel.IgnoreVisibleTablesCommand}"/>
+                            </StackPanel>
+                          </Border>
+                        </Flyout>
+                      </Button.Flyout>
+                    </Button>
                   </Grid>
                 </Border>
 
@@ -1226,67 +1321,85 @@
                     <Border Grid.Column="1" Classes="issue-filter-chip"><TextBlock Text="{Binding SchemaAnalysisPanel.FilteredWarningCount, StringFormat=Warning: {0}}"/></Border>
                     <Border Grid.Column="2" Classes="issue-filter-chip"><TextBlock Text="{Binding SchemaAnalysisPanel.FilteredInfoCount, StringFormat=Info: {0}}"/></Border>
                     <Border Grid.Column="3" Classes="issue-filter-chip"><TextBlock Text="{Binding SchemaAnalysisPanel.FilteredQuickWinIssuesCount, StringFormat=Quick wins: {0}}"/></Border>
-                    <TextBlock Grid.Column="4" Text="0 selecionadas" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="4" Text="{Binding SchemaAnalysisPanel.FilteredAffectedTablesCount, StringFormat='{}{0} tabelas afetadas'}" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                   </Grid>
                 </Border>
 
-                <ListBox Grid.Row="2"
-                         Name="IssuesCardsList"
-                         ItemsSource="{Binding SchemaAnalysisPanel.VisibleIssues}"
-                         SelectedItem="{Binding SchemaAnalysisPanel.SelectedIssue, Mode=TwoWay}"
-                         SelectionChanged="IssueListBox_OnSelectionChanged">
-                  <ListBox.ItemsPanel>
-                    <ItemsPanelTemplate>
-                      <VirtualizingStackPanel/>
-                    </ItemsPanelTemplate>
-                  </ListBox.ItemsPanel>
-                  <ListBox.ItemTemplate>
-                    <DataTemplate>
-                      <Border Classes="issue-item-card"
-                              Classes.critical="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"
-                              Classes.warning="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"
-                              Classes.info="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}">
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                          <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Top">
-                            <mi:MaterialIcon Kind="AlertOctagonOutline" Width="16" Height="16" Foreground="#C97A90"
-                                             IsVisible="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"/>
-                            <mi:MaterialIcon Kind="AlertCircleOutline" Width="16" Height="16" Foreground="#D3A45C"
-                                             IsVisible="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"/>
-                            <mi:MaterialIcon Kind="InformationOutline" Width="16" Height="16" Foreground="#6FA9E8"
-                                             IsVisible="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}"/>
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                  <StackPanel Spacing="8">
+                    <TextBlock Text="Nenhuma issue corresponde aos filtros atuais."
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="2,6"
+                               IsVisible="{Binding SchemaAnalysisPanel.HasNoVisibleIssues}"/>
+                    <ItemsControl ItemsSource="{Binding SchemaAnalysisPanel.GroupedIssues}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SchemaIssueGroupViewModel">
+                          <StackPanel Spacing="4" Margin="0,0,0,8">
+                            <Border Classes="issue-group-header">
+                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <TextBlock Grid.Column="0" Text="{Binding Title}" FontWeight="{StaticResource FontWeightStrong}" TextTrimming="CharacterEllipsis"/>
+                                <Border Grid.Column="1" Classes="issue-badge"><TextBlock Text="{Binding CountLabel}" FontSize="{StaticResource FontSizeCaption}"/></Border>
+                              </Grid>
+                            </Border>
+                            <ListBox Classes="issues-cards-list"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Padding="0"
+                                     ItemsSource="{Binding Items}"
+                                     SelectedItem="{Binding DataContext.SchemaAnalysisPanel.SelectedIssue, ElementName=Root, Mode=OneWay}"
+                                     SelectionChanged="IssueListBox_OnSelectionChanged">
+                              <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                  <Border Classes="issue-item-card"
+                                          Classes.compact="{Binding DataContext.SchemaAnalysisPanel.IsCompact, ElementName=Root}"
+                                          Classes.critical="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"
+                                          Classes.warning="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"
+                                          Classes.info="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                      <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Top">
+                                        <mi:MaterialIcon Kind="AlertOctagonOutline" Width="16" Height="16" Foreground="#C97A90"
+                                                         IsVisible="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"/>
+                                        <mi:MaterialIcon Kind="AlertCircleOutline" Width="16" Height="16" Foreground="#D3A45C"
+                                                         IsVisible="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"/>
+                                        <mi:MaterialIcon Kind="InformationOutline" Width="16" Height="16" Foreground="#6FA9E8"
+                                                         IsVisible="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}"/>
+                                      </StackPanel>
+                                      <StackPanel Grid.Column="1" Spacing="3">
+                                        <TextBlock Text="{Binding Title}" FontWeight="{StaticResource FontWeightStrong}" TextTrimming="CharacterEllipsis"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                          <mi:MaterialIcon Kind="TableLarge" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}"/>
+                                          <TextBlock Text="{Binding TableName, StringFormat=Tabela: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Message}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" MaxLines="1" TextTrimming="CharacterEllipsis"
+                                                   IsVisible="{Binding !DataContext.SchemaAnalysisPanel.IsCompact, ElementName=Root}"/>
+                                        <WrapPanel Orientation="Horizontal">
+                                          <Border Classes="issue-badge"
+                                                  Classes.critical="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"
+                                                  Classes.warning="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"
+                                                  Classes.info="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}"
+                                                  Margin="0,0,4,4"><TextBlock Text="{Binding Severity}" FontSize="{StaticResource FontSizeCaption}"/></Border>
+                                          <Border Classes="issue-badge" Margin="0,0,4,4"><TextBlock Text="{Binding RuleCode}" FontSize="{StaticResource FontSizeCaption}"/></Border>
+                                          <Border Classes="issue-badge" Margin="0,0,4,4"><TextBlock Text="{Binding Confidence, StringFormat={}{0:P0}}" FontSize="{StaticResource FontSizeCaption}"/></Border>
+                                        </WrapPanel>
+                                      </StackPanel>
+                                      <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Right">
+                                        <Button Classes="secondary compact" Content="Detalhes"
+                                                Command="{Binding DataContext.SchemaAnalysisPanel.ShowIssueDetailsCommand, ElementName=Root}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Classes="secondary compact" Content="Copy SQL" Command="{Binding DataContext.SchemaAnalysisPanel.CopySqlCommand, ElementName=Root}"/>
+                                        <Button Classes="secondary compact" Content="Open DDL" Command="{Binding DataContext.OpenInDdlCommand, ElementName=Root}"/>
+                                      </StackPanel>
+                                    </Grid>
+                                  </Border>
+                                </DataTemplate>
+                              </ListBox.ItemTemplate>
+                            </ListBox>
                           </StackPanel>
-                          <StackPanel Grid.Column="1" Spacing="3">
-                            <TextBlock Text="{Binding Title}" FontWeight="{StaticResource FontWeightStrong}" TextTrimming="CharacterEllipsis"/>
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                              <mi:MaterialIcon Kind="SitemapOutline" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}"/>
-                              <TextBlock Text="{Binding RuleCode}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis"/>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                              <mi:MaterialIcon Kind="TableLarge" Width="12" Height="12" Foreground="{StaticResource TextMutedBrush}"/>
-                              <TextBlock Text="{Binding TableName, StringFormat=Tabela: {0}}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
-                            </StackPanel>
-                            <TextBlock Text="{Binding Message}" FontSize="{StaticResource FontSizeCaption}" Foreground="{StaticResource TextMutedBrush}" MaxLines="1" TextTrimming="CharacterEllipsis"/>
-                            <WrapPanel Orientation="Horizontal">
-                              <Border Classes="issue-badge"
-                                      Classes.critical="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Critical}"
-                                      Classes.warning="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Warning}"
-                                      Classes.info="{Binding Severity, Converter={StaticResource EnumEqualsConverter}, ConverterParameter=Info}"
-                                      Margin="0,0,4,4"><TextBlock Text="{Binding Severity}" FontSize="{StaticResource FontSizeCaption}"/></Border>
-                              <Border Classes="issue-badge" Margin="0,0,4,4"><TextBlock Text="{Binding TargetType}" FontSize="{StaticResource FontSizeCaption}"/></Border>
-                              <Border Classes="issue-badge" Margin="0,0,4,4"><TextBlock Text="{Binding RuleCode}" FontSize="{StaticResource FontSizeCaption}"/></Border>
-                              <Border Classes="issue-badge" Margin="0,0,4,4"><TextBlock Text="{Binding Confidence, StringFormat={}{0:P0}}" FontSize="{StaticResource FontSizeCaption}"/></Border>
-                            </WrapPanel>
-                          </StackPanel>
-                          <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Right">
-                            <Button Classes="secondary compact" Content="Details"/>
-                            <Button Classes="secondary compact" Content="Copy SQL" Command="{Binding DataContext.SchemaAnalysisPanel.CopySqlCommand, ElementName=Root}"/>
-                            <Button Classes="secondary compact" Content="Open DDL" Command="{Binding DataContext.OpenInDdlCommand, ElementName=Root}"/>
-                          </StackPanel>
-                        </Grid>
-                      </Border>
-                    </DataTemplate>
-                  </ListBox.ItemTemplate>
-                </ListBox>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </ScrollViewer>
               </Grid>
             </Border>
 
@@ -1364,7 +1477,7 @@
                   <TabItem Header="Resolucao">
                     <Grid RowDefinitions="Auto,*" RowSpacing="8" Margin="0,6,0,0">
                       <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="6">
-                        <Button Grid.Column="0" Classes="secondary compact" Content="Preview SQL"/>
+                        <Button Grid.Column="0" Classes="secondary compact" Content="Preview SQL" Command="{Binding SchemaAnalysisPanel.PreviewSqlCommand}"/>
                         <Button Grid.Column="1" Classes="secondary compact" Content="Apply" Command="{Binding SchemaAnalysisPanel.ApplyToCanvasCommand}"/>
                         <Button Grid.Column="2" Classes="secondary compact" Content="Copy SQL" Command="{Binding SchemaAnalysisPanel.CopySqlCommand}" Click="CopySqlButton_OnClick"/>
                         <Button Grid.Column="3" Classes="secondary compact" Content="Open in DDL" Command="{Binding OpenInDdlCommand}"/>
@@ -1373,8 +1486,11 @@
                             <Flyout Placement="BottomEdgeAlignedRight">
                               <Border Classes="issue-filter-flyout">
                                 <StackPanel Spacing="6">
-                                  <Button Classes="secondary compact" Content="Ignore Rule"/>
-                                  <Button Classes="secondary compact" Content="Mark Reviewed"/>
+                                  <Button Classes="secondary compact" Content="Ignorar esta regra"
+                                          Command="{Binding SchemaAnalysisPanel.IgnoreSelectedRuleCommand}"
+                                          ToolTip.Tip="Desativa o filtro da regra da issue selecionada"/>
+                                  <Button Classes="secondary compact" Content="{Binding SchemaAnalysisPanel.MarkReviewedLabel}"
+                                          Command="{Binding SchemaAnalysisPanel.MarkSelectedReviewedCommand}"/>
                                   <Button Classes="secondary compact" Content="Reanalisar" Command="{Binding RunAnalysisCommand}"/>
                                 </StackPanel>
                               </Border>
@@ -1383,7 +1499,7 @@
                         </Button>
                       </Grid>
 
-                      <TabControl Grid.Row="1" Classes="issue-inspector-tabs">
+                      <TabControl Grid.Row="1" Classes="issue-inspector-tabs" SelectedIndex="{Binding SchemaAnalysisPanel.ResolutionTabIndex, Mode=TwoWay}">
                   <TabItem Header="SQL">
                     <Border Classes="issue-sql-pane" Margin="0,6,0,0">
                       <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
@@ -1543,7 +1659,8 @@
                           <CheckBox Content="Naming violation" IsChecked="{Binding SchemaAnalysisPanel.IncludeNamingConventionViolation, Mode=TwoWay}"/>
                           <CheckBox Content="Low semantic name" IsChecked="{Binding SchemaAnalysisPanel.IncludeLowSemanticName, Mode=TwoWay}"/>
                           <CheckBox Content="Missing required comment" IsChecked="{Binding SchemaAnalysisPanel.IncludeMissingRequiredComment, Mode=TwoWay}"/>
-                          <CheckBox Content="NF1 / NF2 / NF3 hints" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf1HintMultiValued, Mode=TwoWay}"/>
+                          <CheckBox Content="NF1 hint multi-valued" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf1HintMultiValued, Mode=TwoWay}"/>
+                          <CheckBox Content="NF2 hint partial dependency" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf2HintPartialDependency, Mode=TwoWay}"/>
                           <CheckBox Content="NF3 hint transitive dependency" IsChecked="{Binding SchemaAnalysisPanel.IncludeNf3HintTransitiveDependency, Mode=TwoWay}"/>
                         </StackPanel>
                       </Expander>

@@ -98,11 +98,17 @@ public partial class DdlSchemaAnalysisWorkspaceControl : UserControl
         if (DataContext is not DdlSchemaAnalysisWorkspaceViewModel vm)
             return;
 
-        if (sender is not ListBox listBox)
-            return;
-
-        if (listBox.SelectedItem is SchemaIssue issue)
-            vm.SchemaAnalysisPanel.SelectedIssue = issue;
+        // Each issue group renders its own ListBox bound OneWay to the shared SelectedIssue.
+        // Only react to a real user selection (AddedItems) so that the deselect that fires on
+        // the other group lists does not clear the shared selection.
+        foreach (object? added in e.AddedItems)
+        {
+            if (added is SchemaIssue issue)
+            {
+                vm.SchemaAnalysisPanel.SelectedIssue = issue;
+                return;
+            }
+        }
     }
 
     private async void CopySqlButton_OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

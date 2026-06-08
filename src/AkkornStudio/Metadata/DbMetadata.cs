@@ -28,6 +28,18 @@ public record ColumnMetadata(
     string? Comment = null
 )
 {
+    /// <summary>True when the column is an identity / auto-increment column.</summary>
+    public bool IsAutoIncrement { get; init; }
+
+    /// <summary>The generation expression for a computed/generated column, or null.</summary>
+    public string? GeneratedExpression { get; init; }
+
+    /// <summary>True when the column is a generated/computed column.</summary>
+    public bool IsGenerated => !string.IsNullOrWhiteSpace(GeneratedExpression);
+
+    /// <summary>Explicit column collation, or null when it inherits the default.</summary>
+    public string? Collation { get; init; }
+
     /// <summary>Semantic category inferred from type name — used for TreeView icons.</summary>
     public ColumnSemanticType SemanticType => InferSemanticType(NativeType);
 
@@ -100,6 +112,9 @@ public enum ColumnSemanticType
     Spatial,
     Other,
 }
+
+/// <summary>Best-effort extra column attributes fetched separately from the main column query.</summary>
+public readonly record struct ColumnAttributes(bool IsAutoIncrement, string? GeneratedExpression, string? Collation);
 
 // ═════════════════════════════════════════════════════════════════════════════
 // FOREIGN KEY RELATION  (bidirectional, provider-agnostic)
@@ -181,6 +196,13 @@ public record IndexMetadata(
 );
 
 // ═════════════════════════════════════════════════════════════════════════════
+// CHECK CONSTRAINT METADATA
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// <summary>A table-level CHECK constraint (name + boolean expression).</summary>
+public record CheckConstraintMetadata(string Name, string Expression);
+
+// ═════════════════════════════════════════════════════════════════════════════
 // TABLE METADATA
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -202,6 +224,9 @@ public record TableMetadata(
     string? Comment = null
 )
 {
+    /// <summary>Table-level CHECK constraints. Empty when the provider has none or doesn't report them.</summary>
+    public IReadOnlyList<CheckConstraintMetadata> CheckConstraints { get; init; } = [];
+
     public string FullName => string.IsNullOrEmpty(Schema) ? Name : $"{Schema}.{Name}";
 
     public IReadOnlyList<ColumnMetadata> PrimaryKeyColumns =>

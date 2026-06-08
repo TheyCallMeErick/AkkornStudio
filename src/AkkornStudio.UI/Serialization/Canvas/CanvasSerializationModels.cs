@@ -47,7 +47,9 @@ public record SavedWorkspaceDocumentsCanvas(
     SavedCanvas? DdlCanvas = null,
     string? AppVersion = null,
     string? CreatedAt = null,
-    string? Description = null
+    string? Description = null,
+    List<SavedWorkspaceTab>? Tabs = null,
+    Guid? ActiveTabId = null
 );
 
 public record SavedWorkspaceDocument(
@@ -57,7 +59,24 @@ public record SavedWorkspaceDocument(
     bool IsDirty,
     string PersistenceSchemaVersion,
     SavedCanvas? CanvasPayload = null,
-    JsonElement? DocumentPayload = null
+    JsonElement? DocumentPayload = null,
+    Guid TabId = default
+);
+
+/// <summary>One persisted workspace tab (connection + current mode). Documents reference it by id.</summary>
+public record SavedWorkspaceTab(
+    Guid TabId,
+    string Title,
+    string CurrentMode,
+    string? ProfileId = null,
+    string? ConnectionTitle = null
+);
+
+/// <summary>Tab-axis snapshot the shell supplies at save time (kept out of the serializer's core args).</summary>
+public sealed record WorkspaceTabsSaveSnapshot(
+    IReadOnlyDictionary<Guid, Guid> DocumentTabs,
+    IReadOnlyList<SavedWorkspaceTab> Tabs,
+    Guid? ActiveTabId
 );
 
 public record SavedColumn(

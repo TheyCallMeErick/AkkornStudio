@@ -418,6 +418,128 @@ public sealed class SchemaAnalysisPanelViewModelTests
         Assert.Equal(L("preview.schemaAnalysis.actionBlockedTooltip", "Ação indisponível para o nível de risco ou capacidade atual."), vm.ActionBlockedTooltip);
     }
 
+    [Fact]
+    public void SortMode_Confidence_OrdersVisibleIssuesByConfidenceDescending()
+    {
+        var vm = new SchemaAnalysisPanelViewModel();
+        SchemaIssue low = CreateIssue("i-1", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Info, "public", "a", 0.40d);
+        SchemaIssue high = CreateIssue("i-2", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Info, "public", "b", 0.95d);
+        SchemaIssue mid = CreateIssue("i-3", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Info, "public", "c", 0.70d);
+
+        vm.ApplyResult(CreateResult([low, high, mid], SchemaAnalysisStatus.Completed));
+        vm.SortMode = IssueSortMode.Confidence;
+
+        Assert.Equal(["i-2", "i-3", "i-1"], vm.VisibleIssues.Select(i => i.IssueId).ToArray());
+    }
+
+    [Fact]
+    public void GroupMode_Table_GroupsVisibleIssuesByQualifiedTable()
+    {
+        var vm = new SchemaAnalysisPanelViewModel();
+        SchemaIssue a1 = CreateIssue("i-1", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Warning, "public", "orders", 0.91d);
+        SchemaIssue a2 = CreateIssue("i-2", SchemaRuleCode.LOW_SEMANTIC_NAME, SchemaIssueSeverity.Info, "public", "orders", 0.80d);
+        SchemaIssue b1 = CreateIssue("i-3", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Critical, "public", "customers", 0.95d);
+
+        vm.ApplyResult(CreateResult([a1, a2, b1], SchemaAnalysisStatus.Completed));
+        vm.GroupMode = IssueGroupMode.Table;
+
+        Assert.Equal(2, vm.GroupedIssues.Count);
+        Assert.Equal(["public.customers", "public.orders"], vm.GroupedIssues.Select(g => g.Key).ToArray());
+        Assert.Equal(2, vm.GroupedIssues.Single(g => g.Key == "public.orders").Count);
+    }
+
+    [Fact]
+    public void MarkSelectedReviewed_WithHideReviewed_RemovesIssueFromVisible()
+    {
+        var vm = new SchemaAnalysisPanelViewModel();
+        SchemaIssue first = CreateIssue("i-1", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Warning, "public", "orders", 0.91d);
+        SchemaIssue second = CreateIssue("i-2", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Warning, "public", "customers", 0.91d);
+
+        vm.ApplyResult(CreateResult([first, second], SchemaAnalysisStatus.Completed));
+        vm.HideReviewed = true;
+        vm.SelectedIssue = first;
+        vm.MarkSelectedReviewedCommand.Execute(null);
+
+        Assert.Equal(1, vm.ReviewedCount);
+        Assert.DoesNotContain(first, vm.VisibleIssues);
+        Assert.Contains(second, vm.VisibleIssues);
+    }
+
+    [Fact]
+    public void IgnoreSelectedRuleCommand_DisablesRuleAndFiltersMatchingIssues()
+    {
+        var vm = new SchemaAnalysisPanelViewModel();
+        SchemaIssue fk = CreateIssue("i-1", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Warning, "public", "orders", 0.91d);
+        SchemaIssue naming = CreateIssue("i-2", SchemaRuleCode.NAMING_CONVENTION_VIOLATION, SchemaIssueSeverity.Info, "public", "customers", 0.80d);
+
+        vm.ApplyResult(CreateResult([fk, naming], SchemaAnalysisStatus.Completed));
+        vm.SelectedIssue = fk;
+        vm.IgnoreSelectedRuleCommand.Execute(null);
+
+        Assert.False(vm.IncludeMissingFk);
+        Assert.DoesNotContain(fk, vm.VisibleIssues);
+        Assert.Contains(naming, vm.VisibleIssues);
+    }
+
+    [Fact]
+    public void MarkAllVisibleReviewedCommand_MarksEveryVisibleIssue()
+    {
+        var vm = new SchemaAnalysisPanelViewModel();
+        SchemaIssue a = CreateIssue("i-1", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Warning, "public", "orders", 0.91d);
+        SchemaIssue b = CreateIssue("i-2", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Warning, "public", "customers", 0.91d);
+
+        vm.ApplyResult(CreateResult([a, b], SchemaAnalysisStatus.Completed));
+        vm.MarkAllVisibleReviewedCommand.Execute(null);
+
+        Assert.Equal(2, vm.ReviewedCount);
+        Assert.True(vm.HasReviewedIssues);
+    }
+
+    [Fact]
+    public void IgnoreVisibleTablesCommand_AddsDistinctVisibleTablesToIgnoreList()
+    {
+        var vm = new SchemaAnalysisPanelViewModel();
+        SchemaIssue a = CreateIssue("i-1", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Warning, "public", "orders", 0.91d);
+        SchemaIssue b = CreateIssue("i-2", SchemaRuleCode.LOW_SEMANTIC_NAME, SchemaIssueSeverity.Info, "public", "orders", 0.80d);
+        SchemaIssue c = CreateIssue("i-3", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Critical, "public", "customers", 0.95d);
+
+        vm.ApplyResult(CreateResult([a, b, c], SchemaAnalysisStatus.Completed));
+        vm.IgnoreVisibleTablesCommand.Execute(null);
+
+        Assert.Equal(2, vm.IgnoredTables.Count);
+        Assert.Contains("public.orders", vm.IgnoredTables);
+        Assert.Contains("public.customers", vm.IgnoredTables);
+        Assert.Empty(vm.VisibleIssues);
+    }
+
+    [Fact]
+    public void SaveAndApplyView_RestoresFilterAndSortState()
+    {
+        var vm = new SchemaAnalysisPanelViewModel();
+        SchemaIssue warning = CreateIssue("i-1", SchemaRuleCode.MISSING_FK, SchemaIssueSeverity.Warning, "public", "orders", 0.91d);
+        SchemaIssue info = CreateIssue("i-2", SchemaRuleCode.LOW_SEMANTIC_NAME, SchemaIssueSeverity.Info, "public", "customers", 0.60d);
+
+        vm.ApplyResult(CreateResult([warning, info], SchemaAnalysisStatus.Completed));
+        vm.IncludeInfo = false;
+        vm.SortMode = IssueSortMode.Table;
+        vm.GroupMode = IssueGroupMode.Schema;
+        vm.SaveCurrentViewCommand.Execute(null);
+
+        Assert.Single(vm.SavedViews);
+
+        // Mutate state away from the saved snapshot.
+        vm.ClearFiltersCommand.Execute(null);
+        Assert.True(vm.IncludeInfo);
+        Assert.Equal(IssueSortMode.Severity, vm.SortMode);
+
+        vm.ApplyViewCommand.Execute(vm.SavedViews[0]);
+
+        Assert.False(vm.IncludeInfo);
+        Assert.Equal(IssueSortMode.Table, vm.SortMode);
+        Assert.Equal(IssueGroupMode.Schema, vm.GroupMode);
+        Assert.DoesNotContain(info, vm.VisibleIssues);
+    }
+
     private static SchemaAnalysisResult CreateResult(
         IReadOnlyList<SchemaIssue> issues,
         SchemaAnalysisStatus status

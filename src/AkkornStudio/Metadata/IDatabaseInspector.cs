@@ -72,7 +72,9 @@ public abstract class BaseInspector(ConnectionConfig config) : IDatabaseInspecto
             ct.ThrowIfCancellationRequested();
 
             IReadOnlyList<ColumnMetadata> columns = await FetchColumnsAsync(conn, schema, name, ct);
+            columns = await ApplyColumnAttributesAsync(conn, schema, name, columns, ct);
             IReadOnlyList<IndexMetadata> indexes = await FetchIndexesAsync(conn, schema, name, ct);
+            IReadOnlyList<CheckConstraintMetadata> checks = await FetchCheckConstraintsAsync(conn, schema, name, ct);
 
             string fullName = string.IsNullOrEmpty(schema) ? name : $"{schema}.{name}";
             tableMetaList.Add(
@@ -87,6 +89,9 @@ public abstract class BaseInspector(ConnectionConfig config) : IDatabaseInspecto
                     InboundForeignKeys: fksByParent[fullName].ToList(),
                     Comment: tableComment
                 )
+                {
+                    CheckConstraints = checks,
+                }
             );
         }
 
@@ -115,7 +120,9 @@ public abstract class BaseInspector(ConnectionConfig config) : IDatabaseInspecto
     {
         await using DbConnection conn = await OpenAsync(ct);
         IReadOnlyList<ColumnMetadata> columns = await FetchColumnsAsync(conn, schema, table, ct);
+        columns = await ApplyColumnAttributesAsync(conn, schema, table, columns, ct);
         IReadOnlyList<IndexMetadata> indexes = await FetchIndexesAsync(conn, schema, table, ct);
+        IReadOnlyList<CheckConstraintMetadata> checks = await FetchCheckConstraintsAsync(conn, schema, table, ct);
         IReadOnlyList<ForeignKeyRelation> allFks = await FetchForeignKeysAsync(conn, ct);
         string fullName = string.IsNullOrEmpty(schema) ? table : $"{schema}.{table}";
 
@@ -133,7 +140,10 @@ public abstract class BaseInspector(ConnectionConfig config) : IDatabaseInspecto
                 .Where(r => r.ParentFullTable.Equals(fullName, StringComparison.OrdinalIgnoreCase))
                 .ToList(),
             Comment: null
-        );
+        )
+        {
+            CheckConstraints = checks,
+        };
     }
 
     public async Task<IReadOnlyList<ForeignKeyRelation>> GetForeignKeysAsync(
@@ -178,6 +188,56 @@ public abstract class BaseInspector(ConnectionConfig config) : IDatabaseInspecto
         DbConnection conn,
         CancellationToken ct
     );
+
+    /// <summary>
+    /// Fetches table-level CHECK constraints. Best-effort: providers override this and must
+    /// swallow catalog errors (returning empty) so introspection never breaks if the query
+    /// is unsupported on a given server version. Base returns none.
+    /// </summary>
+    protected virtual Task<IReadOnlyList<CheckConstraintMetadata>> FetchCheckConstraintsAsync(
+        DbConnection conn,
+        string schema,
+        string table,
+        CancellationToken ct
+    ) => Task.FromResult<IReadOnlyList<CheckConstraintMetadata>>([]);
+
+    /// <summary>
+    /// Fetches extra per-column attributes (identity, generated expression, collation) keyed by
+    /// column name. Best-effort: providers override and must swallow catalog errors (returning an
+    /// empty map) so introspection never breaks. Base returns none.
+    /// </summary>
+    protected virtual Task<IReadOnlyDictionary<string, ColumnAttributes>> FetchColumnAttributesAsync(
+        DbConnection conn,
+        string schema,
+        string table,
+        CancellationToken ct
+    ) => Task.FromResult<IReadOnlyDictionary<string, ColumnAttributes>>(
+        new Dictionary<string, ColumnAttributes>(StringComparer.OrdinalIgnoreCase));
+
+    private async Task<IReadOnlyList<ColumnMetadata>> ApplyColumnAttributesAsync(
+        DbConnection conn,
+        string schema,
+        string table,
+        IReadOnlyList<ColumnMetadata> columns,
+        CancellationToken ct
+    )
+    {
+        IReadOnlyDictionary<string, ColumnAttributes> attributes =
+            await FetchColumnAttributesAsync(conn, schema, table, ct);
+        if (attributes.Count == 0)
+            return columns;
+
+        return columns
+            .Select(column => attributes.TryGetValue(column.Name, out ColumnAttributes attr)
+                ? column with
+                {
+                    IsAutoIncrement = attr.IsAutoIncrement,
+                    GeneratedExpression = attr.GeneratedExpression,
+                    Collation = attr.Collation,
+                }
+                : column)
+            .ToList();
+    }
 
     // ── Shared normalisation ──────────────────────────────────────────────────
 

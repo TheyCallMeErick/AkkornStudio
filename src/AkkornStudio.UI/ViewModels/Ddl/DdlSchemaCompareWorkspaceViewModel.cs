@@ -1,8 +1,7 @@
 using System.Collections.ObjectModel;
 using AkkornStudio.Core;
-using AkkornStudio.Ddl;
+using AkkornStudio.Ddl.Compare;
 using AkkornStudio.Metadata;
-using AkkornStudio.Registry;
 using AkkornStudio.UI.Services.ConnectionManager.Models;
 
 namespace AkkornStudio.UI.ViewModels;
@@ -15,17 +14,29 @@ public enum DdlSchemaCompareDirection
 
 public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, IDisposable
 {
-    internal readonly record struct DdlSchemaCompareSqlOperation(
-        string Category,
-        string Item,
-        string Action,
-        string Sql,
-        bool IsDestructive);
+    // Pure comparison + per-dialect generation live in the core engine; this VM is an adapter.
+    private readonly TableComparer _comparer = new();
+    private readonly SchemaComparer _schemaComparer = new();
+    private readonly SyncScriptGenerator _generator = new();
+
+    // One difference plus the table it targets. Both single-table and whole-schema comparisons
+    // flatten into this list so the wizard and SQL generation are mode-agnostic.
+    internal readonly record struct FlatDifference(string TargetSchema, string TargetTable, SchemaDifference Difference);
+
+    // Sentinel table selection that switches the comparison to whole-schema mode.
+    internal const string AllTablesOption = "(todas as tabelas)";
+
+    // Sentinel schema selection that switches the comparison to whole-database mode.
+    internal const string AllSchemasOption = "(todos os schemas)";
+
+    // Last comparison result + context, kept so generation options can recompute SQL live
+    // without a new round-trip and without resetting the user's review state.
+    private List<FlatDifference> _flatDifferences = [];
+    private DatabaseProvider _compareProvider;
 
     private readonly ConnectionManagerViewModel _connectionManager;
     private readonly Dictionary<string, DbMetadata> _metadataCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string[]> _databaseCache = new(StringComparer.OrdinalIgnoreCase);
-    private IReadOnlyList<DdlSchemaCompareSqlOperation> _comparisonSqlOperations = [];
     private CancellationTokenSource? _leftLoadCts;
     private CancellationTokenSource? _rightLoadCts;
 
@@ -60,6 +71,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         OpenConnectionManagerCommand = new RelayCommand(OpenConnectionManager, () => !IsBusy);
 
         InitializeWizardState();
+        InitializeDataCommands();
         _connectionManager.ProfilesChanged += HandleProfilesChanged;
         RefreshProfiles();
     }
@@ -87,14 +99,6 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
     public ObservableCollection<string> LeftTables { get; } = [];
 
     public ObservableCollection<string> RightTables { get; } = [];
-
-    public ObservableCollection<DdlSchemaCompareDiffRowViewModel> ColumnDiffs { get; } = [];
-
-    public ObservableCollection<DdlSchemaCompareDiffRowViewModel> ConstraintDiffs { get; } = [];
-
-    public ObservableCollection<DdlSchemaCompareDiffRowViewModel> RelationshipDiffs { get; } = [];
-
-    public ObservableCollection<DdlSchemaCompareDiffRowViewModel> ExternalImpactDiffs { get; } = [];
 
     public ObservableCollection<string> CompareWarnings { get; } = [];
 
@@ -530,16 +534,27 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         }
 
         string? selectedSchema = GetSelectedSchema(side);
+
+        // Whole-database mode: the table picker collapses to "all tables".
+        if (string.Equals(selectedSchema, AllSchemasOption, StringComparison.Ordinal))
+        {
+            SetTables(side, [AllTablesOption]);
+            SetSelectedTable(side, AllTablesOption);
+            return;
+        }
+
         IEnumerable<TableMetadata> tables = metadata.AllTables;
         if (!string.IsNullOrWhiteSpace(selectedSchema))
             tables = tables.Where(table => string.Equals(table.Schema, selectedSchema, StringComparison.OrdinalIgnoreCase));
 
-        string[] options = tables
+        string[] tableNames = tables
             .Where(table => table.Kind == TableKind.Table)
             .Select(table => table.FullName)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+        // First option compares the whole schema; the rest are individual tables.
+        string[] options = [AllTablesOption, .. tableNames];
         SetTables(side, options);
 
         string? selectedTable = GetSelectedTable(side);
@@ -549,7 +564,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
             return;
         }
 
-        SetSelectedTable(side, options.FirstOrDefault());
+        SetSelectedTable(side, tableNames.FirstOrDefault() ?? AllTablesOption);
     }
 
     private void RecomputeCompatibility()
@@ -584,6 +599,44 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
             return;
         }
 
+        // Data comparison only works table-to-table (it reads rows), so schema/database-wide is blocked.
+        if (IsDataComparison)
+        {
+            bool leftConcrete = IsConcreteTableSelection(LeftSelectedSchema, LeftSelectedTable);
+            bool rightConcrete = IsConcreteTableSelection(RightSelectedSchema, RightSelectedTable);
+            if (!leftConcrete || !rightConcrete)
+            {
+                IsCompatibilityBlocked = true;
+                CompatibilityMessage = "Comparacao de dados: selecione uma tabela especifica nos dois lados (sem banco/schema inteiro).";
+                UpdateSelectionStepState();
+                return;
+            }
+
+            RefreshDataKeyOptionsForSelection();
+            IsCompatibilityBlocked = false;
+            CompatibilityMessage = "Comparacao de dados pronta: os valores das duas tabelas serao comparados.";
+            UpdateSelectionStepState();
+            return;
+        }
+
+        bool leftAllSchemas = string.Equals(LeftSelectedSchema, AllSchemasOption, StringComparison.Ordinal);
+        bool rightAllSchemas = string.Equals(RightSelectedSchema, AllSchemasOption, StringComparison.Ordinal);
+        if (leftAllSchemas != rightAllSchemas)
+        {
+            IsCompatibilityBlocked = true;
+            CompatibilityMessage = $"Selecione \"{AllSchemasOption}\" dos dois lados para comparar o banco inteiro.";
+            UpdateSelectionStepState();
+            return;
+        }
+
+        if (leftAllSchemas && rightAllSchemas)
+        {
+            IsCompatibilityBlocked = false;
+            CompatibilityMessage = "Banco inteiro: todas as tabelas de todos os schemas serao comparadas.";
+            UpdateSelectionStepState();
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(LeftSelectedTable) || string.IsNullOrWhiteSpace(RightSelectedTable))
         {
             IsCompatibilityBlocked = true;
@@ -592,15 +645,70 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
             return;
         }
 
+        bool leftAll = string.Equals(LeftSelectedTable, AllTablesOption, StringComparison.Ordinal);
+        bool rightAll = string.Equals(RightSelectedTable, AllTablesOption, StringComparison.Ordinal);
+        if (leftAll != rightAll)
+        {
+            IsCompatibilityBlocked = true;
+            CompatibilityMessage = $"Selecione \"{AllTablesOption}\" dos dois lados para comparar o schema inteiro.";
+            UpdateSelectionStepState();
+            return;
+        }
+
         IsCompatibilityBlocked = false;
-        CompatibilityMessage = "Conexoes compativeis para comparacao.";
+        CompatibilityMessage = IsSchemaWideComparison
+            ? "Schema inteiro: todas as tabelas serao comparadas."
+            : "Conexoes compativeis para comparacao.";
         UpdateSelectionStepState();
     }
+
+    public bool IsDatabaseWideComparison =>
+        string.Equals(LeftSelectedSchema, AllSchemasOption, StringComparison.Ordinal)
+        && string.Equals(RightSelectedSchema, AllSchemasOption, StringComparison.Ordinal);
+
+    public bool IsSchemaWideComparison =>
+        !IsDatabaseWideComparison
+        && string.Equals(LeftSelectedTable, AllTablesOption, StringComparison.Ordinal)
+        && string.Equals(RightSelectedTable, AllTablesOption, StringComparison.Ordinal);
+
+    private static bool IsConcreteTableSelection(string? schema, string? table) =>
+        !string.Equals(schema, AllSchemasOption, StringComparison.Ordinal)
+        && !string.IsNullOrWhiteSpace(table)
+        && !string.Equals(table, AllTablesOption, StringComparison.Ordinal);
 
     private void OpenConnectionManager()
     {
         if (_connectionManager.ConnectOrOpenManagerCommand.CanExecute(null))
             _connectionManager.ConnectOrOpenManagerCommand.Execute(null);
+    }
+
+    /// <summary>
+    /// Pre-selects the left (source) connection/database/schema, e.g. when launched from the
+    /// schema analysis workspace. The async loaders preserve the pre-set database/schema.
+    /// </summary>
+    public void SeedSource(string? profileId, string? database, string? schema)
+    {
+        if (string.IsNullOrWhiteSpace(profileId))
+            return;
+
+        ConnectionProfile? profile = Profiles.FirstOrDefault(p =>
+            string.Equals(p.Id, profileId, StringComparison.OrdinalIgnoreCase));
+        if (profile is null)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(database))
+            _leftSelectedDatabase = database;
+        if (!string.IsNullOrWhiteSpace(schema))
+            _leftSelectedSchema = schema;
+
+        _leftSelectedProfile = profile;
+        RaisePropertyChanged(nameof(LeftSelectedProfile));
+        RaisePropertyChanged(nameof(LeftSelectedDatabase));
+        RaisePropertyChanged(nameof(LeftSelectedSchema));
+        RaisePropertyChanged(nameof(LeftProviderLabel));
+
+        _ = LoadLeftContextAsync(forceRefresh: false);
+        RecomputeCompatibility();
     }
 
     private async Task CompareAsync()
@@ -609,597 +717,135 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         if (IsCompatibilityBlocked)
             return;
 
-        ColumnDiffs.Clear();
-        ConstraintDiffs.Clear();
-        RelationshipDiffs.Clear();
-        ExternalImpactDiffs.Clear();
         CompareWarnings.Clear();
         GeneratedSql = string.Empty;
-        _comparisonSqlOperations = [];
+        _flatDifferences = [];
+        _compareProvider = LeftSelectedProfile!.Provider;
 
+        if (IsDataComparison)
+        {
+            await CompareDataAsync();
+            return;
+        }
+
+        ResetDataResults();
+
+        if (IsDatabaseWideComparison)
+        {
+            BuildDatabaseWideDifferences();
+        }
+        else if (IsSchemaWideComparison)
+        {
+            if (!BuildSchemaWideDifferences())
+                return;
+        }
+        else if (!BuildSingleTableDifferences())
+        {
+            return;
+        }
+
+        Summary = BuildComparisonSummary(_flatDifferences);
+        OnComparisonCompleted();
+
+        await Task.CompletedTask;
+    }
+
+    private bool BuildSingleTableDifferences()
+    {
         TableMetadata? leftTable = ResolveSelectedTable(EndpointSide.Left);
         TableMetadata? rightTable = ResolveSelectedTable(EndpointSide.Right);
         if (leftTable is null || rightTable is null)
         {
             IsCompatibilityBlocked = true;
             CompatibilityMessage = "Nao foi possivel resolver as tabelas selecionadas.";
-            return;
+            return false;
         }
 
-        BuildColumnDiffs(leftTable, rightTable);
-        BuildConstraintDiffs(leftTable, rightTable);
-        BuildRelationshipDiffs(leftTable, rightTable);
-        BuildExternalImpactDiffs(leftTable, rightTable);
-
+        // Resolve source/target by direction FIRST so the grid's Origem/Destino columns and
+        // the generated SQL describe the same thing (the SQL always alters the target).
         (TableMetadata source, TableMetadata target, string targetSchema, string targetTableName) =
             SelectedDirection == DdlSchemaCompareDirection.LeftToRight
                 ? (leftTable, rightTable, rightTable.Schema, rightTable.Name)
                 : (rightTable, leftTable, leftTable.Schema, leftTable.Name);
 
-        DatabaseProvider provider = LeftSelectedProfile!.Provider;
-        IReadOnlyList<DdlSchemaCompareSqlOperation> sqlOperations = BuildSynchronizationOperations(
-            source,
-            target,
-            provider,
-            targetSchema,
-            targetTableName,
-            CompareWarnings);
-        _comparisonSqlOperations = sqlOperations;
-        GeneratedSql = string.Join("\n", sqlOperations
-            .Select(static operation => operation.Sql)
-            .Where(static statement => !string.IsNullOrWhiteSpace(statement)));
+        TableDiff diff = _comparer.Compare(source, target);
+        _flatDifferences = diff.Differences
+            .Select(d => new FlatDifference(targetSchema, targetTableName, d))
+            .ToList();
 
-        int totalDiffs = ColumnDiffs.Count + ConstraintDiffs.Count + RelationshipDiffs.Count + ExternalImpactDiffs.Count;
-        Summary = $"Diferencas: {totalDiffs} (colunas {ColumnDiffs.Count}, constraints {ConstraintDiffs.Count}, relacionamentos {RelationshipDiffs.Count}, impacto externo {ExternalImpactDiffs.Count}).";
-        OnComparisonCompleted();
+        foreach (string warning in diff.Warnings)
+            CompareWarnings.Add(warning);
 
-        await Task.CompletedTask;
+        return true;
     }
 
-    private static IReadOnlyList<DdlSchemaCompareSqlOperation> BuildSynchronizationOperations(
-        TableMetadata source,
-        TableMetadata target,
-        DatabaseProvider provider,
-        string targetSchema,
-        string targetTableName,
-        ICollection<string> warnings)
+    private bool BuildSchemaWideDifferences()
     {
-        IProviderRegistry registry = ProviderRegistry.CreateDefault();
-        var dialect = registry.GetDialect(provider);
+        bool leftIsSource = SelectedDirection == DdlSchemaCompareDirection.LeftToRight;
+        IReadOnlyList<TableMetadata> sourceTables = ResolveSchemaTables(leftIsSource ? EndpointSide.Left : EndpointSide.Right);
+        IReadOnlyList<TableMetadata> targetTables = ResolveSchemaTables(leftIsSource ? EndpointSide.Right : EndpointSide.Left);
+        string targetSchema = (leftIsSource ? RightSelectedSchema : LeftSelectedSchema) ?? string.Empty;
 
-        var operations = new List<DdlSchemaCompareSqlOperation>();
+        SchemaComparison comparison = _schemaComparer.Compare(sourceTables, targetTables, targetSchema);
+        _flatDifferences = comparison.Tables
+            .SelectMany(table => table.Diff.Differences
+                .Select(d => new FlatDifference(table.TargetSchema, table.TableName, d)))
+            .ToList();
 
-        Dictionary<string, ColumnMetadata> sourceColumns = source.Columns.ToDictionary(column => column.Name, StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, ColumnMetadata> targetColumns = target.Columns.ToDictionary(column => column.Name, StringComparer.OrdinalIgnoreCase);
+        foreach (string warning in comparison.Tables.SelectMany(t => t.Diff.Warnings))
+            CompareWarnings.Add(warning);
 
-        foreach ((string columnName, ColumnMetadata sourceColumn) in sourceColumns)
-        {
-            if (!targetColumns.TryGetValue(columnName, out ColumnMetadata? targetColumn))
-            {
-                string fragment = dialect.EmitCreateTableColumn(
-                    sourceColumn.Name,
-                    ResolveColumnType(sourceColumn),
-                    sourceColumn.IsNullable,
-                    sourceColumn.DefaultValue,
-                    sourceColumn.Comment);
-                operations.Add(new DdlSchemaCompareSqlOperation(
-                    "Coluna ausente",
-                    sourceColumn.Name,
-                    "Adicionar no destino",
-                    dialect.EmitAlterTableAddColumn(targetSchema, targetTableName, fragment),
-                    IsDestructive: false));
-                continue;
-            }
-
-            bool typeDiff = !string.Equals(
-                NormalizeColumnType(ResolveColumnType(sourceColumn)),
-                NormalizeColumnType(ResolveColumnType(targetColumn)),
-                StringComparison.OrdinalIgnoreCase);
-            bool nullabilityDiff = sourceColumn.IsNullable != targetColumn.IsNullable;
-            if (typeDiff || nullabilityDiff)
-            {
-                operations.Add(new DdlSchemaCompareSqlOperation(
-                    "Tipo",
-                    targetColumn.Name,
-                    "ALTER COLUMN",
-                    dialect.EmitAlterTableAlterColumnType(
-                        targetSchema,
-                        targetTableName,
-                        targetColumn.Name,
-                        ResolveColumnType(sourceColumn),
-                        sourceColumn.IsNullable),
-                    IsDestructive: true));
-            }
-
-            if (!string.Equals(NormalizeDefault(sourceColumn.DefaultValue), NormalizeDefault(targetColumn.DefaultValue), StringComparison.OrdinalIgnoreCase))
-            {
-                warnings.Add($"Default divergente em {targetColumn.Name}: ajuste manual necessario.");
-            }
-
-            if (!string.Equals((sourceColumn.Comment ?? string.Empty).Trim(), (targetColumn.Comment ?? string.Empty).Trim(), StringComparison.Ordinal))
-            {
-                warnings.Add($"Comentario divergente em {targetColumn.Name}: ajuste manual necessario.");
-            }
-        }
-
-        foreach ((string columnName, ColumnMetadata targetColumn) in targetColumns)
-        {
-            if (sourceColumns.ContainsKey(columnName))
-                continue;
-
-            operations.Add(new DdlSchemaCompareSqlOperation(
-                "Coluna extra",
-                targetColumn.Name,
-                "Remover do destino",
-                dialect.EmitAlterTableDropColumn(targetSchema, targetTableName, targetColumn.Name, ifExists: true),
-                IsDestructive: true));
-        }
-
-        operations.AddRange(BuildPrimaryKeyOperations(source, target, provider, targetSchema, targetTableName, dialect, warnings));
-        operations.AddRange(BuildUniqueOperations(source, target, provider, targetSchema, targetTableName, dialect, warnings));
-        operations.AddRange(BuildForeignKeyOperations(source, target, provider, targetSchema, targetTableName, dialect));
-
-        return operations;
+        return true;
     }
 
-    private static IReadOnlyList<DdlSchemaCompareSqlOperation> BuildPrimaryKeyOperations(
-        TableMetadata source,
-        TableMetadata target,
-        DatabaseProvider provider,
-        string targetSchema,
-        string targetTableName,
-        Providers.Dialects.ISqlDialect dialect,
-        ICollection<string> warnings)
+    private void BuildDatabaseWideDifferences()
     {
-        var operations = new List<DdlSchemaCompareSqlOperation>();
+        bool leftIsSource = SelectedDirection == DdlSchemaCompareDirection.LeftToRight;
+        IReadOnlyList<TableMetadata> sourceTables = ResolveAllTables(leftIsSource ? EndpointSide.Left : EndpointSide.Right);
+        IReadOnlyList<TableMetadata> targetTables = ResolveAllTables(leftIsSource ? EndpointSide.Right : EndpointSide.Left);
 
-        string[] sourcePk = source.Columns.Where(static column => column.IsPrimaryKey).Select(column => column.Name).OrderBy(static name => name, StringComparer.OrdinalIgnoreCase).ToArray();
-        string[] targetPk = target.Columns.Where(static column => column.IsPrimaryKey).Select(column => column.Name).OrderBy(static name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+        SchemaComparison comparison = _schemaComparer.CompareDatabase(sourceTables, targetTables);
+        _flatDifferences = comparison.Tables
+            .SelectMany(table => table.Diff.Differences
+                .Select(d => new FlatDifference(table.TargetSchema, table.TableName, d)))
+            .ToList();
 
-        if (sourcePk.SequenceEqual(targetPk, StringComparer.OrdinalIgnoreCase))
-            return operations;
-
-        if (targetPk.Length > 0)
-        {
-            string? targetPkName = target.Indexes.FirstOrDefault(static index => index.IsPrimaryKey)?.Name;
-            string? dropPk = BuildDropPrimaryKeySql(provider, targetSchema, targetTableName, targetPkName, dialect);
-            if (!string.IsNullOrWhiteSpace(dropPk))
-            {
-                operations.Add(new DdlSchemaCompareSqlOperation(
-                    "Primary Key",
-                    "PK",
-                    "Recriar PK",
-                    dropPk,
-                    IsDestructive: true));
-            }
-            else
-                warnings.Add("Primary key divergente sem nome resolvido para DROP automatico.");
-        }
-
-        if (sourcePk.Length > 0)
-        {
-            string? sourcePkName = source.Indexes.FirstOrDefault(static index => index.IsPrimaryKey)?.Name;
-            string fragment = dialect.EmitPrimaryKeyConstraint(sourcePkName, sourcePk);
-            operations.Add(new DdlSchemaCompareSqlOperation(
-                "Primary Key",
-                "PK",
-                "Recriar PK",
-                $"ALTER TABLE {QualifyIdentifier(provider, dialect, targetSchema, targetTableName)} ADD {fragment};",
-                IsDestructive: false));
-        }
-
-        return operations;
+        foreach (string warning in comparison.Tables.SelectMany(t => t.Diff.Warnings))
+            CompareWarnings.Add(warning);
     }
 
-    private static IReadOnlyList<DdlSchemaCompareSqlOperation> BuildUniqueOperations(
-        TableMetadata source,
-        TableMetadata target,
-        DatabaseProvider provider,
-        string targetSchema,
-        string targetTableName,
-        Providers.Dialects.ISqlDialect dialect,
-        ICollection<string> warnings)
+    private IReadOnlyList<TableMetadata> ResolveSchemaTables(EndpointSide side)
     {
-        var operations = new List<DdlSchemaCompareSqlOperation>();
+        DbMetadata? metadata = side == EndpointSide.Left ? _leftMetadata : _rightMetadata;
+        string? schema = side == EndpointSide.Left ? LeftSelectedSchema : RightSelectedSchema;
+        if (metadata is null)
+            return [];
 
-        Dictionary<string, IndexMetadata> sourceUnique = source.Indexes
-            .Where(static index => index.IsUnique && !index.IsPrimaryKey)
-            .ToDictionary(index => BuildIndexSignature(index.Columns), static index => index, StringComparer.OrdinalIgnoreCase);
-
-        Dictionary<string, IndexMetadata> targetUnique = target.Indexes
-            .Where(static index => index.IsUnique && !index.IsPrimaryKey)
-            .ToDictionary(index => BuildIndexSignature(index.Columns), static index => index, StringComparer.OrdinalIgnoreCase);
-
-        foreach ((string signature, IndexMetadata targetIndex) in targetUnique)
-        {
-            if (sourceUnique.ContainsKey(signature))
-                continue;
-
-            string? dropUnique = BuildDropUniqueSql(provider, targetSchema, targetTableName, targetIndex.Name, dialect);
-            if (!string.IsNullOrWhiteSpace(dropUnique))
-            {
-                operations.Add(new DdlSchemaCompareSqlOperation(
-                    "Unique",
-                    "UQ/Indices unicos",
-                    "Sincronizar UNIQUE",
-                    dropUnique,
-                    IsDestructive: true));
-            }
-            else
-                warnings.Add($"Unique index {targetIndex.Name} divergente sem suporte para DROP automatico.");
-        }
-
-        foreach ((string signature, IndexMetadata sourceIndex) in sourceUnique)
-        {
-            if (targetUnique.ContainsKey(signature))
-                continue;
-
-            string fragment = dialect.EmitUniqueConstraint(sourceIndex.Name, sourceIndex.Columns);
-            operations.Add(new DdlSchemaCompareSqlOperation(
-                "Unique",
-                "UQ/Indices unicos",
-                "Sincronizar UNIQUE",
-                $"ALTER TABLE {QualifyIdentifier(provider, dialect, targetSchema, targetTableName)} ADD {fragment};",
-                IsDestructive: false));
-        }
-
-        return operations;
+        return metadata.AllTables
+            .Where(table => table.Kind == TableKind.Table
+                && (string.IsNullOrWhiteSpace(schema) || string.Equals(table.Schema, schema, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
     }
 
-    private static IReadOnlyList<DdlSchemaCompareSqlOperation> BuildForeignKeyOperations(
-        TableMetadata source,
-        TableMetadata target,
-        DatabaseProvider provider,
-        string targetSchema,
-        string targetTableName,
-        Providers.Dialects.ISqlDialect dialect)
+    private IReadOnlyList<TableMetadata> ResolveAllTables(EndpointSide side)
     {
-        var operations = new List<DdlSchemaCompareSqlOperation>();
+        DbMetadata? metadata = side == EndpointSide.Left ? _leftMetadata : _rightMetadata;
+        if (metadata is null)
+            return [];
 
-        Dictionary<string, ForeignKeyRelation> sourceFks = source.OutboundForeignKeys
-            .ToDictionary(BuildForeignKeySignature, static fk => fk, StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, ForeignKeyRelation> targetFks = target.OutboundForeignKeys
-            .ToDictionary(BuildForeignKeySignature, static fk => fk, StringComparer.OrdinalIgnoreCase);
-
-        foreach ((string signature, ForeignKeyRelation targetFk) in targetFks)
-        {
-            if (sourceFks.ContainsKey(signature))
-                continue;
-
-            string? dropFk = BuildDropForeignKeySql(provider, dialect, targetSchema, targetTableName, targetFk.ConstraintName);
-            if (!string.IsNullOrWhiteSpace(dropFk))
-            {
-                operations.Add(new DdlSchemaCompareSqlOperation(
-                    "FK extra",
-                    targetFk.ConstraintName,
-                    "Remover FK",
-                    dropFk,
-                    IsDestructive: true));
-            }
-        }
-
-        foreach ((string signature, ForeignKeyRelation sourceFk) in sourceFks)
-        {
-            if (targetFks.ContainsKey(signature))
-                continue;
-
-            var addFk = new AddForeignKeyOpExpr(
-                sourceFk.ConstraintName,
-                sourceFk.ChildColumn,
-                sourceFk.ParentSchema,
-                sourceFk.ParentTable,
-                sourceFk.ParentColumn,
-                sourceFk.OnDelete,
-                sourceFk.OnUpdate);
-
-            operations.Add(new DdlSchemaCompareSqlOperation(
-                "FK ausente",
-                sourceFk.ConstraintName,
-                "Adicionar FK",
-                addFk.Emit(new DdlEmitContext(provider), targetSchema, targetTableName),
-                IsDestructive: false));
-        }
-
-        return operations;
+        return metadata.AllTables.Where(table => table.Kind == TableKind.Table).ToList();
     }
 
-    private static string? BuildDropPrimaryKeySql(
-        DatabaseProvider provider,
-        string schema,
-        string table,
-        string? constraintName,
-        Providers.Dialects.ISqlDialect dialect)
+    private static string BuildComparisonSummary(IReadOnlyList<FlatDifference> flat)
     {
-        return provider switch
-        {
-            DatabaseProvider.MySql => $"ALTER TABLE {QualifyIdentifier(provider, dialect, schema, table)} DROP PRIMARY KEY;",
-            DatabaseProvider.SqlServer or DatabaseProvider.Postgres => string.IsNullOrWhiteSpace(constraintName)
-                ? null
-                : $"ALTER TABLE {QualifyIdentifier(provider, dialect, schema, table)} DROP CONSTRAINT {dialect.QuoteIdentifier(constraintName)};",
-            _ => null,
-        };
-    }
+        int Count(SchemaDiffCategory category) => flat.Count(f => f.Difference.Category == category);
+        int tables = Count(SchemaDiffCategory.Table);
+        int columns = Count(SchemaDiffCategory.Column);
+        int constraints = flat.Count(f => f.Difference.Category is SchemaDiffCategory.PrimaryKey or SchemaDiffCategory.Unique or SchemaDiffCategory.Check);
+        int indexes = Count(SchemaDiffCategory.Index);
+        int relationships = Count(SchemaDiffCategory.ForeignKey);
 
-    private static string? BuildDropUniqueSql(
-        DatabaseProvider provider,
-        string schema,
-        string table,
-        string indexName,
-        Providers.Dialects.ISqlDialect dialect)
-    {
-        if (string.IsNullOrWhiteSpace(indexName))
-            return null;
-
-        return provider switch
-        {
-            DatabaseProvider.MySql => $"ALTER TABLE {QualifyIdentifier(provider, dialect, schema, table)} DROP INDEX {dialect.QuoteIdentifier(indexName)};",
-            DatabaseProvider.SqlServer or DatabaseProvider.Postgres => $"ALTER TABLE {QualifyIdentifier(provider, dialect, schema, table)} DROP CONSTRAINT {dialect.QuoteIdentifier(indexName)};",
-            _ => null,
-        };
-    }
-
-    private static string? BuildDropForeignKeySql(
-        DatabaseProvider provider,
-        Providers.Dialects.ISqlDialect dialect,
-        string schema,
-        string table,
-        string constraintName)
-    {
-        if (string.IsNullOrWhiteSpace(constraintName))
-            return null;
-
-        return provider switch
-        {
-            DatabaseProvider.MySql => $"ALTER TABLE {QualifyIdentifier(provider, dialect, schema, table)} DROP FOREIGN KEY {dialect.QuoteIdentifier(constraintName)};",
-            DatabaseProvider.SqlServer or DatabaseProvider.Postgres => $"ALTER TABLE {QualifyIdentifier(provider, dialect, schema, table)} DROP CONSTRAINT {dialect.QuoteIdentifier(constraintName)};",
-            _ => null,
-        };
-    }
-
-    private static string BuildIndexSignature(IReadOnlyList<string> columns)
-    {
-        return string.Join("|", columns.Select(static name => name.Trim()).OrderBy(static name => name, StringComparer.OrdinalIgnoreCase));
-    }
-
-    private static string BuildForeignKeySignature(ForeignKeyRelation fk)
-    {
-        return string.Join("|",
-            fk.ChildColumn.Trim(),
-            fk.ParentSchema.Trim(),
-            fk.ParentTable.Trim(),
-            fk.ParentColumn.Trim(),
-            fk.OnDelete,
-            fk.OnUpdate);
-    }
-
-    private static string ResolveColumnType(ColumnMetadata column)
-    {
-        return string.IsNullOrWhiteSpace(column.NativeType) ? column.DataType : column.NativeType;
-    }
-
-    private static string NormalizeColumnType(string? type)
-    {
-        return (type ?? string.Empty)
-            .Trim()
-            .Replace(" ", string.Empty, StringComparison.Ordinal)
-            .ToLowerInvariant();
-    }
-
-    private static string NormalizeDefault(string? value)
-    {
-        return (value ?? string.Empty)
-            .Trim()
-            .Replace("(", string.Empty, StringComparison.Ordinal)
-            .Replace(")", string.Empty, StringComparison.Ordinal)
-            .Replace(" ", string.Empty, StringComparison.Ordinal)
-            .ToLowerInvariant();
-    }
-
-    private static string QualifyIdentifier(
-        DatabaseProvider provider,
-        Providers.Dialects.ISqlDialect dialect,
-        string schema,
-        string table)
-    {
-        string normalizedSchema = NormalizeSchema(provider, schema);
-        if (string.IsNullOrWhiteSpace(normalizedSchema))
-            return dialect.QuoteIdentifier(table.Trim());
-
-        return $"{dialect.QuoteIdentifier(normalizedSchema)}.{dialect.QuoteIdentifier(table.Trim())}";
-    }
-
-    private static string NormalizeSchema(DatabaseProvider provider, string schema)
-    {
-        if (!string.IsNullOrWhiteSpace(schema))
-            return schema.Trim();
-
-        return provider switch
-        {
-            DatabaseProvider.Postgres => "public",
-            DatabaseProvider.SqlServer => "dbo",
-            DatabaseProvider.SQLite => "main",
-            _ => string.Empty,
-        };
-    }
-
-    private void BuildColumnDiffs(TableMetadata leftTable, TableMetadata rightTable)
-    {
-        Dictionary<string, ColumnMetadata> leftColumns = leftTable.Columns.ToDictionary(column => column.Name, StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, ColumnMetadata> rightColumns = rightTable.Columns.ToDictionary(column => column.Name, StringComparer.OrdinalIgnoreCase);
-
-        foreach ((string name, ColumnMetadata leftColumn) in leftColumns.OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            if (!rightColumns.TryGetValue(name, out ColumnMetadata? rightColumn))
-            {
-                ColumnDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
-                    "Coluna ausente",
-                    name,
-                    DescribeColumn(leftColumn),
-                    "(nao existe)",
-                    "Medio",
-                    "Adicionar no destino"));
-                continue;
-            }
-
-            CompareColumnProperty(name, "Tipo", ResolveColumnType(leftColumn), ResolveColumnType(rightColumn));
-            CompareColumnProperty(name, "Nullable", leftColumn.IsNullable ? "YES" : "NO", rightColumn.IsNullable ? "YES" : "NO");
-            CompareColumnProperty(name, "Default", leftColumn.DefaultValue ?? string.Empty, rightColumn.DefaultValue ?? string.Empty);
-            CompareColumnProperty(name, "Comment", leftColumn.Comment ?? string.Empty, rightColumn.Comment ?? string.Empty);
-        }
-
-        foreach ((string name, ColumnMetadata rightColumn) in rightColumns.OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            if (leftColumns.ContainsKey(name))
-                continue;
-
-            ColumnDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
-                "Coluna extra",
-                name,
-                "(nao existe)",
-                DescribeColumn(rightColumn),
-                "Alto",
-                "Remover do destino"));
-        }
-    }
-
-    private void CompareColumnProperty(string columnName, string propertyName, string leftValue, string rightValue)
-    {
-        if (string.Equals(NormalizeComparable(leftValue), NormalizeComparable(rightValue), StringComparison.Ordinal))
-            return;
-
-        ColumnDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
-            propertyName,
-            columnName,
-            leftValue,
-            rightValue,
-            propertyName is "Tipo" or "Nullable" ? "Alto" : "Medio",
-            propertyName is "Tipo" or "Nullable" ? "ALTER COLUMN" : "Ajuste manual/compatibilidade"));
-    }
-
-    private void BuildConstraintDiffs(TableMetadata leftTable, TableMetadata rightTable)
-    {
-        string leftPk = string.Join(", ", leftTable.Columns.Where(static column => column.IsPrimaryKey).Select(static column => column.Name).OrderBy(static name => name, StringComparer.OrdinalIgnoreCase));
-        string rightPk = string.Join(", ", rightTable.Columns.Where(static column => column.IsPrimaryKey).Select(static column => column.Name).OrderBy(static name => name, StringComparer.OrdinalIgnoreCase));
-        if (!string.Equals(NormalizeComparable(leftPk), NormalizeComparable(rightPk), StringComparison.Ordinal))
-        {
-            ConstraintDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
-                "Primary Key",
-                "PK",
-                leftPk,
-                rightPk,
-                "Alto",
-                "Recriar PK"));
-        }
-
-        string leftUnique = string.Join(" | ", leftTable.Indexes
-            .Where(static index => index.IsUnique && !index.IsPrimaryKey)
-            .Select(index => $"{index.Name}({string.Join(",", index.Columns)})")
-            .OrderBy(static text => text, StringComparer.OrdinalIgnoreCase));
-        string rightUnique = string.Join(" | ", rightTable.Indexes
-            .Where(static index => index.IsUnique && !index.IsPrimaryKey)
-            .Select(index => $"{index.Name}({string.Join(",", index.Columns)})")
-            .OrderBy(static text => text, StringComparer.OrdinalIgnoreCase));
-
-        if (!string.Equals(NormalizeComparable(leftUnique), NormalizeComparable(rightUnique), StringComparison.Ordinal))
-        {
-            ConstraintDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
-                "Unique",
-                "UQ/Indices unicos",
-                leftUnique,
-                rightUnique,
-                "Medio",
-                "Sincronizar UNIQUE"));
-        }
-    }
-
-    private void BuildRelationshipDiffs(TableMetadata leftTable, TableMetadata rightTable)
-    {
-        Dictionary<string, ForeignKeyRelation> leftFks = leftTable.OutboundForeignKeys
-            .ToDictionary(BuildForeignKeySignature, static fk => fk, StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, ForeignKeyRelation> rightFks = rightTable.OutboundForeignKeys
-            .ToDictionary(BuildForeignKeySignature, static fk => fk, StringComparer.OrdinalIgnoreCase);
-
-        foreach ((string signature, ForeignKeyRelation leftFk) in leftFks)
-        {
-            if (rightFks.ContainsKey(signature))
-                continue;
-
-            RelationshipDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
-                "FK ausente",
-                leftFk.ConstraintName,
-                DescribeForeignKey(leftFk),
-                "(nao existe)",
-                "Alto",
-                "Adicionar FK"));
-        }
-
-        foreach ((string signature, ForeignKeyRelation rightFk) in rightFks)
-        {
-            if (leftFks.ContainsKey(signature))
-                continue;
-
-            RelationshipDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
-                "FK extra",
-                rightFk.ConstraintName,
-                "(nao existe)",
-                DescribeForeignKey(rightFk),
-                "Alto",
-                "Remover FK"));
-        }
-    }
-
-    private void BuildExternalImpactDiffs(TableMetadata leftTable, TableMetadata rightTable)
-    {
-        Dictionary<string, ForeignKeyRelation> leftInbound = leftTable.InboundForeignKeys
-            .ToDictionary(BuildForeignKeySignature, static fk => fk, StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, ForeignKeyRelation> rightInbound = rightTable.InboundForeignKeys
-            .ToDictionary(BuildForeignKeySignature, static fk => fk, StringComparer.OrdinalIgnoreCase);
-
-        foreach ((string signature, ForeignKeyRelation leftFk) in leftInbound)
-        {
-            if (rightInbound.ContainsKey(signature))
-                continue;
-
-            ExternalImpactDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
-                "Impacto externo",
-                leftFk.ConstraintName,
-                DescribeForeignKey(leftFk),
-                "(nao existe)",
-                "Medio",
-                "Informativo: ajuste manual fora da tabela alvo"));
-        }
-
-        foreach ((string signature, ForeignKeyRelation rightFk) in rightInbound)
-        {
-            if (leftInbound.ContainsKey(signature))
-                continue;
-
-            ExternalImpactDiffs.Add(new DdlSchemaCompareDiffRowViewModel(
-                "Impacto externo",
-                rightFk.ConstraintName,
-                "(nao existe)",
-                DescribeForeignKey(rightFk),
-                "Medio",
-                "Informativo: ajuste manual fora da tabela alvo"));
-        }
-    }
-
-    private static string DescribeColumn(ColumnMetadata column)
-    {
-        return $"{ResolveColumnType(column)} | {(column.IsNullable ? "NULL" : "NOT NULL")} | default={column.DefaultValue ?? string.Empty}";
-    }
-
-    private static string DescribeForeignKey(ForeignKeyRelation fk)
-    {
-        return $"{fk.ChildFullTable}.{fk.ChildColumn} -> {fk.ParentFullTable}.{fk.ParentColumn} (on delete {fk.OnDelete}, on update {fk.OnUpdate})";
-    }
-
-    private static string NormalizeComparable(string? value)
-    {
-        return (value ?? string.Empty)
-            .Trim()
-            .Replace(" ", string.Empty, StringComparison.Ordinal)
-            .ToLowerInvariant();
+        return $"Diferencas: {flat.Count} (tabelas {tables}, colunas {columns}, constraints {constraints}, indices {indexes}, relacionamentos {relationships}).";
     }
 
     private TableMetadata? ResolveSelectedTable(EndpointSide side)
@@ -1308,6 +954,11 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
     {
         ObservableCollection<string> target = side == EndpointSide.Left ? LeftSchemas : RightSchemas;
         target.Clear();
+
+        // First option compares every schema (whole database); the rest are individual schemas.
+        if (values.Any(static item => !string.IsNullOrWhiteSpace(item)))
+            target.Add(AllSchemasOption);
+
         foreach (string value in values.Where(static item => !string.IsNullOrWhiteSpace(item)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(static item => item, StringComparer.OrdinalIgnoreCase))
             target.Add(value);
     }
@@ -1356,39 +1007,13 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel : ViewModelBase, 
         Right,
     }
 
-    internal void SetComparisonSqlOperationsForTesting(IEnumerable<DdlSchemaCompareSqlOperation> operations)
+    internal void LoadComparisonForTesting(TableMetadata source, TableMetadata target, DatabaseProvider provider)
     {
-        _comparisonSqlOperations = operations?.ToArray() ?? [];
+        _compareProvider = provider;
+        TableDiff diff = _comparer.Compare(source, target);
+        _flatDifferences = diff.Differences
+            .Select(d => new FlatDifference(target.Schema, target.Name, d))
+            .ToList();
+        OnComparisonCompleted();
     }
-}
-
-public sealed class DdlSchemaCompareDiffRowViewModel
-{
-    public DdlSchemaCompareDiffRowViewModel(
-        string category,
-        string item,
-        string leftValue,
-        string rightValue,
-        string severity,
-        string action)
-    {
-        Category = category;
-        Item = item;
-        LeftValue = leftValue;
-        RightValue = rightValue;
-        Severity = severity;
-        Action = action;
-    }
-
-    public string Category { get; }
-
-    public string Item { get; }
-
-    public string LeftValue { get; }
-
-    public string RightValue { get; }
-
-    public string Severity { get; }
-
-    public string Action { get; }
 }

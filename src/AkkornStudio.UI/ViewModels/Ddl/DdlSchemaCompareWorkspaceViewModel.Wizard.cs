@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text;
 using AkkornStudio.Core;
-using AkkornStudio.Registry;
+using AkkornStudio.Ddl.Compare;
 using Avalonia.Media;
 using AkkornStudio.UI.Services.Localization;
 using Material.Icons;
@@ -54,9 +54,26 @@ public sealed class DdlSchemaCompareDifferenceItemViewModel : ViewModelBase
     public required string SuggestedAction { get; init; }
     public required DdlSchemaCompareDiffSeverity Severity { get; init; }
     public required bool IsDestructive { get; init; }
-    public required string SuggestedSql { get; init; }
+
+    private string _suggestedSql = string.Empty;
+
+    public required string SuggestedSql
+    {
+        get => _suggestedSql;
+        set => Set(ref _suggestedSql, value);
+    }
+
     public required string RiskSummary { get; init; }
     public string Notes { get; init; } = string.Empty;
+
+    /// <summary>The structured engine difference this UI item was built from (used to regenerate SQL).</summary>
+    internal SchemaDifference EngineDifference { get; init; } = null!;
+
+    /// <summary>Schema of the table this difference targets (for SQL generation in schema-wide mode).</summary>
+    internal string TargetSchema { get; init; } = string.Empty;
+
+    /// <summary>Name of the table this difference targets.</summary>
+    internal string TargetTable { get; init; } = string.Empty;
 
     public event Action? Changed;
 
@@ -549,6 +566,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         {
             if (!Set(ref _useIfExists, value))
                 return;
+            RecomputeSqlForCurrentOptions();
             RebuildGeneratedSqlFromWizard();
         }
     }
@@ -560,6 +578,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         {
             if (!Set(ref _useCatalogChecks, value))
                 return;
+            RecomputeSqlForCurrentOptions();
             RebuildGeneratedSqlFromWizard();
         }
     }
@@ -1156,7 +1175,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
             diff.IsSelectedForInspection = ReferenceEquals(diff, SelectedDifference);
     }
 
-    private void BuildWizardDifferencesFromRows()
+    private void BuildWizardDifferencesFromDiff()
     {
         foreach (DdlSchemaCompareDifferenceItemViewModel existing in Differences)
             existing.Changed -= OnDifferenceChanged;
@@ -1164,11 +1183,43 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         Differences.Clear();
         WizardWarnings.Clear();
 
-        int sequence = 1;
-        AppendWizardDiffs(ColumnDiffs, "Colunas", ref sequence);
-        AppendWizardDiffs(ConstraintDiffs, "Constraints", ref sequence);
-        AppendWizardDiffs(RelationshipDiffs, "Relacionamentos", ref sequence);
-        AppendWizardDiffs(ExternalImpactDiffs, "Dependencia externa", ref sequence);
+        bool databaseWide = IsDatabaseWideComparison;
+        bool qualifyByTable = IsSchemaWideComparison || databaseWide;
+        foreach (FlatDifference flat in _flatDifferences)
+        {
+            SchemaDifference difference = flat.Difference;
+            DdlSchemaCompareDiffSeverity severity = MapSeverity(difference.Severity);
+            string action = ResolveActionLabel(difference);
+
+            // In whole-schema / whole-database mode, qualify each item with its table so the
+            // (potentially cross-schema) list stays unambiguous.
+            string tablePrefix = databaseWide ? $"{flat.TargetSchema}.{flat.TargetTable}" : flat.TargetTable;
+            string item_name = qualifyByTable && difference.Category != SchemaDiffCategory.Table
+                ? $"{tablePrefix}.{difference.ObjectName}"
+                : difference.ObjectName;
+
+            var item = new DdlSchemaCompareDifferenceItemViewModel
+            {
+                Id = difference.Id,
+                Category = ResolveCategoryLabel(difference),
+                Item = item_name,
+                SourceValue = difference.SourceDescription,
+                TargetValue = difference.TargetDescription,
+                SuggestedAction = action,
+                Severity = severity,
+                IsDestructive = difference.IsDestructive,
+                SuggestedSql = GenerateSqlForDifference(difference, flat.TargetSchema, flat.TargetTable),
+                RiskSummary = BuildRiskSummary(action, severity, difference.IsDestructive),
+                Notes = ResolveContentGroup(difference.Category),
+                EngineDifference = difference,
+                TargetSchema = flat.TargetSchema,
+                TargetTable = flat.TargetTable,
+            };
+            item.IsIncluded = !difference.IsDestructive && severity != DdlSchemaCompareDiffSeverity.High;
+            item.ReviewStatus = DdlSchemaCompareDiffReviewStatus.Pending;
+            item.Changed += OnDifferenceChanged;
+            Differences.Add(item);
+        }
 
         foreach (string warning in CompareWarnings)
             WizardWarnings.Add(warning);
@@ -1180,329 +1231,82 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         RecomputeDiffSummary();
     }
 
-    private void AppendWizardDiffs(
-        IEnumerable<DdlSchemaCompareDiffRowViewModel> rows,
-        string defaultCategory,
-        ref int sequence)
+    private string GenerateSqlForDifference(SchemaDifference difference, string targetSchema, string targetTable)
     {
-        foreach (DdlSchemaCompareDiffRowViewModel row in rows)
-        {
-            DdlSchemaCompareDiffSeverity severity = ParseSeverity(row.Severity);
-            bool isDestructive = IsDestructiveAction(row.Action, row.Category, severity);
-            string suggestedSql = BuildSuggestedSqlForDiff(row, defaultCategory, isDestructive);
-            var item = new DdlSchemaCompareDifferenceItemViewModel
-            {
-                Id = $"diff_{sequence++}",
-                Category = string.IsNullOrWhiteSpace(row.Category) ? defaultCategory : row.Category,
-                Item = row.Item,
-                SourceValue = row.LeftValue,
-                TargetValue = row.RightValue,
-                SuggestedAction = row.Action,
-                Severity = severity,
-                IsDestructive = isDestructive,
-                SuggestedSql = suggestedSql,
-                RiskSummary = BuildRiskSummary(row.Action, severity, isDestructive),
-                Notes = defaultCategory,
-            };
-            item.IsIncluded = !isDestructive && severity != DdlSchemaCompareDiffSeverity.High;
-            item.ReviewStatus = DdlSchemaCompareDiffReviewStatus.Pending;
-            item.Changed += OnDifferenceChanged;
-            Differences.Add(item);
-        }
-    }
-    private static DdlSchemaCompareDiffSeverity ParseSeverity(string value)
-    {
-        if (value.Contains("alto", StringComparison.OrdinalIgnoreCase))
-            return DdlSchemaCompareDiffSeverity.High;
-        if (value.Contains("medio", StringComparison.OrdinalIgnoreCase))
-            return DdlSchemaCompareDiffSeverity.Medium;
-        if (value.Contains("baixo", StringComparison.OrdinalIgnoreCase))
-            return DdlSchemaCompareDiffSeverity.Low;
-        return DdlSchemaCompareDiffSeverity.Info;
+        string sql = _generator.Generate(difference, _compareProvider, targetSchema, targetTable, BuildSqlOptions());
+        return string.IsNullOrWhiteSpace(sql) ? BuildCommentFallback(difference) : sql;
     }
 
-    private static bool IsDestructiveAction(string action, string category, DdlSchemaCompareDiffSeverity severity)
+    private static DdlSchemaCompareDiffSeverity MapSeverity(SchemaDiffSeverity severity) => severity switch
     {
-        if (action.Contains("Remover", StringComparison.OrdinalIgnoreCase)
-            || action.Contains("DROP", StringComparison.OrdinalIgnoreCase))
-            return true;
+        SchemaDiffSeverity.High => DdlSchemaCompareDiffSeverity.High,
+        SchemaDiffSeverity.Medium => DdlSchemaCompareDiffSeverity.Medium,
+        SchemaDiffSeverity.Low => DdlSchemaCompareDiffSeverity.Low,
+        _ => DdlSchemaCompareDiffSeverity.Info,
+    };
 
-        if (category.Contains("extra", StringComparison.OrdinalIgnoreCase)
-            || category.Contains("FK extra", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        return severity == DdlSchemaCompareDiffSeverity.High
-            && action.Contains("ALTER", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private string BuildSuggestedSqlForDiff(
-        DdlSchemaCompareDiffRowViewModel row,
-        string defaultCategory,
-        bool destructive)
+    private static string ResolveCategoryLabel(SchemaDifference difference) => difference.Operation switch
     {
-        string executableSql = ResolveExecutableSqlForDiff(row, defaultCategory);
-        if (!string.IsNullOrWhiteSpace(executableSql))
-            return executableSql;
+        CreateTableOperation => "Tabela ausente",
+        DropTableOperation => "Tabela extra",
+        AddColumnOperation => "Coluna ausente",
+        DropColumnOperation => "Coluna extra",
+        AlterColumnOperation => "Tipo",
+        SetColumnDefaultOperation => "Default",
+        SetColumnCommentOperation => "Comment",
+        ColumnAttributeNote note => note.Attribute,
+        RecreatePrimaryKeyOperation => "Primary Key",
+        AddUniqueOperation or DropUniqueOperation => "Unique",
+        CreateIndexOperation => "Indice ausente",
+        DropIndexOperation => "Indice extra",
+        AddCheckOperation => "Check ausente",
+        DropCheckOperation => "Check extra",
+        AddForeignKeyOperation => "FK ausente",
+        DropForeignKeyOperation => "FK extra",
+        _ => "Impacto externo",
+    };
 
-        string target = ResolveTargetLabel();
-        string source = ResolveSourceLabel();
-        string category = string.IsNullOrWhiteSpace(row.Category) ? defaultCategory : row.Category;
-
-        string baseComment =
-            $"-- [{category}] {row.Item}\n" +
-            $"-- {L("ddl.compare.sql.header.source", "Source")}: {row.LeftValue}\n" +
-            $"-- {L("ddl.compare.sql.header.target", "Target")}: {row.RightValue}\n" +
-            $"-- {L("ddl.compare.review.grid.action", "Action")}: {row.Action}\n";
-
-        if (destructive)
-        {
-            return baseComment
-                + $"-- {L("ddl.compare.sql.risk", "RISK")}: {L("ddl.compare.risk.destructive", "Destructive operation: can cause permanent data loss or dependency breakage.")}\n"
-                + $"-- TODO: {L("ddl.compare.sql.todo.reviewBeforeApply", "review manually before applying to target")} ({target}).\n";
-        }
-
-        if (row.Action.Contains("Adicionar", StringComparison.OrdinalIgnoreCase))
-        {
-            return baseComment
-                + $"-- Ajustar destino ({target}) para ficar igual a origem ({source}).\n";
-        }
-
-        if (row.Action.Contains("ALTER", StringComparison.OrdinalIgnoreCase))
-        {
-            return baseComment
-                + $"-- ALTER TABLE ... para convergir {row.Item} no destino.\n";
-        }
-
-        return baseComment + $"-- {L("ddl.compare.sql.recommendedAdjustment", "Adjustment recommended by comparison")}.\n";
-    }
-
-    private string ResolveExecutableSqlForDiff(DdlSchemaCompareDiffRowViewModel row, string defaultCategory)
+    private static string ResolveActionLabel(SchemaDifference difference) => difference.Operation switch
     {
-        string normalizedCategory = string.IsNullOrWhiteSpace(row.Category) ? defaultCategory : row.Category;
-        string normalizedAction = NormalizeMatchToken(row.Action);
+        CreateTableOperation => "Criar tabela",
+        DropTableOperation => "Remover tabela",
+        AddColumnOperation => "Adicionar no destino",
+        DropColumnOperation => "Remover do destino",
+        AlterColumnOperation => "ALTER COLUMN",
+        SetColumnDefaultOperation => "Sincronizar default",
+        SetColumnCommentOperation => "Sincronizar comentario",
+        ColumnAttributeNote => "Revisar manualmente",
+        RecreatePrimaryKeyOperation => "Recriar PK",
+        AddUniqueOperation or DropUniqueOperation => "Sincronizar UNIQUE",
+        CreateIndexOperation => "Adicionar indice",
+        DropIndexOperation => "Remover indice",
+        AddCheckOperation => "Adicionar check",
+        DropCheckOperation => "Remover check",
+        AddForeignKeyOperation => "Adicionar FK",
+        DropForeignKeyOperation => "Remover FK",
+        _ => "Informativo: ajuste manual fora da tabela alvo",
+    };
 
-        IEnumerable<DdlSchemaCompareSqlOperation> matches = _comparisonSqlOperations
-            .Where(operation =>
-                IsOperationItemMatch(operation.Item, row.Item)
-                && string.Equals(NormalizeMatchToken(operation.Action), normalizedAction, StringComparison.Ordinal));
-
-        if (!matches.Any())
-        {
-            matches = _comparisonSqlOperations.Where(operation =>
-                string.Equals(NormalizeMatchToken(operation.Category), NormalizeMatchToken(normalizedCategory), StringComparison.Ordinal)
-                && string.Equals(NormalizeMatchToken(operation.Action), normalizedAction, StringComparison.Ordinal));
-        }
-
-        if (!matches.Any() && (string.Equals(row.Action, "Sincronizar UNIQUE", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(row.Action, "Recriar PK", StringComparison.OrdinalIgnoreCase)))
-        {
-            matches = _comparisonSqlOperations.Where(operation =>
-                string.Equals(NormalizeMatchToken(operation.Action), normalizedAction, StringComparison.Ordinal));
-        }
-
-        string[] statements = matches
-            .Select(static operation => operation.Sql.Trim())
-            .Where(static sql => sql.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (statements.Length > 0)
-            return string.Join(Environment.NewLine, statements);
-
-        return BuildFallbackExecutableSqlForDiff(row);
-    }
-
-    private string BuildFallbackExecutableSqlForDiff(DdlSchemaCompareDiffRowViewModel row)
+    private static string ResolveContentGroup(SchemaDiffCategory category) => category switch
     {
-        if (!row.Action.Contains("ALTER COLUMN", StringComparison.OrdinalIgnoreCase))
-            return string.Empty;
+        SchemaDiffCategory.Table => "Tabelas",
+        SchemaDiffCategory.Column => "Colunas",
+        SchemaDiffCategory.PrimaryKey or SchemaDiffCategory.Unique or SchemaDiffCategory.Check => "Constraints",
+        SchemaDiffCategory.Index => "Indices",
+        SchemaDiffCategory.ForeignKey => "Relacionamentos",
+        _ => "Dependencia externa",
+    };
 
-        if (!TryResolveTargetDialectContext(out DatabaseProvider provider, out Providers.Dialects.ISqlDialect dialect, out string targetSchema, out string targetTable))
-            return string.Empty;
-
-        string dataType = ResolveDesiredColumnType(row);
-        if (string.IsNullOrWhiteSpace(dataType))
-            return string.Empty;
-
-        bool? nullable = ResolveDesiredNullability(row);
-        if (nullable is null)
-            return string.Empty;
-
-        try
-        {
-            return dialect.EmitAlterTableAlterColumnType(targetSchema, targetTable, row.Item, dataType, nullable.Value);
-        }
-        catch
-        {
-            return string.Empty;
-        }
-    }
-
-    private bool TryResolveTargetDialectContext(
-        out DatabaseProvider provider,
-        out Providers.Dialects.ISqlDialect dialect,
-        out string targetSchema,
-        out string targetTable)
+    private string BuildCommentFallback(SchemaDifference difference)
     {
-        provider = LeftSelectedProfile?.Provider ?? RightSelectedProfile?.Provider ?? DatabaseProvider.Postgres;
-        dialect = ProviderRegistry.CreateDefault().GetDialect(provider);
-
-        string? schema = SelectedDirection == DdlSchemaCompareDirection.LeftToRight
-            ? RightSelectedSchema
-            : LeftSelectedSchema;
-        string? table = SelectedDirection == DdlSchemaCompareDirection.LeftToRight
-            ? RightSelectedTable
-            : LeftSelectedTable;
-
-        if (string.IsNullOrWhiteSpace(table))
-        {
-            targetSchema = string.Empty;
-            targetTable = string.Empty;
-            return false;
-        }
-
-        targetSchema = NormalizeSchema(provider, schema ?? string.Empty);
-        targetTable = table.Trim();
-        return true;
-    }
-
-    private string ResolveDesiredColumnType(DdlSchemaCompareDiffRowViewModel row)
-    {
-        if (row.Category.Contains("Tipo", StringComparison.OrdinalIgnoreCase))
-        {
-            string direct = ExtractColumnTypeToken(row.LeftValue);
-            if (!string.IsNullOrWhiteSpace(direct))
-                return direct;
-        }
-
-        DdlSchemaCompareDiffRowViewModel? typeRow = ColumnDiffs.FirstOrDefault(candidate =>
-            candidate.Item.Equals(row.Item, StringComparison.OrdinalIgnoreCase)
-            && candidate.Category.Contains("Tipo", StringComparison.OrdinalIgnoreCase));
-
-        if (typeRow is not null)
-        {
-            string fromTypeRow = ExtractColumnTypeToken(typeRow.LeftValue);
-            if (!string.IsNullOrWhiteSpace(fromTypeRow))
-                return fromTypeRow;
-        }
-
-        string fromLeft = ExtractColumnTypeToken(row.LeftValue);
-        if (!string.IsNullOrWhiteSpace(fromLeft))
-            return fromLeft;
-
-        return ExtractColumnTypeToken(row.RightValue);
-    }
-
-    private bool? ResolveDesiredNullability(DdlSchemaCompareDiffRowViewModel row)
-    {
-        if (row.Category.Contains("Nullable", StringComparison.OrdinalIgnoreCase))
-        {
-            bool? direct = ParseNullabilityToken(row.LeftValue);
-            if (direct is not null)
-                return direct;
-        }
-
-        DdlSchemaCompareDiffRowViewModel? nullableRow = ColumnDiffs.FirstOrDefault(candidate =>
-            candidate.Item.Equals(row.Item, StringComparison.OrdinalIgnoreCase)
-            && candidate.Category.Contains("Nullable", StringComparison.OrdinalIgnoreCase));
-
-        if (nullableRow is not null)
-        {
-            bool? fromNullableRow = ParseNullabilityToken(nullableRow.LeftValue);
-            if (fromNullableRow is not null)
-                return fromNullableRow;
-        }
-
-        bool? fromLeft = ParseNullabilityToken(row.LeftValue);
-        if (fromLeft is not null)
-            return fromLeft;
-
-        return ParseNullabilityToken(row.RightValue);
-    }
-
-    private static string ExtractColumnTypeToken(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
-
-        string token = value.Trim();
-        int pipeIndex = token.IndexOf('|');
-        if (pipeIndex >= 0)
-            token = token[..pipeIndex].Trim();
-
-        if (token.Equals("(nao existe)", StringComparison.OrdinalIgnoreCase)
-            || token.Equals("YES", StringComparison.OrdinalIgnoreCase)
-            || token.Equals("NO", StringComparison.OrdinalIgnoreCase)
-            || token.Equals("NULL", StringComparison.OrdinalIgnoreCase)
-            || token.Equals("NOT NULL", StringComparison.OrdinalIgnoreCase))
-            return string.Empty;
-
-        return token;
-    }
-
-    private static bool? ParseNullabilityToken(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return null;
-
-        string normalized = value.Trim();
-        if (normalized.Contains("NOT NULL", StringComparison.OrdinalIgnoreCase))
-            return false;
-        if (normalized.Contains("NULL", StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (normalized.Equals("YES", StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (normalized.Equals("NO", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        return null;
-    }
-
-    private static bool IsOperationItemMatch(string operationItem, string rowItem)
-    {
-        string normalizedOperationItem = NormalizeItemToken(operationItem);
-        string normalizedRowItem = NormalizeItemToken(rowItem);
-        if (string.Equals(normalizedOperationItem, normalizedRowItem, StringComparison.Ordinal))
-            return true;
-
-        int lastDot = normalizedRowItem.LastIndexOf('.');
-        if (lastDot >= 0)
-            return string.Equals(normalizedOperationItem, normalizedRowItem[(lastDot + 1)..], StringComparison.Ordinal);
-
-        return false;
-    }
-
-    private static string NormalizeItemToken(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
-
-        var builder = new StringBuilder(value.Length);
-        foreach (char ch in value.Trim())
-        {
-            if (char.IsWhiteSpace(ch))
-                continue;
-            if (ch is '[' or ']' or '"' or '\'' or '`')
-                continue;
-            builder.Append(char.ToUpperInvariant(ch));
-        }
-
-        return builder.ToString();
-    }
-
-    private static string NormalizeMatchToken(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
-
-        var builder = new StringBuilder(value.Length);
-        foreach (char ch in value.Trim())
-        {
-            if (char.IsWhiteSpace(ch))
-                continue;
-            builder.Append(char.ToUpperInvariant(ch));
-        }
-
+        var builder = new StringBuilder();
+        builder.AppendLine($"-- [{ResolveCategoryLabel(difference)}] {difference.ObjectName}");
+        builder.AppendLine($"-- {L("ddl.compare.sql.header.source", "Source")}: {difference.SourceDescription}");
+        builder.AppendLine($"-- {L("ddl.compare.sql.header.target", "Target")}: {difference.TargetDescription}");
+        builder.AppendLine($"-- {L("ddl.compare.review.grid.action", "Action")}: {ResolveActionLabel(difference)}");
+        if (difference.IsDestructive)
+            builder.AppendLine($"-- {L("ddl.compare.sql.risk", "RISK")}: {L("ddl.compare.risk.destructive", "Destructive operation: can cause permanent data loss or dependency breakage.")}");
+        builder.Append($"-- {L("ddl.compare.sql.recommendedAdjustment", "Adjustment recommended by comparison")}.");
         return builder.ToString();
     }
 
@@ -1557,12 +1361,16 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
 
     private void RebuildGeneratedSqlFromWizard()
     {
-        IEnumerable<DdlSchemaCompareDifferenceItemViewModel> selected = Differences.Where(static diff => diff.IsIncluded);
-        if (SqlGenerationMode == DdlSchemaCompareSqlGenerationMode.Safe)
-            selected = selected.Where(static diff => !diff.IsDestructive || diff.Severity != DdlSchemaCompareDiffSeverity.High);
+        // Respect exactly what the user chose to include. Safe mode does not silently drop
+        // included items; instead risky/destructive ones are emitted commented-out so the
+        // visible "included" counters stay consistent with the generated script.
+        List<DdlSchemaCompareDifferenceItemViewModel> selected = Differences.Where(static diff => diff.IsIncluded).ToList();
 
+        // Use the provider the comparison SQL was generated for, so the transactional wrapper
+        // matches the dialect of the statements inside it.
+        DatabaseProvider provider = _compareProvider;
         var builder = new StringBuilder();
-        bool hasAny = selected.Any();
+        bool hasAny = selected.Count > 0;
 
         if (IncludeHeader)
         {
@@ -1589,14 +1397,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
 
         bool hasTransactionalWrapper = IncludeTransaction && SqlGenerationMode != DdlSchemaCompareSqlGenerationMode.Informative;
         if (hasTransactionalWrapper)
-        {
-            builder.AppendLine("BEGIN TRANSACTION;");
-            if (IncludeTryCatch)
-            {
-                builder.AppendLine("BEGIN TRY");
-                builder.AppendLine();
-            }
-        }
+            AppendTransactionPrologue(builder, provider);
 
         if (!hasAny)
         {
@@ -1610,8 +1411,8 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
                 bool shouldSkipByContent =
                     (!IncludeColumns && diff.Notes == "Colunas")
                     || (!IncludeConstraints && diff.Notes == "Constraints")
-                    || (!IncludeRelationships && diff.Notes == "Relacionamentos")
-                    || (!IncludeIndexes && diff.Category.Contains("Index", StringComparison.OrdinalIgnoreCase));
+                    || (!IncludeIndexes && diff.Notes == "Indices")
+                    || (!IncludeRelationships && diff.Notes == "Relacionamentos");
 
                 if (shouldSkipByContent)
                     continue;
@@ -1632,8 +1433,15 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
                     builder.AppendLine("-- Modo informativo");
                     builder.AppendLine(sql);
                 }
-                else if (diff.IsDestructive && CommentDestructiveOperations)
+                else if (ShouldCommentOut(diff))
                 {
+                    if (SqlGenerationMode == DdlSchemaCompareSqlGenerationMode.Safe
+                        && !diff.IsDestructive
+                        && diff.Severity == DdlSchemaCompareDiffSeverity.High)
+                    {
+                        builder.AppendLine("-- Modo seguro: operacao de alto risco comentada. Revise antes de executar.");
+                    }
+
                     foreach (string line in sql.Split('\n'))
                         builder.AppendLine(line.StartsWith("--", StringComparison.Ordinal) ? line : $"-- {line}");
                 }
@@ -1652,27 +1460,81 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         }
 
         if (hasTransactionalWrapper)
-        {
-            if (IncludeTryCatch)
-            {
-                builder.AppendLine("COMMIT;");
-                builder.AppendLine("END TRY");
-                builder.AppendLine("BEGIN CATCH");
-                if (AutoRollbackOnError)
-                    builder.AppendLine("ROLLBACK;");
-                builder.AppendLine("THROW;");
-                builder.AppendLine("END CATCH;");
-            }
-            else
-            {
-                builder.AppendLine("COMMIT;");
-            }
-        }
+            AppendTransactionEpilogue(builder, provider);
 
         GeneratedSql = builder.ToString().Trim();
         SqlPreviewSummary = BuildSqlPreviewSummary();
         UpdateDisplaySqlPreview();
         RaisePropertyChanged(nameof(HasGeneratedSql));
+    }
+
+    private SchemaSyncOptions BuildSqlOptions()
+        => new(ExistenceSafe: UseIfExistsChecks || UseCatalogChecks);
+
+    // Re-emits the executable SQL for the cached comparison with the current generation options,
+    // updating each difference's SuggestedSql in place so the user's review state is preserved.
+    private void RecomputeSqlForCurrentOptions()
+    {
+        if (_flatDifferences.Count == 0)
+            return;
+
+        foreach (DdlSchemaCompareDifferenceItemViewModel diff in Differences)
+            diff.SuggestedSql = GenerateSqlForDifference(diff.EngineDifference, diff.TargetSchema, diff.TargetTable);
+    }
+
+    private bool ShouldCommentOut(DdlSchemaCompareDifferenceItemViewModel diff)
+    {
+        if (diff.IsDestructive && CommentDestructiveOperations)
+            return true;
+
+        // Safe mode keeps high-risk (non-destructive) alterations in the script but commented.
+        return SqlGenerationMode == DdlSchemaCompareSqlGenerationMode.Safe
+            && diff.Severity == DdlSchemaCompareDiffSeverity.High;
+    }
+
+    private void AppendTransactionPrologue(StringBuilder builder, DatabaseProvider provider)
+    {
+        switch (provider)
+        {
+            case DatabaseProvider.SqlServer:
+                builder.AppendLine("BEGIN TRANSACTION;");
+                if (IncludeTryCatch)
+                {
+                    builder.AppendLine("BEGIN TRY");
+                    builder.AppendLine();
+                }
+
+                break;
+            case DatabaseProvider.MySql:
+                builder.AppendLine("START TRANSACTION;");
+                builder.AppendLine();
+                break;
+            case DatabaseProvider.Postgres:
+            case DatabaseProvider.SQLite:
+            default:
+                builder.AppendLine("BEGIN;");
+                builder.AppendLine();
+                break;
+        }
+    }
+
+    private void AppendTransactionEpilogue(StringBuilder builder, DatabaseProvider provider)
+    {
+        // Only SQL Server supports a top-level TRY/CATCH wrapper. Postgres/MySQL/SQLite
+        // abort the transaction automatically on error, so a plain COMMIT is correct.
+        if (provider == DatabaseProvider.SqlServer && IncludeTryCatch)
+        {
+            builder.AppendLine("COMMIT;");
+            builder.AppendLine("END TRY");
+            builder.AppendLine("BEGIN CATCH");
+            if (AutoRollbackOnError)
+                builder.AppendLine("    ROLLBACK;");
+            builder.AppendLine("    THROW;");
+            builder.AppendLine("END CATCH;");
+            return;
+        }
+
+        builder.AppendLine("COMMIT;");
     }
 
     private void UpdateDisplaySqlPreview()
@@ -1796,7 +1658,7 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         HasCompared = true;
         _advanceWithoutSelectionRequested = false;
 
-        BuildWizardDifferencesFromRows();
+        BuildWizardDifferencesFromDiff();
         if (Differences.Count == 0)
             ReviewMessage = L("ddl.compare.empty.noDifferences", "Tables are synchronized. No SQL is required.");
         else
@@ -1805,11 +1667,6 @@ public sealed partial class DdlSchemaCompareWorkspaceViewModel
         RebuildGeneratedSqlFromWizard();
         WizardStep = DdlSchemaCompareWizardStep.Review;
         RaisePropertyChanged(nameof(FooterContextText));
-    }
-
-    internal void BuildWizardDifferencesFromRowsForTesting()
-    {
-        BuildWizardDifferencesFromRows();
     }
 
     internal void RebuildGeneratedSqlFromWizardForTesting()

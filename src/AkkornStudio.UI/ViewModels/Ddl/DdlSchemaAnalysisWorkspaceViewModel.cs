@@ -24,15 +24,24 @@ public sealed record DdlSchemaAnalysisOpenDdlRequest(
     string? DatabaseName,
     string? SchemaName);
 
+/// <summary>Request raised by the analysis workspace to open Table Compare seeded with this source.</summary>
+public sealed record DdlSchemaCompareLaunchRequest(
+    string? ProfileId,
+    string? DatabaseName,
+    string? SchemaName);
+
 public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase, IDisposable
 {
     private readonly ConnectionManagerViewModel _connectionManager;
     private readonly Action<DdlSchemaAnalysisOpenDdlRequest>? _openDdlRequested;
+    private readonly Action<DdlSchemaCompareLaunchRequest>? _openCompareRequested;
     private readonly SchemaAnalysisService _schemaAnalysisService;
     private readonly Dictionary<string, string[]> _databaseCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DbMetadata> _metadataCache = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _loadCts;
+    private CancellationTokenSource? _databaseListCts;
     private CancellationTokenSource? _analysisCts;
+    private bool _suppressDatabaseSelectionReload;
     private ConnectionProfile? _selectedProfile;
     private string? _selectedDatabase;
     private string? _selectedSchema;
@@ -63,10 +72,12 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
 
     public DdlSchemaAnalysisWorkspaceViewModel(
         ConnectionManagerViewModel connectionManager,
-        Action<DdlSchemaAnalysisOpenDdlRequest>? openDdlRequested = null)
+        Action<DdlSchemaAnalysisOpenDdlRequest>? openDdlRequested = null,
+        Action<DdlSchemaCompareLaunchRequest>? openCompareRequested = null)
     {
         _connectionManager = connectionManager ?? throw new ArgumentNullException(nameof(connectionManager));
         _openDdlRequested = openDdlRequested;
+        _openCompareRequested = openCompareRequested;
         _schemaAnalysisService = SchemaAnalysisServiceFactory.CreateDefault();
 
         SchemaAnalysisPanel = new SchemaAnalysisPanelViewModel();
@@ -76,6 +87,7 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
         RunAnalysisCommand = new RelayCommand(() => _ = RunAnalysisAsync(), () => !IsBusy && CurrentMetadata is not null);
         CancelAnalysisCommand = new RelayCommand(CancelAnalysis, () => IsRunningAnalysis);
         OpenInDdlCommand = new RelayCommand(OpenInDdl, () => CurrentMetadata is not null);
+        OpenSchemaCompareCommand = new RelayCommand(OpenSchemaCompare, () => SelectedProfile is not null);
         NextStepCommand = new RelayCommand(() => _ = MoveToNextStepAsync(), CanMoveToNextStep);
         PreviousStepCommand = new RelayCommand(MoveToPreviousStep, CanMoveToPreviousStep);
         OpenConnectionStepCommand = new RelayCommand(() => WizardStep = DdlSchemaAnalysisWizardStep.Connection, () => WizardStep != DdlSchemaAnalysisWizardStep.Connection);
@@ -114,6 +126,8 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
     public RelayCommand CancelAnalysisCommand { get; }
 
     public RelayCommand OpenInDdlCommand { get; }
+
+    public RelayCommand OpenSchemaCompareCommand { get; }
 
     public RelayCommand NextStepCommand { get; }
 
@@ -202,6 +216,7 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
             OpenTrendsStepCommand.NotifyCanExecuteChanged();
             OpenDesiredNamingStepCommand.NotifyCanExecuteChanged();
             OpenIssuesStepCommand.NotifyCanExecuteChanged();
+            OpenSchemaCompareCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -213,7 +228,8 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
             if (!Set(ref _selectedDatabase, value))
                 return;
 
-            _ = RefreshMetadataAsync(forceRefresh: false);
+            if (!_suppressDatabaseSelectionReload)
+                _ = RefreshMetadataAsync(forceRefresh: false);
             NextStepCommand.NotifyCanExecuteChanged();
         }
     }
@@ -498,13 +514,38 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
 
     public string SelectedProviderLabel => SelectedProfile?.Provider.ToString() ?? "-";
 
+    /// <summary>
+    /// True when the playground mixes more than one naming convention across object types.
+    /// The current analysis engine evaluates a single convention, so a mix collapses to
+    /// <see cref="NamingConvention.MixedAllowed"/> and naming-violation detection is effectively disabled.
+    /// </summary>
+    public bool HasMixedNamingConventions
+    {
+        get
+        {
+            HashSet<NamingConvention> conventions =
+            [
+                TableNamingConvention,
+                ColumnNamingConvention,
+                IndexNamingConvention,
+                ConstraintNamingConvention,
+                ViewNamingConvention,
+                ViewColumnNamingConvention,
+            ];
+
+            return conventions.Count > 1;
+        }
+    }
+
     public void Dispose()
     {
         _connectionManager.ProfilesChanged -= HandleProfilesChanged;
         _loadCts?.Cancel();
+        _databaseListCts?.Cancel();
         _analysisCts?.Cancel();
         _playgroundFocusPulseCts?.Cancel();
         _loadCts?.Dispose();
+        _databaseListCts?.Dispose();
         _analysisCts?.Dispose();
         _playgroundFocusPulseCts?.Dispose();
     }
@@ -559,13 +600,24 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
             return;
         }
 
+        _databaseListCts?.Cancel();
+        _databaseListCts?.Dispose();
+        _databaseListCts = new CancellationTokenSource();
+        CancellationToken ct = _databaseListCts.Token;
+
         try
         {
             IsLoadingMetadata = true;
             StatusMessage = "Carregando bancos...";
-            string[] databases = await ListDatabasesAsync(profile, CancellationToken.None);
+            string[] databases = await ListDatabasesAsync(profile, ct);
+            if (ct.IsCancellationRequested)
+                return;
+
             _databaseCache[cacheKey] = databases;
             ApplyDatabases(databases, profile.Database);
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (Exception ex)
         {
@@ -593,8 +645,21 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
         if (Databases.Count == 0)
             Databases.Add(fallbackDatabase);
 
+        // Selecting the database here would normally trigger a metadata refresh; the caller
+        // (LoadDatabasesAndMetadataAsync) loads metadata once afterwards, so suppress the
+        // redundant fire-and-forget refresh to avoid a double load / race.
         if (string.IsNullOrWhiteSpace(SelectedDatabase) || Databases.All(db => !string.Equals(db, SelectedDatabase, StringComparison.OrdinalIgnoreCase)))
-            SelectedDatabase = Databases.FirstOrDefault();
+        {
+            _suppressDatabaseSelectionReload = true;
+            try
+            {
+                SelectedDatabase = Databases.FirstOrDefault();
+            }
+            finally
+            {
+                _suppressDatabaseSelectionReload = false;
+            }
+        }
     }
 
     private async Task RefreshMetadataAsync(bool forceRefresh)
@@ -717,8 +782,10 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
 
         TotalTables = tables.Count;
         TotalColumns = tables.Sum(table => table.Columns.Count);
+        // Count each FK once by the schema that owns it (the child/referencing table's schema)
+        // so cross-schema relationships are not double-counted under a schema filter.
         TotalForeignKeys = filteredMetadata.AllForeignKeys.Count(foreignKey =>
-            MatchesSchemaFilter(schemaFilter, foreignKey.ChildSchema) || MatchesSchemaFilter(schemaFilter, foreignKey.ParentSchema));
+            MatchesSchemaFilter(schemaFilter, foreignKey.ChildSchema));
         TotalViews = schemas.Sum(schema => schema.Tables.Count(table => table.Kind != TableKind.Table));
         TotalSchemas = schemas.Count;
 
@@ -833,6 +900,17 @@ public sealed partial class DdlSchemaAnalysisWorkspaceViewModel : ViewModelBase,
             SelectedDatabase,
             SelectedSchema);
         _openDdlRequested?.Invoke(request);
+    }
+
+    private void OpenSchemaCompare()
+    {
+        if (SelectedProfile is null)
+            return;
+
+        _openCompareRequested?.Invoke(new DdlSchemaCompareLaunchRequest(
+            SelectedProfile.Id,
+            SelectedDatabase,
+            SelectedSchema));
     }
 
     private void OpenConnectionManager()
